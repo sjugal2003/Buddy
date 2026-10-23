@@ -134,10 +134,13 @@ npx.cmd supabase db push
 npm.cmd run lint        # code style and common mistakes
 npx.cmd tsc --noEmit    # type errors
 npm.cmd run build       # full production build
+npm.cmd test            # unit tests (no setup needed)
 ```
 
-Database security tests: `supabase/tests/security_test.sql` (118 checks). See
-`PROJECT_CONTEXT.md` for how to run them.
+The database security tests (`npm.cmd run test:db`, 118 checks) and browser
+tests (`npm.cmd run test:e2e`) need a local Supabase in Docker Desktop; see
+`PROJECT_CONTEXT.md` section 10. GitHub runs all of these automatically on
+every pull request (the **Checks** tick or cross on the PR page).
 
 ## Pages
 
@@ -169,6 +172,8 @@ src/
 supabase/
   migrations/             database tables and security rules
   tests/                  database security tests
+tests/unit/               unit tests (Vitest)
+tests/e2e/                browser tests (Playwright)
   templates/              email templates
 ```
 

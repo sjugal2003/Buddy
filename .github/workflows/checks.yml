@@ -1,0 +1,68 @@
+# Runs every check on each pull request and on main. Uses a throwaway local
+# Supabase inside GitHub's machine; it never touches the hosted project and
+# needs no secrets.
+name: Checks
+
+on:
+  pull_request:
+  push:
+    branches: [main]
+
+permissions:
+  contents: read
+
+concurrency:
+  group: checks-${{ github.ref }}
+  cancel-in-progress: true
+
+jobs:
+  checks:
+    runs-on: ubuntu-latest
+    timeout-minutes: 30
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 20
+          cache: npm
+
+      - run: npm ci
+
+      - name: Lint
+        run: npm run lint
+
+      - name: Type check
+        run: npx tsc --noEmit
+
+      - name: Unit tests
+        run: npm test
+
+      - name: Start local Supabase
+        run: |
+          npx supabase start -x storage-api,imgproxy,realtime,studio,edge-runtime,logflare,vector,postgres-meta,supavisor
+          npx supabase status -o env | grep -E '^(API_URL|PUBLISHABLE_KEY)=' | sed -e 's/^API_URL=/NEXT_PUBLIC_SUPABASE_URL=/' -e 's/^PUBLISHABLE_KEY=/NEXT_PUBLIC_SUPABASE_PUBLISHABLE_KEY=/' -e 's/"//g' >> "$GITHUB_ENV"
+
+      - name: Database security tests
+        run: npm run test:db
+
+      - name: Build
+        run: npm run build
+
+      - name: Install the test browser
+        run: npx playwright install --with-deps chromium
+
+      - name: Browser tests
+        run: npm run test:e2e
+        env:
+          CI: "true"
+
+      - name: Keep the browser test report
+        if: failure()
+        uses: actions/upload-artifact@v4
+        with:
+          name: playwright-report
+          path: |
+            playwright-report/
+            test-results/
+          retention-days: 7

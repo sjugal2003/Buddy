@@ -243,14 +243,36 @@ npx.cmd supabase link --project-ref <project-ref>
 npx.cmd supabase db push
 ```
 
-Security tests on a plain PostgreSQL server (done in the cloud; needs `psql`):
+### Automated tests
 
-```bash
-psql -d <empty test db> -f supabase/tests/local-supabase-stub.sql
-psql -d <same db> -f supabase/migrations/20261023120000_core_schema.sql
-psql -d <same db> -f supabase/migrations/20261023120100_security.sql
-psql -d <same db> -v ON_ERROR_STOP=1 -f supabase/tests/security_test.sql
+| Command | What it checks | Needs |
+|---|---|---|
+| `npm.cmd test` | Unit tests (`tests/unit/`): routing rule matching, analytics, input rules | Nothing |
+| `npm.cmd run test:db` | `supabase/tests/security_test.sql` (118 checks); rolls itself back | Local Supabase |
+| `npm.cmd run test:e2e` | Browser tests (`tests/e2e/`, Playwright): sign-up, invitations, roles, issues, settings, routing, cross-company access | Local Supabase, test browser |
+
+Local Supabase needs Docker Desktop. One-time setup, then each time:
+
+```powershell
+npx.cmd playwright install chromium   # once: downloads the test browser
+npx.cmd supabase start                # starts a throwaway database on your PC
+npx.cmd supabase db reset             # optional: empty it and re-apply the migrations
+npm.cmd run test:db
+npm.cmd run test:e2e
+npx.cmd supabase stop
 ```
+
+Safety: `test:db` refuses any database not on this computer, and
+`playwright.config.ts` points the test server (port 3100) at the local
+Supabase from `npx supabase status`, never the values in `.env.local`. Stop
+`npm.cmd run dev` before `test:e2e` (both use the `.next` folder).
+Port 3100 is in `additional_redirect_urls` in `supabase/config.toml` so
+confirmation links work.
+
+GitHub Actions (`.github/workflows/checks.yml`) runs lint, type check, unit
+tests, a local Supabase, the database tests, a production build and the
+browser tests on every pull request and on `main`, with no secrets. A failed
+run keeps the Playwright report for 7 days (Actions > the run > Artifacts).
 
 ## 11. Important technical decisions
 
@@ -356,4 +378,7 @@ Completed:
   settings, 21/21 issue, 20/20 auth and 118/118 security checks against local
   Supabase on a production build (2026-10-23). PR #6.
 
-Remaining for Phase 2: stage 9 (automated tests in the repo), stage 10 (docs).
+- Stage 9: tests in the repo (Vitest unit tests, Playwright browser tests,
+  `test:db` runner) and GitHub Actions running all of them on every PR. PR #7.
+
+Remaining for Phase 2: stage 10 (docs).
