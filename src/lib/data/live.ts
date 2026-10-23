@@ -1,7 +1,8 @@
 import "server-only";
 import { cache } from "react";
 import { createClient } from "@/lib/supabase/server";
-import type { Channel, Intent, IssueStatus, Sentiment, Urgency } from "@/lib/types";
+import type { RoutableMessage } from "@/lib/routing";
+import type { Channel, Intent, IssueStatus, RoutingRule, RuleCondition, Sentiment, Urgency } from "@/lib/types";
 
 // Reads for real (signed-in) workspaces. Every query runs as the signed-in
 // user, so the database only returns rows from their own organisations.
@@ -332,4 +333,61 @@ export async function listCategories(organizationId: string): Promise<LiveCatego
     throw new Error("Could not load categories.");
   }
   return data ?? [];
+}
+
+/** Routing rules in the order they are checked (lowest position first). */
+export async function listRoutingRules(organizationId: string): Promise<RoutingRule[]> {
+  const supabase = await createClient();
+  const { data, error } = await supabase
+    .from("routing_rules")
+    .select("id, organization_id, name, enabled, match_mode, conditions, team_id")
+    .eq("organization_id", organizationId)
+    .order("position")
+    .order("created_at");
+  if (error) {
+    console.error("[listRoutingRules]", error.code, error.message);
+    throw new Error("Could not load routing rules.");
+  }
+  return (data ?? []).map((row) => ({
+    id: row.id,
+    workspaceId: row.organization_id,
+    name: row.name,
+    enabled: row.enabled,
+    match: row.match_mode as RoutingRule["match"],
+    conditions: row.conditions as RuleCondition[],
+    teamId: row.team_id,
+  }));
+}
+
+/** The parts of a real issue that routing rules look at. */
+export function toRoutable(issue: LiveIssue): RoutableMessage {
+  return {
+    subject: issue.subject,
+    message: issue.message,
+    channel: issue.channel,
+    analysis: {
+      categoryId: issue.categoryId ?? "",
+      urgency: issue.urgency,
+      sentiment: issue.sentiment,
+      intent: issue.intent,
+    },
+  };
+}
+
+/** Open issues that have no team yet, newest first. */
+export async function listUnroutedIssues(organizationId: string, limit: number): Promise<LiveIssue[]> {
+  const supabase = await createClient();
+  const { data, error } = await supabase
+    .from("issues")
+    .select(ISSUE_COLUMNS)
+    .eq("organization_id", organizationId)
+    .is("team_id", null)
+    .neq("status", "resolved")
+    .order("received_at", { ascending: false })
+    .limit(limit);
+  if (error) {
+    console.error("[listUnroutedIssues]", error.code, error.message);
+    throw new Error("Could not load the issues without a team.");
+  }
+  return (data ?? []).map(toIssue);
 }

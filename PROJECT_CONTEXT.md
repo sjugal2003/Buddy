@@ -84,10 +84,11 @@ Demo details:
 | `/auth/confirm` | route handler | Verifies the email link (`token_hash`, or `code` fallback), redirects only within the app | |
 | `/onboarding` | `components/org/create-org-form.tsx` | Create a company (`create_organization`), caller becomes owner | |
 | `/invite?token=` | `components/org/members.tsx` | Accept an invitation (`accept_invitation`) | |
-| `/w/[workspace]` | `app/w/[workspace]/page.tsx` | Real workspace home: open issue count, members, role changes (owners), remove/leave, invite links and open invitations (owners and admins) | Routing rules arrive in stage 8b |
+| `/w/[workspace]` | `app/w/[workspace]/page.tsx` | Real workspace home: open issue count, members, role changes (owners), remove/leave, invite links and open invitations (owners and admins) | |
 | `/w/[workspace]/issues` | `app/w/[workspace]/issues/page.tsx` | Issues from the database, newest first (up to 200), filter by status, urgency and team, search customer/reference/subject/message. Filters are in the address bar (plain GET form) | |
 | `/w/[workspace]/issues/new` | `components/issues/issue-forms.tsx` | Add an issue by hand: customer, channel, subject, message, urgency, sentiment, type, team, category (`createIssue`) | Classification is manual until Phase 3 |
 | `/w/[workspace]/issues/[issueId]` | `app/w/[workspace]/issues/[issueId]/page.tsx` | Issue detail, change status, assignee, team and category (any member of the workspace, `updateIssue`), history from `issue_activity` | |
+| `/w/[workspace]/routing` | `components/routing/routing-forms.tsx` | Routing rules from the database: add, edit (conditions on category, urgency, sentiment, type, channel, message text; match all or any), reorder, switch off, delete. Owners and admins edit (`app/actions/routing.ts`); members see them read-only. "Route open issues that have no team" gives each open issue without a team the team its first matching rule suggests (`routeUnassignedIssues`, up to 500 at a time). The issue page shows the matching rule and an "Apply suggestion" button (`applySuggestedTeam`, any member). Both recompute the match on the server and never overwrite a team someone already chose | Suggest only: no automatic routing when an issue arrives (Phase 3) |
 | `/w/[workspace]/settings` | `components/settings/settings-forms.tsx` | Company name, industry, time zone, first-response targets; add/rename/delete teams (name, lead, email, colour) and categories. Owners and admins edit (`app/actions/settings.ts`); members see it read-only | Team email is display only |
 
 Every `/w/[workspace]` page has a "Something went wrong, try again" screen
@@ -145,8 +146,8 @@ Every tenant-owned shape already carries a `workspaceId`.
 ## 7. Database status
 
 Applied to Jugal's hosted development project (`supabase db push`, 2026-10-23)
-up to the stage 7 migrations; the stage 8a migration must be pushed the same
-way. No production database exists.
+up to the stage 8a migration (stage 8b adds none). No production database
+exists.
 
 Files (`supabase/`):
 
@@ -156,7 +157,7 @@ Files (`supabase/`):
 | `migrations/20261023120000_core_schema.sql` | The 10 tables, checks, indexes, triggers (updated_at, resolved_at, issue history, profile on sign-up) |
 | `migrations/20261023120100_security.sql` | Table privileges allowlist, Row Level Security policies, membership functions |
 | `migrations/20261023160000_issue_category_update.sql` | Stage 8a: members may change an issue's category |
-| `tests/security_test.sql` | 107 checks of tenant isolation, roles, invitations, teams, categories and settings; runs in one transaction and rolls back |
+| `tests/security_test.sql` | 118 checks of tenant isolation, roles, invitations, teams, categories, settings and routing rules; runs in one transaction and rolls back |
 | `tests/local-supabase-stub.sql` | Minimal stand-in for Supabase's `auth` schema and roles, for plain PostgreSQL only. Never run on Supabase |
 
 Tables: `profiles`, `organizations`, `organization_members`,
@@ -282,7 +283,7 @@ psql -d <same db> -v ON_ERROR_STOP=1 -f supabase/tests/security_test.sql
 - Category changes are not written to an issue's history (the history
   trigger records status, team and assignee only).
 - Deleting a team or category clears it from issues; deleting a team that a
-  routing rule uses is refused until the rule changes (rules arrive in 8b).
+  routing rule uses is refused until the rule changes.
 - `first_response_at` is not set yet (needed for response-time reports).
 - Analytics are computed in the browser from the full issue list.
 - Demo issue history (`events`) is free text; real issues use the
@@ -348,6 +349,11 @@ Completed:
   (category update grant); removed `loading.tsx` (see section 5). 26/26
   settings checks (`e2e-settings-local.js`), 21/21 issue checks, 20/20 auth
   checks, 107/107 security checks against local Supabase (2026-10-23). PR #5.
+  Verified by Jugal on the hosted project.
+- Stage 8b: Routing tab with rules in the database (suggest only), "Apply
+  suggestion" on the issue page, "Route open issues that have no team". No
+  schema change. 24/24 routing checks (`e2e-routing-local.js`), 26/26
+  settings, 21/21 issue, 20/20 auth and 118/118 security checks against local
+  Supabase on a production build (2026-10-23). PR #6.
 
-Remaining for Phase 2: stage 8b (routing rules, suggest-only), stage 9
-(automated tests in the repo), stage 10 (docs).
+Remaining for Phase 2: stage 9 (automated tests in the repo), stage 10 (docs).

@@ -161,6 +161,8 @@ select set_config('t.issue_b', (select id::text from public.issues where referen
 select set_config('t.team_b', (select id::text from public.teams where name = 'B Support'), true);
 select set_config('t.team_a_support', (select id::text from public.teams where name = 'A Support'), true);
 insert into public.categories (organization_id, name) values (current_setting('t.org_b')::uuid, 'B Returns');
+select set_config('t.rule_a', (select id::text from public.routing_rules where name = 'Refunds to billing'), true);
+select set_config('t.rule_b', (select id::text from public.routing_rules where name = 'Orders'), true);
 select set_config('t.cat_a', (select id::text from public.categories where name = 'A Refunds'), true);
 select set_config('t.cat_b', (select id::text from public.categories where name = 'B Returns'), true);
 
@@ -281,6 +283,16 @@ select tests.expect_affected(format(
 select tests.expect_affected(format(
   $q$update public.organizations set target_hours_critical = 2 where id = %L$q$, current_setting('t.org_a')), 0,
   'member cannot change response targets');
+select tests.expect_affected(format(
+  $q$update public.routing_rules set enabled = false where id = %L$q$, current_setting('t.rule_a')), 0,
+  'member cannot switch a routing rule off');
+select tests.expect_affected(format(
+  $q$update public.routing_rules set position = 5 where id = %L$q$, current_setting('t.rule_a')), 0,
+  'member cannot reorder routing rules');
+select tests.expect_affected(format('delete from public.routing_rules where id = %L', current_setting('t.rule_a')), 0,
+  'member cannot delete routing rules');
+select tests.expect_rows(format('select 1 from public.routing_rules where id = %L', current_setting('t.rule_a')), 1,
+  'member can read company A routing rules');
 select tests.expect_affected(format(
   $q$update public.issues set status = 'resolved' where id = %L and resolved_at is null$q$, current_setting('t.issue_a')), 1,
   'member A resolves the issue');
@@ -411,6 +423,27 @@ select tests.expect_rows(format('select 1 from public.issues where id = %L and c
   'deleting a category clears it from issues');
 select tests.expect_affected(format('delete from public.categories where id = %L', current_setting('t.cat_b')), 0,
   'admin of A cannot delete company B categories');
+select tests.expect_affected(format(
+  $q$update public.routing_rules set enabled = false, position = 3, name = 'Refunds (paused)',
+     conditions = '[{"field":"urgency","value":"high"},{"field":"keyword","value":"refund"}]', match_mode = 'all'
+     where id = %L$q$, current_setting('t.rule_a')), 1,
+  'admin edits, pauses and reorders a routing rule');
+select tests.expect_error(format(
+  $q$update public.routing_rules set team_id = %L where id = %L$q$, current_setting('t.team_b'), current_setting('t.rule_a')),
+  'a rule in A cannot be pointed at a team in B');
+select tests.expect_error(format(
+  $q$update public.routing_rules set conditions = '[{"field":"keyword","value":""}]' where id = %L$q$, current_setting('t.rule_a')),
+  'a rule with an empty condition value is rejected');
+select tests.expect_error(format(
+  $q$update public.routing_rules set match_mode = 'some' where id = %L$q$, current_setting('t.rule_a')),
+  'a rule with an unknown match mode is rejected');
+select tests.expect_affected(format(
+  $q$update public.routing_rules set enabled = false where id = %L$q$, current_setting('t.rule_b')), 0,
+  'admin of A cannot change company B routing rules');
+select tests.expect_affected(format('delete from public.routing_rules where id = %L', current_setting('t.rule_b')), 0,
+  'admin of A cannot delete company B routing rules');
+select tests.expect_affected(format('delete from public.routing_rules where id = %L', current_setting('t.rule_a')), 1,
+  'admin deletes a routing rule');
 select tests.expect_error(format(
   $q$select public.set_member_role(%L, %L, 'owner')$q$, current_setting('t.org_a'), current_setting('t.a_member')),
   'admin cannot make themselves owner');

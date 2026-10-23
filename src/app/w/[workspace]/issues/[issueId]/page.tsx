@@ -12,9 +12,13 @@ import {
   listCategories,
   listIssueActivity,
   listMembers,
+  listRoutingRules,
   listTeams,
+  toRoutable,
   type IssueActivity,
 } from "@/lib/data/live";
+import { findMatchingRule } from "@/lib/routing";
+import { ApplySuggestionButton } from "@/components/routing/routing-forms";
 import { channelLabels, intentLabels, statusLabels } from "@/lib/labels";
 import { formatDateTime } from "@/lib/format";
 import { statusSchema } from "@/lib/validation";
@@ -64,6 +68,9 @@ export default async function IssuePage({
     listTeams(orgId),
     listCategories(orgId),
   ]);
+  const rules = await listRoutingRules(orgId);
+  const suggestedRule = findMatchingRule(rules, toRoutable(issue));
+  const suggestedTeam = teams.find((t) => t.id === suggestedRule?.teamId);
   const team = teams.find((t) => t.id === issue.teamId);
   const category = categories.find((c) => c.id === issue.categoryId);
   const { created } = await searchParams;
@@ -119,6 +126,27 @@ export default async function IssuePage({
               teams={teams}
               categories={categories}
             />
+            <div className="mt-4 border-t border-slate-100 pt-4 text-sm">
+              {suggestedRule && suggestedTeam ? (
+                <div className="space-y-2">
+                  <p className="text-slate-600">
+                    Routing rule <span className="font-medium text-slate-800">&ldquo;{suggestedRule.name}&rdquo;</span>{" "}
+                    suggests <span className="font-medium text-slate-800">{suggestedTeam.name}</span>.
+                  </p>
+                  {suggestedTeam.id !== issue.teamId && (
+                    <ApplySuggestionButton organizationId={orgId} issueId={issue.id} teamName={suggestedTeam.name} />
+                  )}
+                </div>
+              ) : (
+                <p className="text-slate-500">
+                  No{" "}
+                  <Link href={`/w/${slug}/routing`} className="text-brand-700 hover:underline">
+                    routing rule
+                  </Link>{" "}
+                  matches this issue.
+                </p>
+              )}
+            </div>
           </Card>
         </div>
 
