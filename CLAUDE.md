@@ -1,0 +1,62 @@
+# CLAUDE.md
+
+Buddy is a multi-tenant customer service intelligence hub (Next.js 15 App
+Router, React 19, TypeScript strict, Tailwind v4). Full background:
+`PROJECT_CONTEXT.md`. Keep both files accurate as work progresses.
+
+## Working rules
+
+- The owner is a beginner on Windows. Explain decisions in plain language and
+  give exact PowerShell commands using `npm.cmd` / `npx.cmd` (PowerShell may
+  block `npm.ps1`). Project path on their machine: `D:\Downloads\buddy-phase1\buddy`.
+- One phase at a time. Present a plan and get approval before major changes.
+  Work in small stages and say how to verify each one.
+- Preserve working Phase 1 UI. Do not rewrite components for taste.
+- No paid services or API keys unless explicitly approved for the phase.
+- Never pretend a demo feature is connected to a real service. Keep demo data
+  clearly labelled (`DemoNotice`).
+- Never show a success message unless the save actually succeeded.
+
+## Code layout
+
+- Pages: `src/app/w/[workspace]/*` render views from `src/components/views/*`.
+- Data access goes through `src/lib/data` only. Pages never import
+  `src/lib/demo-data` directly.
+- Shared types: `src/lib/types.ts`. Pure logic: `src/lib/analytics.ts`,
+  `src/lib/routing.ts`.
+
+## Database
+
+- Schema changes go in a NEW file in `supabase/migrations/` (never edit an
+  applied migration). Every new tenant table needs `organization_id`, RLS
+  enabled, an explicit grant allowlist, and policies using
+  `private.is_member` / `private.has_role`.
+- Add checks for any new access rule to `supabase/tests/security_test.sql`
+  and run it (see PROJECT_CONTEXT.md §10). Never apply migrations to a
+  production database without the owner's go-ahead.
+
+## Security rules
+
+- Every tenant table has Row Level Security; access comes from organisation
+  membership checked in the database, never from an ID sent by the browser.
+- Roles are `owner`, `admin`, `member`; nobody can grant themselves a role.
+- Secret / service-role keys never appear in browser code or `NEXT_PUBLIC_*`
+  variables, docs or chat. Use placeholder names.
+- Validate all client input on the server (zod) before touching the database.
+- Do not claim the app is secure or production-ready until policies and
+  cross-tenant tests have actually been run.
+- Do not print values from `.env*` files; report only whether a variable exists.
+
+## Checks before calling anything done
+
+```powershell
+npm.cmd run lint
+npx.cmd tsc --noEmit
+npm.cmd run build
+```
+
+Report tests as passing only if they were run. Say which tests still need a
+configured Supabase project.
+
+Do not run `npm audit fix --force`: it downgrades `eslint-config-next`. The
+remaining audit findings are dev-only lint tooling (see PROJECT_CONTEXT.md §12).
