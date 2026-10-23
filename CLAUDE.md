@@ -74,5 +74,6 @@ GitHub Actions runs all of them on every PR.
 Report tests as passing only if they were run. Say which tests still need a
 configured Supabase project.
 
-Do not run `npm audit fix --force`: it downgrades `eslint-config-next`. The
-remaining audit findings are dev-only lint tooling (see PROJECT_CONTEXT.md §12).
+Do not run `npm audit fix --force`: it makes breaking upgrades (for example it
+downgrades `eslint-config-next`). Upgrade the flagged package on its own
+instead (see PROJECT_CONTEXT.md §12). `npm audit` reported 0 on 2026-10-23.
