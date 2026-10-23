@@ -6,7 +6,15 @@ import { SentimentBadge, StatusBadge, UrgencyBadge } from "@/components/ui/badge
 import { FormMessage } from "@/components/auth/auth-card";
 import { UpdateIssueForm } from "@/components/issues/issue-forms";
 import { requireUser } from "@/lib/auth";
-import { getIssue, getMembershipBySlug, listIssueActivity, listMembers, type IssueActivity } from "@/lib/data/live";
+import {
+  getIssue,
+  getMembershipBySlug,
+  listCategories,
+  listIssueActivity,
+  listMembers,
+  listTeams,
+  type IssueActivity,
+} from "@/lib/data/live";
 import { channelLabels, intentLabels, statusLabels } from "@/lib/labels";
 import { formatDateTime } from "@/lib/format";
 import { statusSchema } from "@/lib/validation";
@@ -50,7 +58,14 @@ export default async function IssuePage({
   const orgId = membership.organization.id;
   const issue = await getIssue(orgId, issueId);
   if (!issue) notFound();
-  const [activity, members] = await Promise.all([listIssueActivity(orgId, issueId), listMembers(orgId)]);
+  const [activity, members, teams, categories] = await Promise.all([
+    listIssueActivity(orgId, issueId),
+    listMembers(orgId),
+    listTeams(orgId),
+    listCategories(orgId),
+  ]);
+  const team = teams.find((t) => t.id === issue.teamId);
+  const category = categories.find((c) => c.id === issue.categoryId);
   const { created } = await searchParams;
 
   return (
@@ -68,6 +83,15 @@ export default async function IssuePage({
           <UrgencyBadge urgency={issue.urgency} />
           <SentimentBadge sentiment={issue.sentiment} />
           <span className="rounded-full bg-slate-100 px-2 py-0.5 text-xs font-medium text-slate-600">{intentLabels[issue.intent]}</span>
+          {category && (
+            <span className="rounded-full bg-slate-100 px-2 py-0.5 text-xs font-medium text-slate-600">{category.name}</span>
+          )}
+          {team && (
+            <span className="inline-flex items-center gap-1.5 rounded-full bg-slate-100 px-2 py-0.5 text-xs font-medium text-slate-700">
+              <span className="h-2 w-2 rounded-full" style={{ background: team.color }} aria-hidden />
+              {team.name}
+            </span>
+          )}
         </div>
       </div>
 
@@ -89,7 +113,11 @@ export default async function IssuePage({
               issueId={issue.id}
               status={issue.status}
               assigneeName={issue.assigneeName}
+              teamId={issue.teamId}
+              categoryId={issue.categoryId}
               memberNames={members.map((m) => m.fullName)}
+              teams={teams}
+              categories={categories}
             />
           </Card>
         </div>

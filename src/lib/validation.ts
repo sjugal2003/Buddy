@@ -25,23 +25,25 @@ export const slugSchema = z
     "Use 3 to 40 lowercase letters, numbers or hyphens, starting and ending with a letter or number.",
   );
 
+export const timezoneSchema = z
+  .string()
+  .trim()
+  .min(1)
+  .max(64)
+  .refine((tz) => {
+    try {
+      new Intl.DateTimeFormat("en", { timeZone: tz });
+      return true;
+    } catch {
+      return false;
+    }
+  }, "Choose a valid time zone.");
+
 export const createOrganizationSchema = z.object({
   name: z.string().trim().min(1, "Enter the company name.").max(100, "Use 100 characters or fewer."),
   slug: slugSchema,
   industry: z.string().trim().max(100, "Use 100 characters or fewer."),
-  timezone: z
-    .string()
-    .trim()
-    .min(1)
-    .max(64)
-    .refine((tz) => {
-      try {
-        new Intl.DateTimeFormat("en", { timeZone: tz });
-        return true;
-      } catch {
-        return false;
-      }
-    }, "Choose a valid time zone."),
+  timezone: timezoneSchema,
 });
 
 export const roleSchema = z.enum(["owner", "admin", "member"]);
@@ -77,8 +79,13 @@ export const sentimentSchema = z.enum(["positive", "neutral", "negative", "very_
 export const intentSchema = z.enum(["complaint", "question", "request", "bug_report", "cancellation", "praise"]);
 export const statusSchema = z.enum(["new", "open", "in_progress", "waiting_on_customer", "escalated", "resolved"]);
 
+/** An optional link to a team or category: empty means none. */
+const optionalId = z.union([z.literal(""), z.string().uuid()]).transform((v) => v || null);
+
 export const createIssueSchema = z.object({
   organizationId: z.string().uuid(),
+  teamId: optionalId,
+  categoryId: optionalId,
   customerName: z.string().trim().min(1, "Enter the customer's name.").max(120, "Use 120 characters or fewer."),
   channel: channelSchema,
   subject: z.string().trim().min(1, "Enter a subject.").max(200, "Use 200 characters or fewer."),
@@ -91,6 +98,8 @@ export const createIssueSchema = z.object({
 export const updateIssueSchema = z.object({
   issueId: z.string().uuid(),
   status: statusSchema,
+  teamId: optionalId,
+  categoryId: optionalId,
   // Empty means nobody is assigned.
   assigneeName: z
     .string()
@@ -103,9 +112,44 @@ export const updateIssueSchema = z.object({
 export const issueFiltersSchema = z.object({
   status: z.union([statusSchema, z.enum(["active", "all"])]).catch("active"),
   urgency: z.union([urgencySchema, z.literal("")]).catch(""),
+  team: z.union([z.string().uuid(), z.literal("unassigned"), z.literal("")]).catch(""),
   // Only plain characters, so the search can't change the database query.
   q: z
     .string()
     .catch("")
     .transform((v) => v.replace(/[^\p{L}\p{N} @.'-]/gu, " ").replace(/\s+/g, " ").trim().slice(0, 100)),
 });
+
+// Settings (owners and admins; the database refuses anyone else).
+const targetHours = z.coerce
+  .number({ message: "Enter a number of hours." })
+  .int("Use whole hours.")
+  .min(1, "Use at least 1 hour.")
+  .max(720, "Use 720 hours (30 days) or fewer.");
+
+export const updateOrganizationSchema = z.object({
+  organizationId: z.string().uuid(),
+  name: z.string().trim().min(1, "Enter the company name.").max(100, "Use 100 characters or fewer."),
+  industry: z.string().trim().max(100, "Use 100 characters or fewer."),
+  timezone: timezoneSchema,
+  targetCritical: targetHours,
+  targetHigh: targetHours,
+  targetMedium: targetHours,
+  targetLow: targetHours,
+});
+
+const teamFields = {
+  name: z.string().trim().min(1, "Enter a team name.").max(80, "Use 80 characters or fewer."),
+  leadName: z.string().trim().max(80, "Use 80 characters or fewer."),
+  email: z.union([z.literal(""), emailSchema]),
+  color: z.string().regex(/^#[0-9a-fA-F]{6}$/, "Choose a colour."),
+};
+
+export const createTeamSchema = z.object({ organizationId: z.string().uuid(), ...teamFields });
+export const updateTeamSchema = z.object({ teamId: z.string().uuid(), ...teamFields });
+
+const categoryName = z.string().trim().min(1, "Enter a category name.").max(80, "Use 80 characters or fewer.");
+export const createCategorySchema = z.object({ organizationId: z.string().uuid(), name: categoryName });
+export const updateCategorySchema = z.object({ categoryId: z.string().uuid(), name: categoryName });
+
+export const idSchema = z.string().uuid();

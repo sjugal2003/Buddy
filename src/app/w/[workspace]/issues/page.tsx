@@ -5,12 +5,22 @@ import { PageHeader } from "@/components/ui/page-header";
 import { StatusBadge, UrgencyBadge, SentimentBadge } from "@/components/ui/badges";
 import { inputClass, primaryButton, secondaryButton } from "@/components/ui/form";
 import { requireUser } from "@/lib/auth";
-import { getMembershipBySlug, ISSUE_LIST_LIMIT, listIssues } from "@/lib/data/live";
+import { getMembershipBySlug, ISSUE_LIST_LIMIT, listIssues, listTeams, type LiveTeam } from "@/lib/data/live";
 import { channelLabels, statusLabels, statusOrder, urgencyLabels, urgencyOrder } from "@/lib/labels";
 import { formatDateTime } from "@/lib/format";
 import { issueFiltersSchema } from "@/lib/validation";
 
 export const dynamic = "force-dynamic";
+
+function TeamLabel({ team }: { team?: LiveTeam }) {
+  if (!team) return null;
+  return (
+    <span className="inline-flex items-center gap-1 text-xs text-slate-500">
+      <span className="h-2 w-2 rounded-full" style={{ background: team.color }} aria-hidden />
+      {team.name}
+    </span>
+  );
+}
 
 export default async function IssuesPage({
   params,
@@ -25,9 +35,13 @@ export default async function IssuesPage({
   if (!membership) notFound();
 
   const raw = await searchParams;
-  const filters = issueFiltersSchema.parse({ status: raw.status, urgency: raw.urgency, q: raw.q });
-  const issues = await listIssues(membership.organization.id, filters);
-  const filtered = filters.status !== "active" || filters.urgency !== "" || filters.q !== "";
+  const filters = issueFiltersSchema.parse({ status: raw.status, urgency: raw.urgency, team: raw.team, q: raw.q });
+  const [issues, teams] = await Promise.all([
+    listIssues(membership.organization.id, filters),
+    listTeams(membership.organization.id),
+  ]);
+  const teamById = new Map(teams.map((t) => [t.id, t]));
+  const filtered = filters.status !== "active" || filters.urgency !== "" || filters.team !== "" || filters.q !== "";
 
   return (
     <>
@@ -43,7 +57,7 @@ export default async function IssuesPage({
 
       <div className="rounded-xl border border-slate-200 bg-white shadow-sm">
         {/* A plain form: filters go in the address bar, so a filtered list can be bookmarked. */}
-        <form method="get" className="grid gap-2 border-b border-slate-200 p-4 sm:grid-cols-[1fr_auto_auto_auto]">
+        <form method="get" className="grid gap-2 border-b border-slate-200 p-4 sm:grid-cols-2 lg:grid-cols-[1fr_auto_auto_auto_auto]">
           <div className="relative">
             <Search className="pointer-events-none absolute left-3 top-1/2 h-4 w-4 -translate-y-1/2 text-slate-400" aria-hidden />
             <input
@@ -69,6 +83,15 @@ export default async function IssuesPage({
             {urgencyOrder.map((u) => (
               <option key={u} value={u}>
                 {urgencyLabels[u]}
+              </option>
+            ))}
+          </select>
+          <select name="team" defaultValue={filters.team} aria-label="Team" className={inputClass}>
+            <option value="">Any team</option>
+            <option value="unassigned">No team</option>
+            {teams.map((t) => (
+              <option key={t.id} value={t.id}>
+                {t.name}
               </option>
             ))}
           </select>
@@ -117,6 +140,7 @@ export default async function IssuesPage({
                     <UrgencyBadge urgency={issue.urgency} />
                     <SentimentBadge sentiment={issue.sentiment} />
                     <StatusBadge status={issue.status} />
+                    <TeamLabel team={issue.teamId ? teamById.get(issue.teamId) : undefined} />
                     <span className={`text-xs ${issue.assigneeName ? "text-slate-500" : "font-medium text-brand-700"}`}>
                       {issue.assigneeName ?? "Unassigned"}
                     </span>

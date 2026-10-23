@@ -160,6 +160,9 @@ select set_config('t.issue_a', (select id::text from public.issues where referen
 select set_config('t.issue_b', (select id::text from public.issues where reference = 'B-1'), true);
 select set_config('t.team_b', (select id::text from public.teams where name = 'B Support'), true);
 select set_config('t.team_a_support', (select id::text from public.teams where name = 'A Support'), true);
+insert into public.categories (organization_id, name) values (current_setting('t.org_b')::uuid, 'B Returns');
+select set_config('t.cat_a', (select id::text from public.categories where name = 'A Refunds'), true);
+select set_config('t.cat_b', (select id::text from public.categories where name = 'B Returns'), true);
 
 -- ---------------------------------------------------------------------------
 -- Signed-out visitor
@@ -264,6 +267,20 @@ select tests.expect_rows(format(
 select tests.expect_rows(format(
   $q$select 1 from public.issue_activity where issue_id = %L and kind = 'team_changed' and to_value = 'A Support'$q$,
   current_setting('t.issue_a')), 1, 'history shows the team name');
+select tests.expect_affected(format(
+  $q$update public.issues set category_id = %L where id = %L$q$, current_setting('t.cat_a'), current_setting('t.issue_a')), 1,
+  'member A sets a company A category on the issue');
+select tests.expect_error(format(
+  $q$update public.issues set category_id = %L where id = %L$q$, current_setting('t.cat_b'), current_setting('t.issue_a')),
+  'an issue in A cannot be given a category from B');
+select tests.expect_rows(format('select 1 from public.categories where organization_id = %L', current_setting('t.org_b')), 0,
+  'member A sees none of company B categories');
+select tests.expect_affected(format(
+  $q$update public.categories set name = 'Renamed' where id = %L$q$, current_setting('t.cat_a')), 0,
+  'member cannot rename categories');
+select tests.expect_affected(format(
+  $q$update public.organizations set target_hours_critical = 2 where id = %L$q$, current_setting('t.org_a')), 0,
+  'member cannot change response targets');
 select tests.expect_affected(format(
   $q$update public.issues set status = 'resolved' where id = %L and resolved_at is null$q$, current_setting('t.issue_a')), 1,
   'member A resolves the issue');
@@ -379,6 +396,21 @@ select tests.act_as(current_setting('t.a_member')::uuid);
 select tests.expect_affected(format(
   $q$insert into public.teams (organization_id, name) values (%L, 'A Retention')$q$, current_setting('t.org_a')), 1,
   'admin adds a team');
+select tests.expect_affected(format(
+  $q$update public.organizations set target_hours_critical = 2, industry = 'Retail' where id = %L$q$, current_setting('t.org_a')), 1,
+  'admin edits the company profile and response targets');
+select tests.expect_error(format(
+  $q$update public.organizations set target_hours_low = 0 where id = %L$q$, current_setting('t.org_a')),
+  'a response target below 1 hour is rejected');
+select tests.expect_affected(format(
+  $q$update public.categories set name = 'A Refunds and credits' where id = %L$q$, current_setting('t.cat_a')), 1,
+  'admin renames a category');
+select tests.expect_affected(format('delete from public.categories where id = %L', current_setting('t.cat_a')), 1,
+  'admin deletes a category');
+select tests.expect_rows(format('select 1 from public.issues where id = %L and category_id is null', current_setting('t.issue_a')), 1,
+  'deleting a category clears it from issues');
+select tests.expect_affected(format('delete from public.categories where id = %L', current_setting('t.cat_b')), 0,
+  'admin of A cannot delete company B categories');
 select tests.expect_error(format(
   $q$select public.set_member_role(%L, %L, 'owner')$q$, current_setting('t.org_a'), current_setting('t.a_member')),
   'admin cannot make themselves owner');

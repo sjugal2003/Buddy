@@ -112,6 +112,8 @@ export interface LiveIssue {
   urgency: Urgency;
   status: IssueStatus;
   assigneeName: string | null;
+  teamId: string | null;
+  categoryId: string | null;
   updatedAt: string;
 }
 
@@ -127,6 +129,8 @@ export interface IssueActivity {
 export interface IssueFilters {
   status: IssueStatus | "active" | "all";
   urgency: Urgency | "";
+  /** A team ID, "unassigned", or "" for any team. */
+  team: string;
   q: string;
 }
 
@@ -134,7 +138,7 @@ export interface IssueFilters {
 export const ISSUE_LIST_LIMIT = 200;
 
 const ISSUE_COLUMNS =
-  "id, reference, customer_name, channel, subject, message, received_at, sentiment, intent, urgency, status, assignee_name, updated_at";
+  "id, reference, customer_name, channel, subject, message, received_at, sentiment, intent, urgency, status, assignee_name, team_id, category_id, updated_at";
 
 type IssueRow = {
   id: string;
@@ -149,6 +153,8 @@ type IssueRow = {
   urgency: string;
   status: string;
   assignee_name: string | null;
+  team_id: string | null;
+  category_id: string | null;
   updated_at: string;
 };
 
@@ -166,6 +172,8 @@ function toIssue(row: IssueRow): LiveIssue {
     urgency: row.urgency as Urgency,
     status: row.status as IssueStatus,
     assigneeName: row.assignee_name,
+    teamId: row.team_id,
+    categoryId: row.category_id,
     updatedAt: row.updated_at,
   };
 }
@@ -182,6 +190,8 @@ export async function listIssues(organizationId: string, filters: IssueFilters):
   if (filters.status === "active") query = query.neq("status", "resolved");
   else if (filters.status !== "all") query = query.eq("status", filters.status);
   if (filters.urgency) query = query.eq("urgency", filters.urgency);
+  if (filters.team === "unassigned") query = query.is("team_id", null);
+  else if (filters.team) query = query.eq("team_id", filters.team);
   if (filters.q) {
     const like = `%${filters.q}%`;
     query = query.or(`subject.ilike."${like}",customer_name.ilike."${like}",reference.ilike."${like}",message.ilike."${like}"`);
@@ -244,4 +254,82 @@ export async function listIssueActivity(organizationId: string, issueId: string)
     at: row.created_at,
     actorName: (row.actor as unknown as { full_name: string } | null)?.full_name || null,
   }));
+}
+
+export interface OrganizationSettings {
+  name: string;
+  industry: string;
+  timezone: string;
+  targetHours: Record<Urgency, number>;
+}
+
+export interface LiveTeam {
+  id: string;
+  name: string;
+  leadName: string;
+  email: string;
+  color: string;
+}
+
+export interface LiveCategory {
+  id: string;
+  name: string;
+}
+
+export async function getOrganizationSettings(organizationId: string): Promise<OrganizationSettings> {
+  const supabase = await createClient();
+  const { data, error } = await supabase
+    .from("organizations")
+    .select("name, industry, timezone, target_hours_critical, target_hours_high, target_hours_medium, target_hours_low")
+    .eq("id", organizationId)
+    .single();
+  if (error) {
+    console.error("[getOrganizationSettings]", error.code, error.message);
+    throw new Error("Could not load the workspace settings.");
+  }
+  return {
+    name: data.name,
+    industry: data.industry,
+    timezone: data.timezone,
+    targetHours: {
+      critical: data.target_hours_critical,
+      high: data.target_hours_high,
+      medium: data.target_hours_medium,
+      low: data.target_hours_low,
+    },
+  };
+}
+
+export async function listTeams(organizationId: string): Promise<LiveTeam[]> {
+  const supabase = await createClient();
+  const { data, error } = await supabase
+    .from("teams")
+    .select("id, name, lead_name, email, color")
+    .eq("organization_id", organizationId)
+    .order("name");
+  if (error) {
+    console.error("[listTeams]", error.code, error.message);
+    throw new Error("Could not load teams.");
+  }
+  return (data ?? []).map((row) => ({
+    id: row.id,
+    name: row.name,
+    leadName: row.lead_name,
+    email: row.email,
+    color: row.color,
+  }));
+}
+
+export async function listCategories(organizationId: string): Promise<LiveCategory[]> {
+  const supabase = await createClient();
+  const { data, error } = await supabase
+    .from("categories")
+    .select("id, name")
+    .eq("organization_id", organizationId)
+    .order("name");
+  if (error) {
+    console.error("[listCategories]", error.code, error.message);
+    throw new Error("Could not load categories.");
+  }
+  return data ?? [];
 }

@@ -3,7 +3,7 @@
 import { useActionState } from "react";
 import { createIssue, updateIssue } from "@/app/actions/issues";
 import type { FormState } from "@/app/actions/types";
-import { Field, inputClass, primaryButton } from "@/components/ui/form";
+import { Field, inputClass, keepValuesOnSubmit, primaryButton } from "@/components/ui/form";
 import { FieldError, FormMessage } from "@/components/auth/auth-card";
 import {
   channelLabels,
@@ -14,6 +14,7 @@ import {
   urgencyLabels,
   urgencyOrder,
 } from "@/lib/labels";
+import type { LiveCategory, LiveTeam } from "@/lib/data/live";
 import type { Channel, Intent, IssueStatus, Sentiment } from "@/lib/types";
 
 function options<T extends string>(labels: Record<T, string>, order?: T[]) {
@@ -24,10 +25,62 @@ function options<T extends string>(labels: Record<T, string>, order?: T[]) {
   ));
 }
 
-export function NewIssueForm({ organizationId }: { organizationId: string }) {
+function TeamAndCategory({
+  teams,
+  categories,
+  teamId,
+  categoryId,
+  errors,
+}: {
+  teams: LiveTeam[];
+  categories: LiveCategory[];
+  teamId: string | null;
+  categoryId: string | null;
+  errors?: Record<string, string>;
+}) {
+  return (
+    <div className="grid gap-4 sm:grid-cols-2">
+      <Field label="Team" hint={teams.length === 0 ? "Owners and admins can add teams under Settings." : undefined}>
+        <select name="teamId" defaultValue={teamId ?? ""} className={inputClass}>
+          <option value="">No team yet</option>
+          {teams.map((t) => (
+            <option key={t.id} value={t.id}>
+              {t.name}
+            </option>
+          ))}
+        </select>
+        <FieldError message={errors?.teamId} />
+      </Field>
+      <Field
+        label="Category"
+        hint={categories.length === 0 ? "Owners and admins can add categories under Settings." : undefined}
+      >
+        <select name="categoryId" defaultValue={categoryId ?? ""} className={inputClass}>
+          <option value="">No category</option>
+          {categories.map((c) => (
+            <option key={c.id} value={c.id}>
+              {c.name}
+            </option>
+          ))}
+        </select>
+        <FieldError message={errors?.categoryId} />
+      </Field>
+    </div>
+  );
+}
+
+export function NewIssueForm({
+  organizationId,
+  teams,
+  categories,
+}: {
+  organizationId: string;
+  teams: LiveTeam[];
+  categories: LiveCategory[];
+}) {
   const [state, action, pending] = useActionState<FormState, FormData>(createIssue, {});
   return (
-    <form action={action} className="space-y-4" noValidate>
+    <form onSubmit={keepValuesOnSubmit(action)} className="space-y-4" noValidate>
       <input type="hidden" name="organizationId" value={organizationId} />
       <div className="grid gap-4 sm:grid-cols-2">
         <Field label="Customer name">
@@ -69,6 +122,13 @@ export function NewIssueForm({ organizationId }: { organizationId: string }) {
           <FieldError message={state.fieldErrors?.intent} />
         </Field>
       </div>
+      <TeamAndCategory
+        teams={teams}
+        categories={categories}
+        teamId={null}
+        categoryId={null}
+        errors={state.fieldErrors}
+      />
       <p className="text-xs text-slate-500">
         You set urgency, sentiment and type yourself for now. Automatic analysis comes in a later phase.
       </p>
@@ -84,12 +144,20 @@ export function UpdateIssueForm({
   issueId,
   status,
   assigneeName,
+  teamId,
+  categoryId,
   memberNames,
+  teams,
+  categories,
 }: {
   issueId: string;
   status: IssueStatus;
   assigneeName: string | null;
+  teamId: string | null;
+  categoryId: string | null;
   memberNames: string[];
+  teams: LiveTeam[];
+  categories: LiveCategory[];
 }) {
   const [state, action, pending] = useActionState<FormState, FormData>(updateIssue, {});
   // Keep an assignee who has since left the workspace selectable.
@@ -98,7 +166,7 @@ export function UpdateIssueForm({
   // redraws it with them; the message sits outside the form so it stays.
   return (
     <div className="space-y-4">
-      <form key={`${status}|${assigneeName ?? ""}`} action={action} className="space-y-4">
+      <form key={[status, assigneeName, teamId, categoryId].join("|")} action={action} className="space-y-4">
         <input type="hidden" name="issueId" value={issueId} />
         <div className="grid gap-4 sm:grid-cols-2">
           <Field label="Status">
@@ -119,6 +187,13 @@ export function UpdateIssueForm({
             <FieldError message={state.fieldErrors?.assigneeName} />
           </Field>
         </div>
+        <TeamAndCategory
+          teams={teams}
+          categories={categories}
+          teamId={teamId}
+          categoryId={categoryId}
+          errors={state.fieldErrors}
+        />
         <button type="submit" disabled={pending} className={primaryButton}>
           {pending ? "Saving…" : "Save changes"}
         </button>
