@@ -94,7 +94,12 @@ insert into auth.users (id, email, email_confirmed_at, raw_user_meta_data) value
   ('d0000000-0000-4000-8000-000000000001', 'invitee@example.com',   now(), '{"full_name":"Dana Invitee"}'),
   ('e0000000-0000-4000-8000-000000000001', 'late@example.com',      null,  '{"full_name":"Eli Unconfirmed"}');
 
-select tests.expect_rows('select 1 from public.profiles', 6, 'a profile is created for every sign-up');
+-- Only these six users, so accounts left by other tests don't change the count.
+select tests.expect_rows($q$select 1 from public.profiles where id in (
+  select id from auth.users where email like any (array[
+    'owner-a@example.com', 'member-a@example.com', 'owner-b@example.com',
+    'outsider@example.com', 'invitee@example.com', 'late@example.com']))$q$, 6,
+  'a profile is created for every sign-up');
 
 -- ---------------------------------------------------------------------------
 -- Setup through the app's own paths: each owner creates their company

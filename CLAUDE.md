@@ -61,8 +61,15 @@ Router, React 19, TypeScript strict, Tailwind v4). Full background:
 ```powershell
 npm.cmd run lint
 npx.cmd tsc --noEmit
+npm.cmd test
 npm.cmd run build
+npm.cmd run test:db    # needs local Supabase (npx.cmd supabase start)
+npm.cmd run test:e2e   # needs local Supabase
 ```
+
+New features get tests: pure logic in `tests/unit/`, user flows (including a
+cross-company check) in `tests/e2e/`, access rules in `security_test.sql`.
+GitHub Actions runs all of them on every PR.
 
 Report tests as passing only if they were run. Say which tests still need a
 configured Supabase project.
