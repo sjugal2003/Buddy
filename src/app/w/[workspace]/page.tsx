@@ -29,7 +29,7 @@ export default async function LiveWorkspaceHome({ params }: { params: Promise<{ 
     <>
       <PageHeader
         title={organization.name}
-        description={`You are ${role === "admin" ? "an" : "a"} ${roleLabels[role].toLowerCase()} of this workspace.`}
+        description={`You are ${role === "member" ? "a" : "an"} ${roleLabels[role].toLowerCase()} of this workspace.`}
       />
 
       <div className="mb-6 rounded-lg border border-brand-200 bg-brand-50 px-4 py-3 text-sm text-slate-700">
