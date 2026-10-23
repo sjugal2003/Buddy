@@ -1,6 +1,6 @@
 # Buddy: project context
 
-Last updated: 2026-10-23 (Phase 2, stage 6 done: sign-in, workspaces, invitations).
+Last updated: 2026-10-23 (Phase 2 complete: stages 5 to 10).
 Keep this file accurate. Update it at the end of every stage.
 
 ## 1. Product vision
@@ -32,26 +32,31 @@ department, track and escalate them, and see reports.
 | Charts | Recharts | 3.x |
 | Icons | lucide-react | 1.x |
 | Lint | ESLint 9 + eslint-config-next | 15.5.28 |
-| Runtime | Node.js | 20 or newer (checked on 22) |
-| Database and sign-in | Supabase (Postgres + Auth + Row Level Security) | **planned, Phase 2, not installed yet** |
+| Runtime | Node.js | 22 recommended; 20.19 or newer (Vitest's tooling needs it). CI uses 20 |
+| Database and sign-in | Supabase (Postgres 17 + Auth + Row Level Security), hosted free dev project | `@supabase/supabase-js` 2.118, `@supabase/ssr` 0.12, CLI `supabase` 2.122 (dev dependency) |
+| Input validation | zod | 4.x |
+| Unit tests | Vitest | 4.1.x |
+| Browser tests | Playwright (`@playwright/test`) | 1.56 |
+| Database test runner | `pg` (Node PostgreSQL client) | 8.x |
 
 `package.json` pins `postcss` to `^8.5.31` through `overrides` (security fix).
 
 ## 4. Current architecture
 
 ```
-Browser ──► Next.js server (renders pages)
-              │
-              └─► src/lib/data/index.ts   ← the only data access module
-                    └─► src/lib/demo-data/*   (fictional, generated in code)
+Real workspaces (/w/<slug>):
+  Browser ──► Next.js server ──► Supabase (as the signed-in user)
+                │                   └─ Row Level Security decides which rows
+                ├─ reads:  src/lib/data/live.ts
+                └─ writes: server actions in src/app/actions/ (zod first)
 
-In the browser:
-  WorkspaceProvider (src/components/workspace/workspace-store.tsx)
-    holds the workspace's data in React state and saves edits to
-    localStorage only (key "buddy-demo:<workspaceId>").
+Demo (/demo/<slug>):
+  Browser ──► Next.js server ──► src/lib/data/index.ts ──► src/lib/demo-data/*
+  In the browser, WorkspaceProvider keeps edits in React state and
+  localStorage only (key "buddy-demo:<workspaceId>").
 ```
 
-Since stage 6 there are two halves:
+There are two halves:
 
 - **Demo** (`src/app/demo/[workspace]/...`): the Phase 1 app, unchanged
   apart from its URL. Fictional data, no sign-in, never touches the database.
@@ -73,7 +78,8 @@ Demo details:
 - Dashboard, report and intelligence numbers are calculated in the browser by
   `src/lib/analytics.ts` from the full issue list.
 - Routing rules are matched by `src/lib/routing.ts` (pure function, first
-  enabled matching rule wins).
+  enabled matching rule wins). The real workspaces use the same function on
+  the server.
 
 ## 5. Existing features and routes
 
@@ -100,8 +106,9 @@ previous page stays on screen.
 occasionally never finish: the save happened in the database but the button
 stayed on "Saving…". Found on 2026-10-23 with repeated quick saves (about 1
 in 6 hung); without it, 0 of 60+ hung. Removed in stage 8a. Don't add a
-`loading.tsx` above pages that use server actions without re-running the
-"six quick saves" check in `e2e-issues-local.js` against a production build.
+`loading.tsx` above pages that use server actions: the "six quick saves"
+step in `tests/e2e/issues.spec.ts` runs against a production build in CI and
+would catch it.
 
 Forms people type a lot into use `keepValuesOnSubmit` (`components/ui/form.tsx`)
 so a validation error doesn't clear what they typed (React 19 otherwise
@@ -136,12 +143,23 @@ Every tenant-owned shape already carries a `workspaceId`.
 
 ## 6. Current data flow
 
-1. Request for `/w/brightline/inbox`.
-2. Layout calls `src/lib/data` functions, which filter the in-code demo arrays
-   by `workspaceId`.
-3. The full workspace data is sent to the browser.
-4. A status change or reassignment updates React state and localStorage.
-   Nothing is sent to a server. Reload keeps the change in that browser only.
+Real workspace, for example changing an issue's status:
+
+1. `/w/outskill/issues/<id>` loads. `app/w/[workspace]/layout.tsx` sends
+   signed-out visitors to sign in, then looks up their membership of the
+   organisation by slug **as the signed-in user**. If there is none (or Row
+   Level Security hides it), the page is "not found".
+2. The page reads the issue, history, teams, categories and routing rules
+   through `src/lib/data/live.ts`.
+3. Saving runs the `updateIssue` server action: it checks the session,
+   validates with zod, updates the row and asks for it back (0 rows means not
+   allowed). A database trigger writes the history row.
+4. The action revalidates the workspace pages and returns "Changes saved."
+   only after the database confirmed the change.
+
+Demo, for example `/demo/brightline/inbox`: the layout loads the fictional
+workspace from `src/lib/data`, sends it all to the browser, and edits stay in
+React state and localStorage. Nothing is sent to a server.
 
 ## 7. Database status
 
@@ -191,8 +209,7 @@ Supabase (auth, REST API, email catcher) on 2026-10-23: 20 checks passed,
 including email confirmation, company creation, invitations accepted only
 by the invited email, a user of another company getting 404, role changes,
 "last owner cannot leave", sign-out, and the demo working while signed out.
-That script is kept at `/mnt/project-files/buddy-phase2/e2e-auth-local.js`
-(cloud project folder) until stage 9 adds automated tests to the repo.
+Those checks now live in `tests/e2e/auth.spec.ts` and run on every PR.
 
 - Signed-out visitors to `/w/...`, `/onboarding` or `/invite` are sent to
   `/login?next=...`; `next` only accepts paths inside the app.
@@ -283,21 +300,29 @@ run keeps the Playwright report for 7 days (Actions > the run > Artifacts).
   check membership.
 - **Honest demo labelling.** Anything not real says so on screen.
 - **No paid services in Phases 1 and 2** (no AI API, email provider, hosting).
-- Phase 2 direction (pending approval): Supabase Auth with cookie sessions via
-  `@supabase/ssr`, Row Level Security on every tenant table, Next.js server
-  actions with `zod` validation for writes, version-controlled SQL migrations
-  in `supabase/migrations/`.
+- **Phase 2 choices (approved 2026-10-23):** Supabase Auth with cookie
+  sessions via `@supabase/ssr`; Row Level Security on every tenant table, with
+  an explicit column grant allowlist; Next.js server actions with zod
+  validation for writes; SQL migrations in `supabase/migrations/`; the app
+  never uses the secret key.
+- **Routing suggests, people decide.** Rules never move an issue on their own
+  until Phase 3; "Apply suggestion" and "Route open issues that have no team"
+  are buttons.
+- **Saves report success only after the database confirms**, and updates ask
+  for the row back, because a refused update changes 0 rows without an error.
+- **Tests run against a local Supabase**, never the hosted project:
+  `test:db` refuses other hosts and the browser tests take their settings from
+  `npx supabase status`.
 
 ## 12. Known bugs, limitations and technical debt
 
-- **npm audit:** with the current lock file there are 5 high findings, all in
-  one chain: `braces` → `micromatch` → `fast-glob` → `@next/eslint-plugin-next`
-  → `eslint-config-next`. This is development-only lint tooling;
-  `npm audit --omit=dev` reports 0. No patched `braces` exists. `npm audit fix
-  --force` would downgrade `eslint-config-next` to 14.x, which does not match
-  Next 15, so **do not run it**. If a machine reports 7 (1 moderate, 6 high), it
-  has an older lock file without the postcss fix: re-extract the latest copy and
-  run `npm.cmd install`.
+- **npm audit:** 0 findings on 2026-10-23 (stage 10 moved Vitest from 3.2 to
+  4.1.12; 3.2 had 1 moderate and 2 critical advisories in its test-runner
+  dependencies). Still **never run `npm audit fix --force`**: it makes
+  breaking upgrades, such as downgrading `eslint-config-next` to a version
+  that doesn't match Next 15. If findings appear, check whether
+  `npm audit --omit=dev` (what the app ships) is still 0 and upgrade the
+  package named, one at a time.
 - Demo pages load the whole workspace into the browser. Real workspaces
   filter on the server but show at most 200 issues; paging comes later.
 - The assignee is a name picked from the workspace's members (stored as
@@ -316,8 +341,9 @@ run keeps the Playwright report for 7 days (Actions > the run > Artifacts).
 - Old `/w/brightline` demo links now need sign-in; the demo is at `/demo/...`.
 - "Now" is a fixed date (`DEMO_NOW = 2026-10-20`) so demo data is repeatable.
 - Team `lead` and `email` are display text, not linked to user accounts.
-- Database security tests exist (`supabase/tests/security_test.sql`) but no
-  app-level automated tests yet.
+- Browser tests cover the main flows, not every error message; the demo
+  pages have no automated tests beyond "all 8 load".
+- Running the database and browser tests on Windows needs Docker Desktop.
 - Code lives in the private GitHub repo `sjugal2003/Buddy` (from 2026-10-23).
   Each stage arrives as a pull request.
 
@@ -339,7 +365,8 @@ run keeps the Playwright report for 7 days (Actions > the run > Artifacts).
 ## 14. Planned phases
 
 1. Polished frontend with demo data. **Done (2026-10-23).**
-2. Database, authentication, tenant isolation. **In planning.**
+2. Database, authentication, tenant isolation. **Done (2026-10-23).** Also
+   brought forward from phase 4: issue tracking and suggest-only routing.
 3. AI analysis of customer messages.
 4. Routing, issue tracking, escalation.
 5. Supported data-source integrations.
@@ -376,9 +403,15 @@ Completed:
   suggestion" on the issue page, "Route open issues that have no team". No
   schema change. 24/24 routing checks (`e2e-routing-local.js`), 26/26
   settings, 21/21 issue, 20/20 auth and 118/118 security checks against local
-  Supabase on a production build (2026-10-23). PR #6.
-
+  Supabase on a production build (2026-10-23). PR #6. Verified by Jugal on
+  the hosted project.
 - Stage 9: tests in the repo (Vitest unit tests, Playwright browser tests,
-  `test:db` runner) and GitHub Actions running all of them on every PR. PR #7.
+  `test:db` runner) and GitHub Actions running all of them on every PR; first
+  CI run green. PR #7. `npm.cmd test` checked by Jugal on Windows.
+- Stage 10: docs brought up to date (README setup, Windows testing and
+  troubleshooting; this file; CLAUDE.md); Vitest upgraded to clear the audit
+  findings. PR #8.
 
-Remaining for Phase 2: stage 10 (docs).
+Phase 2 is complete. Before Phase 3 (AI analysis), agree with Jugal which
+provider to use and whether a paid API is acceptable: no paid services have
+been approved yet.

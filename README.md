@@ -1,15 +1,16 @@
 # Buddy: Customer Service Intelligence Hub
 
-**Status: Phase 2 in progress.** Sign-in, company workspaces, invitations,
-roles, customer issues, teams, categories, company settings and routing rules
-work against a Supabase database protected by Row Level Security. Routing
-rules only *suggest* a team: nothing moves an issue until a person presses a
-button. There is no live AI and no connection to outside
-services. It is **not production-ready** and must not hold real customer data yet.
+**Status: Phase 2 complete (2026-10-23).** Sign-in, company workspaces,
+invitations, roles, customer issues, teams, categories, company settings and
+routing rules work against a Supabase database protected by Row Level
+Security, with automated tests on every change. Routing rules only *suggest* a
+team: nothing moves an issue until a person presses a button. Issues are typed
+in by hand; there is no live AI and no connection to outside services yet. It
+is **not production-ready** and must not hold real customer data yet.
 
 ## Run it on Windows
 
-You need **Node.js 20 or newer** and **Git**. In PowerShell:
+You need **Node.js 22** (20.19 or newer also works) and **Git**. In PowerShell:
 
 ```powershell
 node -v
@@ -137,10 +138,54 @@ npm.cmd run build       # full production build
 npm.cmd test            # unit tests (no setup needed)
 ```
 
-The database security tests (`npm.cmd run test:db`, 118 checks) and browser
-tests (`npm.cmd run test:e2e`) need a local Supabase in Docker Desktop; see
-`PROJECT_CONTEXT.md` section 10. GitHub runs all of these automatically on
-every pull request (the **Checks** tick or cross on the PR page).
+GitHub runs all of these, plus the database and browser tests below, on
+every pull request: the **Checks** tick or cross on the PR page. You only need
+the next section if you want to run those yourself.
+
+### Database and browser tests on your PC (optional)
+
+These run against a throwaway copy of Supabase on your own computer, never
+your hosted project. It runs inside **Docker Desktop** (free for personal use).
+
+One-time setup:
+
+```powershell
+winget install Docker.DockerDesktop
+```
+
+Restart Windows, open Docker Desktop once and wait until it says it is
+running. Then, in the `Buddy` folder:
+
+```powershell
+npx.cmd playwright install chromium
+```
+
+Each time (stop `npm.cmd run dev` first; the browser tests start their own
+copy of the app on port 3100):
+
+```powershell
+npx.cmd supabase start     # first time downloads a few GB; later about 30 seconds
+npm.cmd run test:db        # should end with "118 security checks passed"
+npm.cmd run test:e2e       # should end with "4 passed"
+npx.cmd supabase stop
+```
+
+If a browser test fails, `npx.cmd playwright show-report` opens a page showing
+which step failed, with a screenshot.
+
+## Troubleshooting
+
+| What you see | What to do |
+|---|---|
+| `npm.ps1 cannot be loaded because running scripts is disabled` | Use `npm.cmd` / `npx.cmd` instead of `npm` / `npx` |
+| Sign-up says "We couldn't create your account" and the PowerShell window shows `Invalid path specified` | `NEXT_PUBLIC_SUPABASE_URL` in `.env.local` should be just `https://<project-ref>.supabase.co` (Buddy now ignores anything after it, but check for typos) |
+| The confirmation link says it expired or is invalid | Open it in the same browser you signed up in, or just sign in: your email is confirmed anyway |
+| No confirmation email arrives | Supabase's free sender allows only a few emails per hour. Wait, then try again |
+| A new feature says a column or permission is missing | Run `npx.cmd supabase db push` to apply new migrations |
+| The home page says "Sign-in is not set up on this computer yet" | `.env.local` is missing or misnamed; it must be in the `Buddy` folder itself |
+| `Port 3000 is in use, trying 3001` | Another `npm.cmd run dev` is still running; close it, because sign-in links only return to port 3000 |
+| `npm.cmd install` lists vulnerabilities | Tell Claude; never run `npm audit fix --force` (it breaks the lint tools) |
+| `npx.cmd supabase start` says it cannot connect to Docker | Open Docker Desktop and wait until it is running |
 
 ## Pages
 
@@ -172,9 +217,11 @@ src/
 supabase/
   migrations/             database tables and security rules
   tests/                  database security tests
+  templates/              email template used by the local Supabase
 tests/unit/               unit tests (Vitest)
 tests/e2e/                browser tests (Playwright)
-  templates/              email templates
+scripts/test-db.mjs       runs the database security tests locally
+.github/workflows/        the automatic checks GitHub runs on every PR
 ```
 
 More detail: `PROJECT_CONTEXT.md`. Rules for working on the code: `CLAUDE.md`.
