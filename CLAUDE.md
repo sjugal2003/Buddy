@@ -8,7 +8,7 @@ Router, React 19, TypeScript strict, Tailwind v4). Full background:
 
 - The owner is a beginner on Windows. Explain decisions in plain language and
   give exact PowerShell commands using `npm.cmd` / `npx.cmd` (PowerShell may
-  block `npm.ps1`). Project path on their machine: `D:\Downloads\buddy-phase1\buddy`.
+  block `npm.ps1`). Project path on their machine: `D:\Buddy`.
 - One phase at a time. Present a plan and get approval before major changes.
   Work in small stages and say how to verify each one.
 - Preserve working Phase 1 UI. Do not rewrite components for taste.

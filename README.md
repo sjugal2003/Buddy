@@ -78,8 +78,11 @@ Do this once. Use a **development** project only.
 4. **Sign-in settings** in the Supabase dashboard:
    - Authentication > URL Configuration: **Site URL** `http://localhost:3000`,
      and add `http://localhost:3000/**` under **Redirect URLs**.
-   - Authentication > Email Templates > **Confirm signup**: replace the message
-     body with the contents of `supabase/templates/confirmation.html`.
+   - Leave the **Confirm signup** email template as it is. (Supabase only lets
+     you edit it after setting up your own email server, and Buddy works with
+     the default one.) Open the confirmation link in the **same browser** you
+     signed up in. If you open it elsewhere, your email is still confirmed:
+     just sign in.
    - Authentication > Sign In / Providers > Email: keep **Confirm email** on.
      Invitations rely on confirmed email addresses.
 

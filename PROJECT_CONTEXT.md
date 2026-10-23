@@ -173,6 +173,12 @@ That script is kept at `/mnt/project-files/buddy-phase2/e2e-auth-local.js`
 - Signed-out visitors to `/w/...`, `/onboarding` or `/invite` are sent to
   `/login?next=...`; `next` only accepts paths inside the app.
 - Sign-up needs a confirmed email (Supabase setting "Confirm email" on).
+- Two kinds of confirmation link both work. Supabase's **default** template
+  (hosted projects without custom SMTP can't edit it) goes through Supabase
+  and returns to `/auth/confirm?code=...`; that code only works in the same
+  browser that signed up. The custom template in `supabase/templates/`
+  (used by the local CLI) sends `token_hash` and works in any browser. Both
+  were checked with the e2e script on local Supabase on 2026-10-23.
 - Buddy sends no email of its own. Invitations produce a one-time link the
   inviter copies; only its SHA-256 hash is stored.
 - **Not yet tested against Jugal's hosted Supabase project.**
@@ -193,7 +199,7 @@ never commit values. Without them the app runs in demo-only mode.
 Use `npm.cmd` because PowerShell may block `npm.ps1`.
 
 ```powershell
-cd D:\Downloads\buddy-phase1\buddy
+cd D:\Buddy
 npm.cmd install          # install dependencies
 npm.cmd run dev          # start at http://localhost:3000 (Ctrl + C to stop)
 npm.cmd run lint         # lint

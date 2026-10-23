@@ -13,8 +13,9 @@ export async function GET(request: NextRequest) {
   const type = searchParams.get("type") as EmailOtpType | null;
   const next = safeNextPath(searchParams.get("next"), "/onboarding");
 
-  // Older-style links carry a one-time code instead of a token hash. That only
-  // works in the browser that signed up, so the email template uses token_hash.
+  // Supabase's default email template sends people back here with a one-time
+  // code. That only works in the browser that signed up; our custom template
+  // (supabase/templates) uses token_hash, which works in any browser.
   const code = searchParams.get("code");
   if (isSupabaseConfigured() && code) {
     const supabase = await createClient();
