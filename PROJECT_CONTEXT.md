@@ -1,6 +1,6 @@
 # Buddy: project context
 
-Last updated: 2026-10-23 (Phase 2, stage 5 done: database migrations and security rules).
+Last updated: 2026-10-23 (Phase 2, stage 6 done: sign-in, workspaces, invitations).
 Keep this file accurate. Update it at the end of every stage.
 
 ## 1. Product vision
@@ -37,7 +37,7 @@ department, track and escalate them, and see reports.
 
 `package.json` pins `postcss` to `^8.5.31` through `overrides` (security fix).
 
-## 4. Current architecture (end of Phase 1)
+## 4. Current architecture
 
 ```
 Browser ──► Next.js server (renders pages)
@@ -51,7 +51,21 @@ In the browser:
     localStorage only (key "buddy-demo:<workspaceId>").
 ```
 
-- `src/app/w/[workspace]/layout.tsx` loads every record for one workspace
+Since stage 6 there are two halves:
+
+- **Demo** (`src/app/demo/[workspace]/...`): the Phase 1 app, unchanged
+  apart from its URL. Fictional data, no sign-in, never touches the database.
+- **Real workspaces** (`src/app/w/[workspace]/...`): require sign-in. The
+  server reads the Supabase session cookie (`src/lib/supabase/server.ts`),
+  `src/middleware.ts` refreshes it on each request, and every query runs as
+  the user so Row Level Security limits it to their organisations. Writes go
+  through server actions in `src/app/actions/` with zod validation
+  (`src/lib/validation.ts`) and plain-language errors (`src/lib/errors.ts`).
+  Reads live in `src/lib/data/live.ts`.
+
+Demo details:
+
+- `src/app/demo/[workspace]/layout.tsx` loads every record for one workspace
   (teams, categories, issues, rules, automation) and passes it all to the
   `WorkspaceProvider`. Pages read from the provider with `useWorkspace()`.
 - All pages are prerendered at build time (`generateStaticParams`) for the
@@ -65,15 +79,25 @@ In the browser:
 
 | Route | View component | What works | Demo-only |
 |---|---|---|---|
-| `/` | redirect | Sends you to the first workspace | |
-| `/w/[workspace]` | `dashboard-view.tsx` | Stats, sentiment trend, recurring problems, urgent list, team performance | Data is fictional |
-| `/w/[workspace]/inbox` | `inbox-view.tsx`, `issue-detail.tsx` | Search, filters, sort, detail panel, status change, team reassignment, "apply suggested rule" | Edits saved in this browser only |
-| `/w/[workspace]/intelligence` | `intelligence-view.tsx` | Sentiment, intent, themes, category × urgency, churn signals | Labels are hand-written, not AI |
-| `/w/[workspace]/routing` | `routing-view.tsx` | Create/edit/reorder/enable/delete rules, test a rule, route unassigned issues | Saved in this browser only |
-| `/w/[workspace]/data-sources` | `data-sources-view.tsx` | Catalogue of planned sources and the permission each needs | Nothing is connected |
-| `/w/[workspace]/reports` | `reports-view.tsx` | Per-team trends, unresolved issues, people stats, print | |
-| `/w/[workspace]/automation` | `automation-view.tsx` | Schedule, escalation and email-notification settings, "would escalate" count | Nothing runs, no email is sent |
-| `/w/[workspace]/settings` | `settings-view.tsx` | Company profile, targets, teams, categories, reset demo data | Read-only |
+| `/` | `app/page.tsx` | Home: sign in, sign up, or open the demo. Signed-in users go to their first workspace or `/onboarding`. Shows a notice when Supabase is not configured | |
+| `/signup`, `/login`, `/check-email` | `components/auth/*` | Account pages with validation and plain errors | |
+| `/auth/confirm` | route handler | Verifies the email link (`token_hash`, or `code` fallback), redirects only within the app | |
+| `/onboarding` | `components/org/create-org-form.tsx` | Create a company (`create_organization`), caller becomes owner | |
+| `/invite?token=` | `components/org/members.tsx` | Accept an invitation (`accept_invitation`) | |
+| `/w/[workspace]` | `app/w/[workspace]/page.tsx` | Real workspace home: members, role changes (owners), remove/leave, invite links and open invitations (owners and admins) | Issues, teams, rules and settings arrive in stages 7 and 8 |
+
+Demo pages (all under `/demo/[workspace]`, fictional data):
+
+| Route | View component | What works | Demo-only |
+|---|---|---|---|
+| `/demo/[workspace]` | `dashboard-view.tsx` | Stats, sentiment trend, recurring problems, urgent list, team performance | Data is fictional |
+| `/demo/[workspace]/inbox` | `inbox-view.tsx`, `issue-detail.tsx` | Search, filters, sort, detail panel, status change, team reassignment, "apply suggested rule" | Edits saved in this browser only |
+| `/demo/[workspace]/intelligence` | `intelligence-view.tsx` | Sentiment, intent, themes, category × urgency, churn signals | Labels are hand-written, not AI |
+| `/demo/[workspace]/routing` | `routing-view.tsx` | Create/edit/reorder/enable/delete rules, test a rule, route unassigned issues | Saved in this browser only |
+| `/demo/[workspace]/data-sources` | `data-sources-view.tsx` | Catalogue of planned sources and the permission each needs | Nothing is connected |
+| `/demo/[workspace]/reports` | `reports-view.tsx` | Per-team trends, unresolved issues, people stats, print | |
+| `/demo/[workspace]/automation` | `automation-view.tsx` | Schedule, escalation and email-notification settings, "would escalate" count | Nothing runs, no email is sent |
+| `/demo/[workspace]/settings` | `settings-view.tsx` | Company profile, targets, teams, categories, reset demo data | Read-only |
 
 Demo workspaces (fictional): `brightline` (Brightline Broadband) and
 `cedarleaf` (Cedarleaf Home). Every page shows a `DemoNotice` where something
@@ -137,22 +161,32 @@ How access works:
 
 ## 8. Authentication status
 
-None. There is no sign-in. The workspace switcher shows every workspace and
-**is not security**. Anyone who can open the app can see both demo workspaces,
-which is acceptable only because the data is fictional.
+Implemented in stage 6 with Supabase Auth (email and password) and
+`@supabase/ssr` cookie sessions. Tested end to end against a full local
+Supabase (auth, REST API, email catcher) on 2026-10-23: 20 checks passed,
+including email confirmation, company creation, invitations accepted only
+by the invited email, a user of another company getting 404, role changes,
+"last owner cannot leave", sign-out, and the demo working while signed out.
+That script is kept at `/mnt/project-files/buddy-phase2/e2e-auth-local.js`
+(cloud project folder) until stage 9 adds automated tests to the repo.
+
+- Signed-out visitors to `/w/...`, `/onboarding` or `/invite` are sent to
+  `/login?next=...`; `next` only accepts paths inside the app.
+- Sign-up needs a confirmed email (Supabase setting "Confirm email" on).
+- Buddy sends no email of its own. Invitations produce a one-time link the
+  inviter copies; only its SHA-256 hash is stored.
+- **Not yet tested against Jugal's hosted Supabase project.**
 
 ## 9. Environment variables
 
-Phase 1 needs none. No `.env*` file exists in the project (checked 2026-10-23).
-`.gitignore` ignores `.env*`.
-
-Planned for Phase 2 (names only, never commit values):
+Set in `.env.local` (ignored by Git; template in `.env.example`). Names only,
+never commit values. Without them the app runs in demo-only mode.
 
 | Name | Exposed to browser? | Purpose |
 |---|---|---|
 | `NEXT_PUBLIC_SUPABASE_URL` | Yes (safe) | Address of the Supabase project |
-| `NEXT_PUBLIC_SUPABASE_PUBLISHABLE_KEY` | Yes (safe, RLS protects data) | Public key used for sign-in and user-scoped queries |
-| `SUPABASE_SECRET_KEY` | **Never** | Not needed by the app in Phase 2. Only if a local test script needs to create test users. Server/terminal only |
+| `NEXT_PUBLIC_SUPABASE_PUBLISHABLE_KEY` | Yes (safe, RLS protects data) | Sign-in and user-scoped queries |
+| Secret key (`sb_secret_...`) | **Never** | Not used by the app. Must never be added |
 
 ## 10. Development commands (Windows PowerShell)
 
@@ -214,7 +248,10 @@ psql -d <same db> -v ON_ERROR_STOP=1 -f supabase/tests/security_test.sql
 - Analytics are computed in the browser from the full issue list.
 - Issue history (`events`) is free text inside each issue; it should become a
   proper activity table.
-- Demo IDs are strings like `ws_brightline`; the database will use UUIDs.
+- Demo IDs are strings like `ws_brightline`; the database uses UUIDs.
+- Member names come from `profiles.full_name`; email addresses of other
+  members are not shown (profiles has no email column).
+- Old `/w/brightline` demo links now need sign-in; the demo is at `/demo/...`.
 - "Now" is a fixed date (`DEMO_NOW = 2026-10-20`) so demo data is repeatable.
 - Team `lead` and `email` are display text, not linked to user accounts.
 - Database security tests exist (`supabase/tests/security_test.sql`) but no
@@ -250,13 +287,16 @@ psql -d <same db> -v ON_ERROR_STOP=1 -f supabase/tests/security_test.sql
 ## 15. Completed and remaining work
 
 Completed:
-- Phase 1 frontend; lint, type check and build pass; all pages return 200 and
-  unknown workspaces return 404 (re-verified 2026-10-23).
+- Phase 1 frontend (re-verified 2026-10-23).
 - Phase 2 plan approved by Jugal (2026-10-23).
-- Stage 5: migrations and security rules. Applied from empty and 96/96
-  security checks passed on PostgreSQL 16 with the auth stand-in (2026-10-23).
+- Stage 5: migrations and security rules; 96/96 security checks pass on
+  PostgreSQL 16 with the auth stand-in, on the Supabase Postgres 17 image,
+  and on a full local Supabase stack (2026-10-23). PR #1.
+- Stage 6: sign-up, email confirmation, sign-in, sign-out, session refresh,
+  create company, invitations, members, roles; demo moved to `/demo/...`.
+  Lint, type check and build pass; 20/20 end-to-end checks against local
+  Supabase; demo-only mode checked with no settings (2026-10-23). PR #2.
 
-Remaining for Phase 2: stage 6 (sign-in, organisations, invitations, demo at
-`/demo/...`), stage 7 (issues), stage 8 (teams, rules, settings), stage 9
-(tests, including re-running the security tests on the real Supabase project),
-stage 10 (docs). Waiting on Jugal's Supabase dev project.
+Remaining for Phase 2: apply migrations to Jugal's Supabase project and test
+sign-in there; stage 7 (issues in the database), stage 8 (teams, rules,
+settings), stage 9 (automated tests in the repo), stage 10 (docs).

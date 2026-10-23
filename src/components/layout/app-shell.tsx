@@ -11,7 +11,7 @@ function Sidebar({ onNavigate }: { onNavigate?: () => void }) {
   const pathname = usePathname();
   const router = useRouter();
   const { workspace, workspaces } = useWorkspace();
-  const base = `/w/${workspace.slug}`;
+  const base = `/demo/${workspace.slug}`;
 
   return (
     <div className="flex h-full flex-col">
@@ -34,7 +34,7 @@ function Sidebar({ onNavigate }: { onNavigate?: () => void }) {
           value={workspace.slug}
           onChange={(e) => {
             const rest = pathname.slice(base.length);
-            router.push(`/w/${e.target.value}${rest}`);
+            router.push(`/demo/${e.target.value}${rest}`);
             onNavigate?.();
           }}
           className="w-full rounded-lg border border-slate-700 bg-slate-800 px-2.5 py-2 text-sm text-white outline-none focus:border-brand-500"
@@ -70,8 +70,11 @@ function Sidebar({ onNavigate }: { onNavigate?: () => void }) {
       </nav>
 
       <div className="m-3 rounded-lg border border-slate-700 bg-slate-800/60 p-3 text-xs text-slate-400">
-        <p className="font-medium text-slate-200">Phase 1 prototype</p>
-        <p className="mt-1">Fictional companies and demo data. No sign-in, no real connections.</p>
+        <p className="font-medium text-slate-200">Demo workspace</p>
+        <p className="mt-1">Fictional companies and demo data. Changes stay in this browser.</p>
+        <Link href="/" className="mt-2 inline-block font-medium text-brand-200 hover:text-white">
+          Back to Buddy home
+        </Link>
       </div>
     </div>
   );

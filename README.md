@@ -1,8 +1,10 @@
 # Buddy: Customer Service Intelligence Hub
 
-**Status: Phase 1 prototype.** A frontend with fictional demo data. There is no
-sign-in, no database, no live AI and no connection to any real service. It is
-not production-ready and must not be used with real customer data yet.
+**Status: Phase 2 in progress.** Sign-in, company workspaces, invitations and
+roles work against a Supabase database protected by Row Level Security. Issues,
+teams, routing rules and settings still live only in the demo (they move to the
+database in the next stages). There is no live AI and no connection to outside
+services. It is **not production-ready** and must not hold real customer data yet.
 
 ## Run it on Windows
 
@@ -22,52 +24,121 @@ winget install Git.Git
 
 Then close and reopen PowerShell.
 
-Start the app (run these from the `buddy` folder):
+Get the code and start the app. PowerShell may block `npm`, so use `npm.cmd`
+and `npx.cmd`:
 
 ```powershell
-npm install
-npm run dev
+git clone https://github.com/sjugal2003/Buddy.git
+cd Buddy
+npm.cmd install
+npm.cmd run dev
 ```
 
-Open http://localhost:3000 in your browser. Press `Ctrl + C` in PowerShell to stop it.
+Open http://localhost:3000. Press `Ctrl + C` in PowerShell to stop it.
+
+Without Supabase settings the app runs in **demo mode only**: the home page
+says so, and the fictional companies are at `/demo/brightline` and
+`/demo/cedarleaf`.
+
+## Connect Supabase (sign-in and real workspaces)
+
+Do this once. Use a **development** project only.
+
+1. **Create a project** at supabase.com (Free plan is enough). Save the database
+   password in a password manager. Never paste it into a chat.
+2. **Local settings file.** In the `Buddy` folder:
+
+   ```powershell
+   copy .env.example .env.local
+   notepad .env.local
+   ```
+
+   Fill in the project URL (Project Settings > Data API) and the publishable key
+   (Project Settings > API Keys, starts with `sb_publishable_`). Never use the
+   secret key (`sb_secret_...`) here.
+
+   | Variable | Browser-safe? |
+   |---|---|
+   | `NEXT_PUBLIC_SUPABASE_URL` | Yes |
+   | `NEXT_PUBLIC_SUPABASE_PUBLISHABLE_KEY` | Yes (the database rules decide what it can do) |
+   | secret key | **Never** used by this app |
+
+3. **Create the tables and security rules**:
+
+   ```powershell
+   npx.cmd supabase login
+   npx.cmd supabase link --project-ref <project-ref>
+   npx.cmd supabase db push
+   ```
+
+   `<project-ref>` is the part of your project URL before `.supabase.co`.
+   `link` asks for the database password. `db push` lists the migrations and
+   asks you to confirm.
+
+4. **Sign-in settings** in the Supabase dashboard:
+   - Authentication > URL Configuration: **Site URL** `http://localhost:3000`,
+     and add `http://localhost:3000/**` under **Redirect URLs**.
+   - Authentication > Email Templates > **Confirm signup**: replace the message
+     body with the contents of `supabase/templates/confirmation.html`.
+   - Authentication > Sign In / Providers > Email: keep **Confirm email** on.
+     Invitations rely on confirmed email addresses.
+
+5. Restart `npm.cmd run dev`, open http://localhost:3000, and choose
+   **Create an account**.
+
+Supabase's built-in email sender is for testing and sends only a few emails
+per hour.
+
+## Try it
+
+1. Sign up, open the confirmation email, create your company.
+2. Under **Invite a colleague**, create a link for a second email address you own.
+   Buddy does not send emails yet, so copy the link yourself.
+3. In a private browser window, sign up with that second address, confirm it,
+   then open the invite link and accept.
+4. As the owner, change the second person's role to Admin. They now see the
+   invite form too.
+5. Try opening a company you don't belong to: you get "Page not found".
 
 ## Checks
 
 ```powershell
-npm run lint        # code style and common mistakes
-npx tsc --noEmit    # type errors
-npm run build       # full production build
+npm.cmd run lint        # code style and common mistakes
+npx.cmd tsc --noEmit    # type errors
+npm.cmd run build       # full production build
 ```
 
-## What's in Phase 1
+Database security tests: `supabase/tests/security_test.sql` (96 checks). See
+`PROJECT_CONTEXT.md` for how to run them.
 
-| Page | What works | What is demo-only |
-|---|---|---|
-| Dashboard | Stats, sentiment trend, recurring problems, urgent list, team performance, all calculated from the demo issues | The issues are fictional |
-| Issues Inbox | Search, filters, sorting, issue detail, status and team changes | Changes are saved in your browser only |
-| AI Intelligence | Sentiment, intent, themes, category × urgency, churn signals | Analysis labels are hand-written, not live AI |
-| Routing Rules | Create, edit, reorder, enable rules; test them; route unassigned issues | Saved in your browser only |
-| Data Sources | Lists the planned sources and the permission each one needs | Nothing is connected |
-| Department Reports | Per-team trends, unresolved issues, people stats, print to PDF | |
-| Automation | Schedule, escalation and email notification settings, with a live "would escalate" count | Nothing is scheduled and no email is sent |
-| Workspace Settings | Company profile, targets, teams, categories, reset demo data | Read-only until sign-in exists |
+## Pages
+
+| Route | What it is |
+|---|---|
+| `/` | Home: sign in, create an account, or open the demo |
+| `/signup`, `/login`, `/check-email` | Account pages |
+| `/auth/confirm` | Where the confirmation email link lands |
+| `/onboarding` | Create a company workspace (you become its owner) |
+| `/invite?token=...` | Accept an invitation |
+| `/w/<company>` | Your real workspace: members, roles, invitations |
+| `/demo/<company>/...` | The Phase 1 demo with fictional data (dashboard, inbox, intelligence, routing, data sources, reports, automation, settings) |
 
 ## Project layout
 
 ```
 src/
-  app/w/[workspace]/      one folder per page; the workspace is part of the URL
-  components/views/       the content of each page
-  components/ui/          shared building blocks (cards, badges, form controls)
-  components/charts/      charts
-  components/workspace/   in-browser store for the current workspace
-  lib/types.ts            the shapes of all data (Issue, Team, RoutingRule, ...)
-  lib/data/               the ONLY place pages get data from (swapped for the database in Phase 2)
-  lib/demo-data/          fictional companies, teams and generated issues
-  lib/analytics.ts        dashboard and report calculations
-  lib/routing.ts          routing rule matching
+  app/demo/[workspace]/   demo pages (fictional data, no sign-in)
+  app/w/[workspace]/      real workspaces (sign-in and membership required)
+  app/actions/            server actions: every change goes through here
+  components/             views, UI building blocks, auth and org forms
+  lib/data/index.ts       demo data access
+  lib/data/live.ts        database reads, always as the signed-in user
+  lib/supabase/           Supabase clients (server, middleware)
+  lib/validation.ts       input rules (zod) for everything the browser sends
+supabase/
+  migrations/             database tables and security rules
+  tests/                  database security tests
+  templates/              email templates
 ```
 
-Every record carries a `workspaceId`, so the same shapes fit a multi-company
-database. The workspace switcher is **not** security: real tenant isolation
-(sign-in plus database rules) is Phase 2 work.
+More detail: `PROJECT_CONTEXT.md`. Rules for working on the code: `CLAUDE.md`.

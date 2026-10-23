@@ -27,7 +27,7 @@ import { formatDate, formatHours, percent, timeAgo } from "@/lib/format";
 
 export function DashboardView() {
   const { workspace, issues, teams, now, categoryName } = useWorkspace();
-  const base = `/w/${workspace.slug}`;
+  const base = `/demo/${workspace.slug}`;
 
   const stats = useMemo(() => {
     const open = issues.filter(isOpen);

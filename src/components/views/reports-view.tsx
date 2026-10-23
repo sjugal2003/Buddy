@@ -104,7 +104,7 @@ export function ReportsView() {
           title="Oldest unresolved issues"
           className="lg:col-span-2"
           action={
-            <Link href={`/w/${workspace.slug}/inbox?team=${teamId}`} className="text-xs font-medium text-brand-600 hover:underline">
+            <Link href={`/demo/${workspace.slug}/inbox?team=${teamId}`} className="text-xs font-medium text-brand-600 hover:underline">
               Open in inbox
             </Link>
           }
@@ -115,7 +115,7 @@ export function ReportsView() {
             <ul className="divide-y divide-slate-100">
               {report.oldestOpen.map((i) => (
                 <li key={i.id}>
-                  <Link href={`/w/${workspace.slug}/inbox?issue=${i.id}`} className="-mx-2 flex flex-col gap-1 rounded-lg px-2 py-2 hover:bg-slate-50 sm:flex-row sm:items-center sm:justify-between">
+                  <Link href={`/demo/${workspace.slug}/inbox?issue=${i.id}`} className="-mx-2 flex flex-col gap-1 rounded-lg px-2 py-2 hover:bg-slate-50 sm:flex-row sm:items-center sm:justify-between">
                     <span className="min-w-0">
                       <span className="block truncate text-sm text-slate-900">{i.subject}</span>
                       <span className="text-xs text-slate-500">
