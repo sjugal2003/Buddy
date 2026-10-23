@@ -27,7 +27,10 @@ Router, React 19, TypeScript strict, Tailwind v4). Full background:
   own Supabase session (`src/lib/supabase/server.ts`), never a secret key.
 - Every server action: check `getCurrentUser()`, validate with
   `src/lib/validation.ts`, map errors with `friendlyError`, and only report
-  success after the database call succeeded.
+  success after the database call succeeded (for update/delete, ask for the
+  row back: RLS refusals change 0 rows without an error).
+- No `loading.tsx` above pages with server actions: in production builds it
+  made saves hang (PROJECT_CONTEXT.md §5).
 - Shared types: `src/lib/types.ts`. Pure logic: `src/lib/analytics.ts`,
   `src/lib/routing.ts`.
 

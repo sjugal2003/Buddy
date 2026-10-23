@@ -4,7 +4,7 @@ import { Card } from "@/components/ui/card";
 import { PageHeader } from "@/components/ui/page-header";
 import { NewIssueForm } from "@/components/issues/issue-forms";
 import { requireUser } from "@/lib/auth";
-import { getMembershipBySlug } from "@/lib/data/live";
+import { getMembershipBySlug, listCategories, listTeams } from "@/lib/data/live";
 
 export const dynamic = "force-dynamic";
 
@@ -13,6 +13,8 @@ export default async function NewIssuePage({ params }: { params: Promise<{ works
   const user = await requireUser(`/w/${slug}/issues/new`);
   const membership = await getMembershipBySlug(user.id, slug);
   if (!membership) notFound();
+  const orgId = membership.organization.id;
+  const [teams, categories] = await Promise.all([listTeams(orgId), listCategories(orgId)]);
 
   return (
     <>
@@ -26,7 +28,7 @@ export default async function NewIssuePage({ params }: { params: Promise<{ works
         }
       />
       <Card>
-        <NewIssueForm organizationId={membership.organization.id} />
+        <NewIssueForm organizationId={orgId} teams={teams} categories={categories} />
       </Card>
     </>
   );

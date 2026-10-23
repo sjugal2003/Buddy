@@ -84,15 +84,28 @@ Demo details:
 | `/auth/confirm` | route handler | Verifies the email link (`token_hash`, or `code` fallback), redirects only within the app | |
 | `/onboarding` | `components/org/create-org-form.tsx` | Create a company (`create_organization`), caller becomes owner | |
 | `/invite?token=` | `components/org/members.tsx` | Accept an invitation (`accept_invitation`) | |
-| `/w/[workspace]` | `app/w/[workspace]/page.tsx` | Real workspace home: open issue count, members, role changes (owners), remove/leave, invite links and open invitations (owners and admins) | Teams, rules and settings arrive in stage 8 |
-| `/w/[workspace]/issues` | `app/w/[workspace]/issues/page.tsx` | Issues from the database, newest first (up to 200), filter by status and urgency, search customer/reference/subject/message. Filters are in the address bar (plain GET form) | |
-| `/w/[workspace]/issues/new` | `components/issues/issue-forms.tsx` | Add an issue by hand: customer, channel, subject, message, urgency, sentiment, type (`createIssue`) | Classification is manual until Phase 3 |
-| `/w/[workspace]/issues/[issueId]` | `app/w/[workspace]/issues/[issueId]/page.tsx` | Issue detail, change status and assignee (any member of the workspace, `updateIssue`), history from `issue_activity` | |
+| `/w/[workspace]` | `app/w/[workspace]/page.tsx` | Real workspace home: open issue count, members, role changes (owners), remove/leave, invite links and open invitations (owners and admins) | Routing rules arrive in stage 8b |
+| `/w/[workspace]/issues` | `app/w/[workspace]/issues/page.tsx` | Issues from the database, newest first (up to 200), filter by status, urgency and team, search customer/reference/subject/message. Filters are in the address bar (plain GET form) | |
+| `/w/[workspace]/issues/new` | `components/issues/issue-forms.tsx` | Add an issue by hand: customer, channel, subject, message, urgency, sentiment, type, team, category (`createIssue`) | Classification is manual until Phase 3 |
+| `/w/[workspace]/issues/[issueId]` | `app/w/[workspace]/issues/[issueId]/page.tsx` | Issue detail, change status, assignee, team and category (any member of the workspace, `updateIssue`), history from `issue_activity` | |
+| `/w/[workspace]/settings` | `components/settings/settings-forms.tsx` | Company name, industry, time zone, first-response targets; add/rename/delete teams (name, lead, email, colour) and categories. Owners and admins edit (`app/actions/settings.ts`); members see it read-only | Team email is display only |
 
-Every `/w/[workspace]` page has a loading skeleton (`loading.tsx`) and a
-"Something went wrong, try again" screen (`error.tsx`). Because of the
-loading skeleton, a "not found" issue page returns HTTP 200 with the
-not-found page (Next.js streams before it knows); no data is shown.
+Every `/w/[workspace]` page has a "Something went wrong, try again" screen
+(`error.tsx`). Forms show "Saving…" while they work; while a page loads, the
+previous page stays on screen.
+
+**No `loading.tsx` under `/w`.** Stage 7 added one, and in production builds
+(`npm run build` + `next start`, not `npm run dev`) it made a server action
+occasionally never finish: the save happened in the database but the button
+stayed on "Saving…". Found on 2026-10-23 with repeated quick saves (about 1
+in 6 hung); without it, 0 of 60+ hung. Removed in stage 8a. Don't add a
+`loading.tsx` above pages that use server actions without re-running the
+"six quick saves" check in `e2e-issues-local.js` against a production build.
+
+Forms people type a lot into use `keepValuesOnSubmit` (`components/ui/form.tsx`)
+so a validation error doesn't clear what they typed (React 19 otherwise
+resets a form after its action). Edit forms are keyed on their saved values so
+they redraw after a save; their messages sit outside the form.
 
 Demo pages (all under `/demo/[workspace]`, fictional data):
 
@@ -131,8 +144,9 @@ Every tenant-owned shape already carries a `workspaceId`.
 
 ## 7. Database status
 
-Schema written and tested locally; **not yet applied to any Supabase project**.
-The app does not talk to the database yet (that starts in stage 6/7).
+Applied to Jugal's hosted development project (`supabase db push`, 2026-10-23)
+up to the stage 7 migrations; the stage 8a migration must be pushed the same
+way. No production database exists.
 
 Files (`supabase/`):
 
@@ -141,7 +155,8 @@ Files (`supabase/`):
 | `config.toml` | Supabase CLI settings (local only; site URL `http://localhost:3000`, email confirmation on) |
 | `migrations/20261023120000_core_schema.sql` | The 10 tables, checks, indexes, triggers (updated_at, resolved_at, issue history, profile on sign-up) |
 | `migrations/20261023120100_security.sql` | Table privileges allowlist, Row Level Security policies, membership functions |
-| `tests/security_test.sql` | 96 checks of tenant isolation, roles and invitations; runs in one transaction and rolls back |
+| `migrations/20261023160000_issue_category_update.sql` | Stage 8a: members may change an issue's category |
+| `tests/security_test.sql` | 107 checks of tenant isolation, roles, invitations, teams, categories and settings; runs in one transaction and rolls back |
 | `tests/local-supabase-stub.sql` | Minimal stand-in for Supabase's `auth` schema and roles, for plain PostgreSQL only. Never run on Supabase |
 
 Tables: `profiles`, `organizations`, `organization_members`,
@@ -157,7 +172,7 @@ How access works:
   Security then limits rows to organisations they are a member of
   (`private.is_member`, `private.has_role`).
 - Members: read everything in their organisation, create issues, update only
-  `status`, `team_id`, `assignee_name`, `first_response_at`.
+  `status`, `team_id`, `category_id`, `assignee_name`, `first_response_at`.
 - Owners/admins: also manage teams, categories, routing rules, automation
   settings, company profile, invitations, and delete issues.
 - Memberships change only through `create_organization`, `accept_invitation`
@@ -264,7 +279,10 @@ psql -d <same db> -v ON_ERROR_STOP=1 -f supabase/tests/security_test.sql
   filter on the server but show at most 200 issues; paging comes later.
 - The assignee is a name picked from the workspace's members (stored as
   text, `assignee_name`), not a link to a user account.
-- Teams and categories can't be set on real issues until stage 8.
+- Category changes are not written to an issue's history (the history
+  trigger records status, team and assignee only).
+- Deleting a team or category clears it from issues; deleting a team that a
+  routing rule uses is refused until the rule changes (rules arrive in 8b).
 - `first_response_at` is not set yet (needed for response-time reports).
 - Analytics are computed in the browser from the full issue list.
 - Demo issue history (`events`) is free text; real issues use the
@@ -324,6 +342,12 @@ Completed:
   Lint, type check and build pass; 20/20 issue checks
   (`/mnt/project-files/buddy-phase2/e2e-issues-local.js`), 20/20 auth checks
   and 96/96 security checks against local Supabase (2026-10-23). PR #4.
+  Verified by Jugal on the hosted project.
+- Stage 8a: Settings tab (company profile, response targets, teams,
+  categories), team and category on issues, team filter; one migration
+  (category update grant); removed `loading.tsx` (see section 5). 26/26
+  settings checks (`e2e-settings-local.js`), 21/21 issue checks, 20/20 auth
+  checks, 107/107 security checks against local Supabase (2026-10-23). PR #5.
 
-Remaining for Phase 2: stage 8 (teams, rules, settings), stage 9 (automated
-tests in the repo), stage 10 (docs).
+Remaining for Phase 2: stage 8b (routing rules, suggest-only), stage 9
+(automated tests in the repo), stage 10 (docs).

@@ -14,11 +14,17 @@ import type { FormState } from "./types";
 
 const SIGNED_OUT: FormState = { error: "Your session has ended. Please sign in again." };
 
+// A team or category from another company (or one just deleted) breaks the
+// database's link check.
+const STALE_LINK = "That team or category no longer exists. Reload the page and try again.";
+
 export async function createIssue(_prev: FormState, formData: FormData): Promise<FormState> {
   const user = await getCurrentUser();
   if (!user) return SIGNED_OUT;
   const parsed = createIssueSchema.safeParse({
     organizationId: formData.get("organizationId"),
+    teamId: formData.get("teamId") ?? "",
+    categoryId: formData.get("categoryId") ?? "",
     customerName: formData.get("customerName"),
     channel: formData.get("channel"),
     subject: formData.get("subject"),
@@ -41,10 +47,13 @@ export async function createIssue(_prev: FormState, formData: FormData): Promise
       urgency: parsed.data.urgency,
       sentiment: parsed.data.sentiment,
       intent: parsed.data.intent,
+      team_id: parsed.data.teamId,
+      category_id: parsed.data.categoryId,
       created_by: user.id,
     })
     .select("id, organization:organizations (slug)")
     .single();
+  if (error?.code === "23503") return { error: STALE_LINK };
   if (error || !data) {
     return { error: friendlyError(error ?? {}, "We couldn't save the issue. Please try again.", "createIssue") };
   }
@@ -59,6 +68,8 @@ export async function updateIssue(_prev: FormState, formData: FormData): Promise
   const parsed = updateIssueSchema.safeParse({
     issueId: formData.get("issueId"),
     status: formData.get("status"),
+    teamId: formData.get("teamId") ?? "",
+    categoryId: formData.get("categoryId") ?? "",
     assigneeName: formData.get("assigneeName") ?? "",
   });
   if (!parsed.success) return { fieldErrors: fieldErrors(parsed.error) };
@@ -68,9 +79,15 @@ export async function updateIssue(_prev: FormState, formData: FormData): Promise
   // can't see (or that was deleted) updates nothing and returns no row.
   const { data, error } = await supabase
     .from("issues")
-    .update({ status: parsed.data.status, assignee_name: parsed.data.assigneeName })
+    .update({
+      status: parsed.data.status,
+      team_id: parsed.data.teamId,
+      category_id: parsed.data.categoryId,
+      assignee_name: parsed.data.assigneeName,
+    })
     .eq("id", parsed.data.issueId)
     .select("id, organization:organizations (slug)");
+  if (error?.code === "23503") return { error: STALE_LINK };
   if (error) return { error: friendlyError(error, "We couldn't save your changes. Please try again.", "updateIssue") };
   if (!data || data.length === 0) {
     return { error: "This issue no longer exists, or you no longer have access to it." };

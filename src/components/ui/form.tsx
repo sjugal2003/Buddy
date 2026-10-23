@@ -1,3 +1,5 @@
+import { startTransition } from "react";
+
 export const inputClass =
   "w-full rounded-lg border border-slate-300 bg-white px-3 py-2 text-sm text-slate-900 shadow-sm outline-none focus:border-brand-500 focus:ring-2 focus:ring-brand-100 disabled:bg-slate-50 disabled:text-slate-500";
 
@@ -38,4 +40,17 @@ export function Toggle({
       <span className={`inline-block h-4 w-4 rounded-full bg-white shadow transition-transform ${checked ? "translate-x-4" : "translate-x-0.5"}`} />
     </button>
   );
+}
+
+/**
+ * Submit handler that runs a form action without React clearing the form
+ * afterwards, so typed text survives a validation error. Use it as `onSubmit`
+ * instead of passing the action to `action`.
+ */
+export function keepValuesOnSubmit(action: (formData: FormData) => void) {
+  return (event: React.FormEvent<HTMLFormElement>) => {
+    event.preventDefault();
+    const formData = new FormData(event.currentTarget);
+    startTransition(() => action(formData));
+  };
 }

@@ -1,9 +1,9 @@
 # Buddy: Customer Service Intelligence Hub
 
 **Status: Phase 2 in progress.** Sign-in, company workspaces, invitations,
-roles and customer issues work against a Supabase database protected by Row
-Level Security. Teams, routing rules and settings still live only in the demo
-(they move to the database in the next stage). There is no live AI and no connection to outside
+roles, customer issues, teams, categories and company settings work against a
+Supabase database protected by Row Level Security. Routing rules still live
+only in the demo (they move to the database next). There is no live AI and no connection to outside
 services. It is **not production-ready** and must not hold real customer data yet.
 
 ## Run it on Windows
@@ -108,6 +108,17 @@ per hour.
    hidden unless you pick **All statuses** or **Resolved**.
 8. Copy the issue's address. In a private window, sign in as someone who is
    **not** a member of your company and open it: you get "Page not found".
+9. Open **Settings**: change the response targets, add teams (for example
+   Payments, Support) and categories (for example Billing). Members see this
+   page read-only.
+10. Give an issue a team and category. The Issues page can filter by team.
+
+When a new version adds a file to `supabase/migrations/`, apply it to your
+Supabase project before trying the new features:
+
+```powershell
+npx.cmd supabase db push
+```
 
 ## Checks
 
@@ -117,7 +128,7 @@ npx.cmd tsc --noEmit    # type errors
 npm.cmd run build       # full production build
 ```
 
-Database security tests: `supabase/tests/security_test.sql` (96 checks). See
+Database security tests: `supabase/tests/security_test.sql` (107 checks). See
 `PROJECT_CONTEXT.md` for how to run them.
 
 ## Pages
@@ -130,7 +141,8 @@ Database security tests: `supabase/tests/security_test.sql` (96 checks). See
 | `/onboarding` | Create a company workspace (you become its owner) |
 | `/invite?token=...` | Accept an invitation |
 | `/w/<company>` | Your real workspace: open issue count, members, roles, invitations |
-| `/w/<company>/issues` | Customer issues: search, filters, add, status, assignee, history |
+| `/w/<company>/issues` | Customer issues: search, filters, add, status, assignee, team, category, history |
+| `/w/<company>/settings` | Company profile, response targets, teams, categories (owners and admins edit) |
 | `/demo/<company>/...` | The Phase 1 demo with fictional data (dashboard, inbox, intelligence, routing, data sources, reports, automation, settings) |
 
 ## Project layout
