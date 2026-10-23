@@ -69,3 +69,43 @@ export function fieldErrors(error: z.ZodError) {
   }
   return out;
 }
+
+// Issues. The lists match the database's check constraints.
+export const channelSchema = z.enum(["email", "live_chat", "app_review", "survey", "social", "phone_transcript"]);
+export const urgencySchema = z.enum(["low", "medium", "high", "critical"]);
+export const sentimentSchema = z.enum(["positive", "neutral", "negative", "very_negative"]);
+export const intentSchema = z.enum(["complaint", "question", "request", "bug_report", "cancellation", "praise"]);
+export const statusSchema = z.enum(["new", "open", "in_progress", "waiting_on_customer", "escalated", "resolved"]);
+
+export const createIssueSchema = z.object({
+  organizationId: z.string().uuid(),
+  customerName: z.string().trim().min(1, "Enter the customer's name.").max(120, "Use 120 characters or fewer."),
+  channel: channelSchema,
+  subject: z.string().trim().min(1, "Enter a subject.").max(200, "Use 200 characters or fewer."),
+  message: z.string().trim().min(1, "Enter what the customer said.").max(10000, "Use 10,000 characters or fewer."),
+  urgency: urgencySchema,
+  sentiment: sentimentSchema,
+  intent: intentSchema,
+});
+
+export const updateIssueSchema = z.object({
+  issueId: z.string().uuid(),
+  status: statusSchema,
+  // Empty means nobody is assigned.
+  assigneeName: z
+    .string()
+    .trim()
+    .max(120, "Use 120 characters or fewer.")
+    .transform((v) => v || null),
+});
+
+/** Inbox filters from the address bar. Anything unexpected is ignored. */
+export const issueFiltersSchema = z.object({
+  status: z.union([statusSchema, z.enum(["active", "all"])]).catch("active"),
+  urgency: z.union([urgencySchema, z.literal("")]).catch(""),
+  // Only plain characters, so the search can't change the database query.
+  q: z
+    .string()
+    .catch("")
+    .transform((v) => v.replace(/[^\p{L}\p{N} @.'-]/gu, " ").replace(/\s+/g, " ").trim().slice(0, 100)),
+});

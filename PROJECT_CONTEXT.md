@@ -84,7 +84,15 @@ Demo details:
 | `/auth/confirm` | route handler | Verifies the email link (`token_hash`, or `code` fallback), redirects only within the app | |
 | `/onboarding` | `components/org/create-org-form.tsx` | Create a company (`create_organization`), caller becomes owner | |
 | `/invite?token=` | `components/org/members.tsx` | Accept an invitation (`accept_invitation`) | |
-| `/w/[workspace]` | `app/w/[workspace]/page.tsx` | Real workspace home: members, role changes (owners), remove/leave, invite links and open invitations (owners and admins) | Issues, teams, rules and settings arrive in stages 7 and 8 |
+| `/w/[workspace]` | `app/w/[workspace]/page.tsx` | Real workspace home: open issue count, members, role changes (owners), remove/leave, invite links and open invitations (owners and admins) | Teams, rules and settings arrive in stage 8 |
+| `/w/[workspace]/issues` | `app/w/[workspace]/issues/page.tsx` | Issues from the database, newest first (up to 200), filter by status and urgency, search customer/reference/subject/message. Filters are in the address bar (plain GET form) | |
+| `/w/[workspace]/issues/new` | `components/issues/issue-forms.tsx` | Add an issue by hand: customer, channel, subject, message, urgency, sentiment, type (`createIssue`) | Classification is manual until Phase 3 |
+| `/w/[workspace]/issues/[issueId]` | `app/w/[workspace]/issues/[issueId]/page.tsx` | Issue detail, change status and assignee (any member of the workspace, `updateIssue`), history from `issue_activity` | |
+
+Every `/w/[workspace]` page has a loading skeleton (`loading.tsx`) and a
+"Something went wrong, try again" screen (`error.tsx`). Because of the
+loading skeleton, a "not found" issue page returns HTTP 200 with the
+not-found page (Next.js streams before it knows); no data is shown.
 
 Demo pages (all under `/demo/[workspace]`, fictional data):
 
@@ -181,7 +189,10 @@ That script is kept at `/mnt/project-files/buddy-phase2/e2e-auth-local.js`
   were checked with the e2e script on local Supabase on 2026-10-23.
 - Buddy sends no email of its own. Invitations produce a one-time link the
   inviter copies; only its SHA-256 hash is stored.
-- **Not yet tested against Jugal's hosted Supabase project.**
+- Tested by Jugal on the hosted Supabase project on 2026-10-23: sign-up,
+  confirmation (default email template) and creating a workspace work.
+- `NEXT_PUBLIC_SUPABASE_URL` is reduced to its origin, so a URL copied with
+  `/rest/v1/` still works (it used to fail with "Invalid path specified").
 
 ## 9. Environment variables
 
@@ -249,11 +260,15 @@ psql -d <same db> -v ON_ERROR_STOP=1 -f supabase/tests/security_test.sql
   Next 15, so **do not run it**. If a machine reports 7 (1 moderate, 6 high), it
   has an older lock file without the postcss fix: re-extract the latest copy and
   run `npm.cmd install`.
-- The whole workspace (all issues) is loaded into the browser on every page.
-  Fine for demo sizes; real data will need server-side filtering/pagination.
+- Demo pages load the whole workspace into the browser. Real workspaces
+  filter on the server but show at most 200 issues; paging comes later.
+- The assignee is a name picked from the workspace's members (stored as
+  text, `assignee_name`), not a link to a user account.
+- Teams and categories can't be set on real issues until stage 8.
+- `first_response_at` is not set yet (needed for response-time reports).
 - Analytics are computed in the browser from the full issue list.
-- Issue history (`events`) is free text inside each issue; it should become a
-  proper activity table.
+- Demo issue history (`events`) is free text; real issues use the
+  `issue_activity` table, written by a database trigger.
 - Demo IDs are strings like `ws_brightline`; the database uses UUIDs.
 - Member names come from `profiles.full_name`; email addresses of other
   members are not shown (profiles has no email column).
@@ -302,7 +317,13 @@ Completed:
   create company, invitations, members, roles; demo moved to `/demo/...`.
   Lint, type check and build pass; 20/20 end-to-end checks against local
   Supabase; demo-only mode checked with no settings (2026-10-23). PR #2.
+- Setup on Jugal's PC with the hosted project (2026-10-23). PR #3 fixed the
+  Supabase URL handling and the setup notes.
+- Stage 7: issues in the database (list, filters, search, add, status,
+  assignee, history; loading, empty and error states). No schema change.
+  Lint, type check and build pass; 20/20 issue checks
+  (`/mnt/project-files/buddy-phase2/e2e-issues-local.js`), 20/20 auth checks
+  and 96/96 security checks against local Supabase (2026-10-23). PR #4.
 
-Remaining for Phase 2: apply migrations to Jugal's Supabase project and test
-sign-in there; stage 7 (issues in the database), stage 8 (teams, rules,
-settings), stage 9 (automated tests in the repo), stage 10 (docs).
+Remaining for Phase 2: stage 8 (teams, rules, settings), stage 9 (automated
+tests in the repo), stage 10 (docs).

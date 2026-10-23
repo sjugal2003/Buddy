@@ -5,7 +5,7 @@ import { PageHeader } from "@/components/ui/page-header";
 import { InviteForm, MemberRow } from "@/components/org/members";
 import { cancelInvitation } from "@/app/actions/organizations";
 import { requireUser } from "@/lib/auth";
-import { getMembershipBySlug, listMembers, listOpenInvitations } from "@/lib/data/live";
+import { countOpenIssues, getMembershipBySlug, listMembers, listOpenInvitations } from "@/lib/data/live";
 import { formatDate } from "@/lib/format";
 
 export const dynamic = "force-dynamic";
@@ -20,9 +20,10 @@ export default async function LiveWorkspaceHome({ params }: { params: Promise<{ 
 
   const { organization, role } = membership;
   const isAdmin = role === "owner" || role === "admin";
-  const [members, invitations] = await Promise.all([
+  const [members, invitations, openIssues] = await Promise.all([
     listMembers(organization.id),
     isAdmin ? listOpenInvitations(organization.id) : Promise.resolve([]),
+    countOpenIssues(organization.id),
   ]);
 
   return (
@@ -33,10 +34,14 @@ export default async function LiveWorkspaceHome({ params }: { params: Promise<{ 
       />
 
       <div className="mb-6 rounded-lg border border-brand-200 bg-brand-50 px-4 py-3 text-sm text-slate-700">
-        <p className="font-medium text-slate-900">Your workspace is set up.</p>
+        <p className="font-medium text-slate-900">
+          <Link href={`/w/${slug}/issues`} className="text-brand-700 hover:underline">
+            {openIssues === 0 ? "No open issues" : `${openIssues} open ${openIssues === 1 ? "issue" : "issues"}`}
+          </Link>
+        </p>
         <p className="mt-1">
-          The issues inbox, dashboard, teams, routing rules and settings arrive here in the next stages of Phase 2. Until
-          then, you can{" "}
+          The dashboard, teams, routing rules and settings arrive here in the next stages of Phase 2. Until then, you
+          can{" "}
           <Link href="/demo/brightline" className="font-medium text-brand-700 hover:underline">
             explore them in the demo
           </Link>

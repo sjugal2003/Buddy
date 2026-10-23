@@ -1,9 +1,9 @@
 # Buddy: Customer Service Intelligence Hub
 
-**Status: Phase 2 in progress.** Sign-in, company workspaces, invitations and
-roles work against a Supabase database protected by Row Level Security. Issues,
-teams, routing rules and settings still live only in the demo (they move to the
-database in the next stages). There is no live AI and no connection to outside
+**Status: Phase 2 in progress.** Sign-in, company workspaces, invitations,
+roles and customer issues work against a Supabase database protected by Row
+Level Security. Teams, routing rules and settings still live only in the demo
+(they move to the database in the next stage). There is no live AI and no connection to outside
 services. It is **not production-ready** and must not hold real customer data yet.
 
 ## Run it on Windows
@@ -102,6 +102,12 @@ per hour.
 4. As the owner, change the second person's role to Admin. They now see the
    invite form too.
 5. Try opening a company you don't belong to: you get "Page not found".
+6. Open **Issues** > **New issue**, fill it in and save. Change its status
+   and who it's assigned to: each change appears under **History**.
+7. Use the search box and filters on the Issues page. Resolved issues are
+   hidden unless you pick **All statuses** or **Resolved**.
+8. Copy the issue's address. In a private window, sign in as someone who is
+   **not** a member of your company and open it: you get "Page not found".
 
 ## Checks
 
@@ -123,7 +129,8 @@ Database security tests: `supabase/tests/security_test.sql` (96 checks). See
 | `/auth/confirm` | Where the confirmation email link lands |
 | `/onboarding` | Create a company workspace (you become its owner) |
 | `/invite?token=...` | Accept an invitation |
-| `/w/<company>` | Your real workspace: members, roles, invitations |
+| `/w/<company>` | Your real workspace: open issue count, members, roles, invitations |
+| `/w/<company>/issues` | Customer issues: search, filters, add, status, assignee, history |
 | `/demo/<company>/...` | The Phase 1 demo with fictional data (dashboard, inbox, intelligence, routing, data sources, reports, automation, settings) |
 
 ## Project layout

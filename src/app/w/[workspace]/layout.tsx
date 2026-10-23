@@ -3,6 +3,7 @@ import { notFound } from "next/navigation";
 import { LogOut, Sparkles } from "lucide-react";
 import { signOut } from "@/app/actions/auth";
 import { WorkspaceSwitcher } from "@/components/org/workspace-switcher";
+import { WorkspaceNav } from "@/components/issues/workspace-nav";
 import { requireUser } from "@/lib/auth";
 import { getMembershipBySlug, listMyMemberships } from "@/lib/data/live";
 
@@ -47,6 +48,7 @@ export default async function LiveWorkspaceLayout({
             </form>
           </div>
         </div>
+        <WorkspaceNav slug={slug} />
       </header>
       <main className="mx-auto max-w-5xl px-4 py-6 sm:px-6 lg:py-8">{children}</main>
     </div>
