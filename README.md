@@ -1,9 +1,10 @@
 # Buddy: Customer Service Intelligence Hub
 
 **Status: Phase 2 in progress.** Sign-in, company workspaces, invitations,
-roles, customer issues, teams, categories and company settings work against a
-Supabase database protected by Row Level Security. Routing rules still live
-only in the demo (they move to the database next). There is no live AI and no connection to outside
+roles, customer issues, teams, categories, company settings and routing rules
+work against a Supabase database protected by Row Level Security. Routing
+rules only *suggest* a team: nothing moves an issue until a person presses a
+button. There is no live AI and no connection to outside
 services. It is **not production-ready** and must not hold real customer data yet.
 
 ## Run it on Windows
@@ -112,6 +113,13 @@ per hour.
    Payments, Support) and categories (for example Billing). Members see this
    page read-only.
 10. Give an issue a team and category. The Issues page can filter by team.
+11. Open **Routing** and add a rule, for example "If Category is Billing,
+    suggest Payments". Rules are checked top to bottom and the first match
+    wins; use the arrows to reorder and **Switch off** to pause one.
+12. Open an issue with no team that matches the rule. Under the Handling form
+    it says which rule matches; press **Apply suggestion** to give it that
+    team. On the Routing page, **Route open issues that have no team** does
+    the same for every open issue without a team.
 
 When a new version adds a file to `supabase/migrations/`, apply it to your
 Supabase project before trying the new features:
@@ -128,7 +136,7 @@ npx.cmd tsc --noEmit    # type errors
 npm.cmd run build       # full production build
 ```
 
-Database security tests: `supabase/tests/security_test.sql` (107 checks). See
+Database security tests: `supabase/tests/security_test.sql` (118 checks). See
 `PROJECT_CONTEXT.md` for how to run them.
 
 ## Pages
@@ -142,6 +150,7 @@ Database security tests: `supabase/tests/security_test.sql` (107 checks). See
 | `/invite?token=...` | Accept an invitation |
 | `/w/<company>` | Your real workspace: open issue count, members, roles, invitations |
 | `/w/<company>/issues` | Customer issues: search, filters, add, status, assignee, team, category, history |
+| `/w/<company>/routing` | Routing rules: add, edit, reorder, switch off, delete (owners and admins); route open issues that have no team |
 | `/w/<company>/settings` | Company profile, response targets, teams, categories (owners and admins edit) |
 | `/demo/<company>/...` | The Phase 1 demo with fictional data (dashboard, inbox, intelligence, routing, data sources, reports, automation, settings) |
 

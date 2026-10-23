@@ -40,7 +40,7 @@ export default async function LiveWorkspaceHome({ params }: { params: Promise<{ 
           </Link>
         </p>
         <p className="mt-1">
-          The dashboard and routing rules arrive here in the next stages of Phase 2. Until then, you
+          The dashboard and reports arrive here in a later phase. Until then, you
           can{" "}
           <Link href="/demo/brightline" className="font-medium text-brand-700 hover:underline">
             explore them in the demo

@@ -9,6 +9,7 @@ export function WorkspaceNav({ slug }: { slug: string }) {
   const tabs = [
     { href: `/w/${slug}`, label: "Overview", active: pathname === `/w/${slug}` },
     { href: `/w/${slug}/issues`, label: "Issues", active: pathname.startsWith(`/w/${slug}/issues`) },
+    { href: `/w/${slug}/routing`, label: "Routing", active: pathname.startsWith(`/w/${slug}/routing`) },
     { href: `/w/${slug}/settings`, label: "Settings", active: pathname.startsWith(`/w/${slug}/settings`) },
   ];
   return (

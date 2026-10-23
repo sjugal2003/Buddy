@@ -153,3 +153,47 @@ export const createCategorySchema = z.object({ organizationId: z.string().uuid()
 export const updateCategorySchema = z.object({ categoryId: z.string().uuid(), name: categoryName });
 
 export const idSchema = z.string().uuid();
+
+// Routing rules. The database checks the same shape (private.valid_rule_conditions).
+export const ruleConditionSchema = z.discriminatedUnion("field", [
+  z.object({ field: z.literal("category"), value: z.string().uuid("Choose a category.") }),
+  z.object({ field: z.literal("urgency"), value: urgencySchema }),
+  z.object({ field: z.literal("sentiment"), value: sentimentSchema }),
+  z.object({ field: z.literal("intent"), value: intentSchema }),
+  z.object({ field: z.literal("channel"), value: channelSchema }),
+  z.object({
+    field: z.literal("keyword"),
+    value: z.string().trim().min(1, "Enter a word to look for.").max(200, "Use 200 characters or fewer."),
+  }),
+]);
+
+/** Conditions arrive from the form as one JSON text field. */
+const conditionsSchema = z
+  .string()
+  .max(20000)
+  .transform((text, ctx) => {
+    try {
+      return JSON.parse(text) as unknown;
+    } catch {
+      ctx.addIssue({ code: "custom", message: "Add at least one condition." });
+      return z.NEVER;
+    }
+  })
+  .pipe(
+    z
+      .array(ruleConditionSchema, { message: "Check the conditions." })
+      .min(1, "Add at least one condition.")
+      .max(20, "Use 20 conditions or fewer."),
+  );
+
+const ruleFields = {
+  name: z.string().trim().min(1, "Enter a rule name.").max(100, "Use 100 characters or fewer."),
+  match: z.enum(["all", "any"]),
+  teamId: z.string().uuid("Choose a team."),
+  conditions: conditionsSchema,
+};
+
+export const createRuleSchema = z.object({ organizationId: z.string().uuid(), ...ruleFields });
+export const updateRuleSchema = z.object({ ruleId: z.string().uuid(), ...ruleFields });
+export const toggleRuleSchema = z.object({ ruleId: z.string().uuid(), enabled: z.enum(["true", "false"]) });
+export const moveRuleSchema = z.object({ ruleId: z.string().uuid(), direction: z.enum(["up", "down"]) });
