@@ -1,6 +1,6 @@
 # Buddy: project context
 
-Last updated: 2026-10-23 (Phase 2 complete: stages 5 to 10).
+Last updated: 2026-10-23 (Phase 2 complete; Phase 3 stage 11 in progress).
 Keep this file accurate. Update it at the end of every stage.
 
 ## 1. Product vision
@@ -38,6 +38,7 @@ department, track and escalate them, and see reports.
 | Unit tests | Vitest | 4.1.x |
 | Browser tests | Playwright (`@playwright/test`) | 1.56 |
 | Database test runner | `pg` (Node PostgreSQL client) | 8.x |
+| AI analysis (Phase 3) | Claude Haiku 5.5 (`claude-haiku-5-5`) through `@anthropic-ai/sdk`, server only | SDK 1.2 |
 
 `package.json` pins `postcss` to `^8.5.31` through `overrides` (security fix).
 
@@ -237,6 +238,8 @@ never commit values. Without them the app runs in demo-only mode.
 | `NEXT_PUBLIC_SUPABASE_URL` | Yes (safe) | Address of the Supabase project |
 | `NEXT_PUBLIC_SUPABASE_PUBLISHABLE_KEY` | Yes (safe, RLS protects data) | Sign-in and user-scoped queries |
 | Secret key (`sb_secret_...`) | **Never** | Not used by the app. Must never be added |
+| `ANTHROPIC_API_KEY` | **Never** (server only, no `NEXT_PUBLIC_`) | Turns on Claude analysis (Phase 3). Read only in `src/lib/ai/index.ts`. Missing means AI is shown as not set up |
+| `BUDDY_AI_MODE` | No | `fake` swaps in the free keyword test analyser (automated tests and CI). Leave unset otherwise |
 
 ## 10. Development commands (Windows PowerShell)
 
@@ -412,6 +415,19 @@ Completed:
   troubleshooting; this file; CLAUDE.md); Vitest upgraded to clear the audit
   findings. PR #8.
 
-Phase 2 is complete. Before Phase 3 (AI analysis), agree with Jugal which
-provider to use and whether a paid API is acceptable: no paid services have
-been approved yet.
+Phase 2 is complete.
+
+Phase 3 (AI analysis). Jugal approved Claude Haiku 5.5 with a spending cap
+and the plan (https://claude.ai/artifact/9bZR35rqVSL8ZYpqfLvMw5) on
+2026-10-23. Stages: 11 engine, 12 database and Settings card, 13 analyse on
+save and AI panel (needs Jugal's own key in `.env.local`), 14 inbox and
+routing use AI values, 15 docs.
+- Stage 11: analysis engine in `src/lib/ai/` (not yet used by any page):
+  `schema.ts` (answer format, `toSuggestion` checks and maps the category),
+  `prompt.ts` (what is sent: subject, message cut to 4,000 characters,
+  channel, category names; the message is treated as data), `limits.ts`
+  (on/off, monthly count up to 2,000, 30-second retry wait, cost estimate),
+  `claude.ts` (Haiku 5.5, 600-token cap, no thinking, low effort, no tools,
+  structured output; plain error messages), `fake.ts` (keyword test
+  analyser), `index.ts` (`getAnalyser`). Unit tests in `tests/unit/ai.test.ts`
+  use a stand-in client, so no test calls the paid API.
