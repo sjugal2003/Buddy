@@ -19,9 +19,15 @@ Router, React 19, TypeScript strict, Tailwind v4). Full background:
 
 ## Code layout
 
-- Pages: `src/app/w/[workspace]/*` render views from `src/components/views/*`.
-- Data access goes through `src/lib/data` only. Pages never import
-  `src/lib/demo-data` directly.
+- Demo pages: `src/app/demo/[workspace]/*` render views from
+  `src/components/views/*` with fictional data (`src/lib/data/index.ts`).
+  Pages never import `src/lib/demo-data` directly.
+- Real workspaces: `src/app/w/[workspace]/*`. Reads in `src/lib/data/live.ts`,
+  writes as server actions in `src/app/actions/`, always through the user's
+  own Supabase session (`src/lib/supabase/server.ts`), never a secret key.
+- Every server action: check `getCurrentUser()`, validate with
+  `src/lib/validation.ts`, map errors with `friendlyError`, and only report
+  success after the database call succeeded.
 - Shared types: `src/lib/types.ts`. Pure logic: `src/lib/analytics.ts`,
   `src/lib/routing.ts`.
 

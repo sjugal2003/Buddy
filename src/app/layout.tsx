@@ -3,7 +3,7 @@ import "./globals.css";
 
 export const metadata: Metadata = {
   title: "Buddy: Customer Service Intelligence Hub",
-  description: "Phase 1 prototype with fictional demo data.",
+  description: "Customer service intelligence hub (development version).",
 };
 
 export default function RootLayout({ children }: Readonly<{ children: React.ReactNode }>) {
