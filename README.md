@@ -1,12 +1,14 @@
 # Buddy: Customer Service Intelligence Hub
 
-**Status: Phase 2 complete (2026-10-23).** Sign-in, company workspaces,
+**Status: Phase 3 complete (2026-10-24).** Sign-in, company workspaces,
 invitations, roles, customer issues, teams, categories, company settings and
 routing rules work against a Supabase database protected by Row Level
-Security, with automated tests on every change. Routing rules only *suggest* a
-team: nothing moves an issue until a person presses a button. Issues are typed
-in by hand; there is no live AI and no connection to outside services yet. It
-is **not production-ready** and must not hold real customer data yet.
+Security, with automated tests on every change. An optional AI (Gemini or
+Claude, with your own key) suggests each new issue's sentiment, type, urgency,
+category and a summary; every AI value is labelled and can be changed.
+Routing rules *suggest* a team, unless an owner switches on automatic routing.
+Issues are typed in by hand; there is no connection to outside services yet.
+It is **not production-ready** and must not hold real customer data yet.
 
 ## Run it on Windows
 
@@ -260,9 +262,9 @@ which step failed, with a screenshot.
 | `/onboarding` | Create a company workspace (you become its owner) |
 | `/invite?token=...` | Accept an invitation |
 | `/w/<company>` | Your real workspace: open issue count, members, roles, invitations |
-| `/w/<company>/issues` | Customer issues: search, filters, add, status, assignee, team, category, history |
+| `/w/<company>/issues` | Customer issues: search, filters, add, status, assignee, team, category, history; AI analysis panel and "AI suggested" marks when AI is on |
 | `/w/<company>/routing` | Routing rules: add, edit, reorder, switch off, delete (owners and admins); route open issues that have no team |
-| `/w/<company>/settings` | Company profile, response targets, teams, categories (owners and admins edit) |
+| `/w/<company>/settings` | Company profile, response targets, AI analysis (on/off, monthly limit, automatic routing), teams, categories (owners and admins edit; automatic routing owners only) |
 | `/demo/<company>/...` | The Phase 1 demo with fictional data (dashboard, inbox, intelligence, routing, data sources, reports, automation, settings) |
 
 ## Project layout
@@ -275,6 +277,7 @@ src/
   components/             views, UI building blocks, auth and org forms
   lib/data/index.ts       demo data access
   lib/data/live.ts        database reads, always as the signed-in user
+  lib/ai/                 AI analysis (server only): Gemini, Claude, test analyser
   lib/supabase/           Supabase clients (server, middleware)
   lib/validation.ts       input rules (zod) for everything the browser sends
 supabase/
