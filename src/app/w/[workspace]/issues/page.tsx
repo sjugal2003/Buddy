@@ -2,7 +2,7 @@ import Link from "next/link";
 import { notFound } from "next/navigation";
 import { Plus, Search } from "lucide-react";
 import { PageHeader } from "@/components/ui/page-header";
-import { StatusBadge, UrgencyBadge, SentimentBadge } from "@/components/ui/badges";
+import { AiBadge, StatusBadge, UrgencyBadge, SentimentBadge } from "@/components/ui/badges";
 import { inputClass, primaryButton, secondaryButton } from "@/components/ui/form";
 import { requireUser } from "@/lib/auth";
 import { getMembershipBySlug, ISSUE_LIST_LIMIT, listIssues, listTeams, type LiveTeam } from "@/lib/data/live";
@@ -130,8 +130,14 @@ export default async function IssuesPage({
                   className="flex flex-col gap-2 px-4 py-3 hover:bg-slate-50 md:flex-row md:items-center md:gap-4"
                 >
                   <div className="min-w-0 flex-1">
-                    <p className="truncate text-sm font-medium text-slate-900">{issue.subject}</p>
-                    <p className="mt-0.5 line-clamp-1 text-xs text-slate-500">{issue.message}</p>
+                    <div className="flex items-center gap-2">
+                      <p className="truncate text-sm font-medium text-slate-900">{issue.subject}</p>
+                      {issue.analysisSource === "ai" && <AiBadge />}
+                    </div>
+                    {/* The AI's summary is usually quicker to scan than the message itself. */}
+                    <p className="mt-0.5 line-clamp-1 text-xs text-slate-500">
+                      {issue.analysisSource === "ai" && issue.summary ? issue.summary : issue.message}
+                    </p>
                     <p className="mt-1 text-xs text-slate-400">
                       {issue.reference} · {issue.customerName} · {channelLabels[issue.channel]} · {formatDateTime(issue.receivedAt)}
                     </p>

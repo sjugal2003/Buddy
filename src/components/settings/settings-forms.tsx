@@ -91,12 +91,21 @@ export function OrganizationForm({
   );
 }
 
-export function AiSettingsForm({ organizationId, settings }: { organizationId: string; settings: AiSettings }) {
+export function AiSettingsForm({
+  organizationId,
+  settings,
+  isOwner,
+}: {
+  organizationId: string;
+  settings: AiSettings;
+  /** Only decides what is shown; the database refuses the change from anyone else. */
+  isOwner: boolean;
+}) {
   const [state, action, pending] = useActionState<FormState, FormData>(updateAiSettings, {});
   return (
     <div className="space-y-4">
       <form
-        key={`${settings.enabled}-${settings.monthlyLimit}`}
+        key={`${settings.enabled}-${settings.monthlyLimit}-${settings.autoRoute}`}
         onSubmit={keepValuesOnSubmit(action)}
         className="space-y-4"
         noValidate
@@ -117,6 +126,25 @@ export function AiSettingsForm({ organizationId, settings }: { organizationId: s
             </span>
           </span>
         </label>
+        <label className="flex items-start gap-3 text-sm text-slate-700">
+          <input
+            name={isOwner ? "autoRoute" : undefined}
+            type="checkbox"
+            defaultChecked={settings.autoRoute}
+            disabled={!isOwner}
+            className="mt-0.5 h-4 w-4 rounded border-slate-300"
+          />
+          <span>
+            <span className="font-medium text-slate-900">Apply routing automatically</span>
+            <span className="block text-xs text-slate-500">
+              After the AI analyses an issue that has no team, give it the team its first matching routing rule
+              names. Off means rules only suggest a team.
+              {!isOwner && " Only an owner can change this."}
+            </span>
+          </span>
+        </label>
+        {/* Admins keep the owner's choice when they save the other settings. */}
+        {!isOwner && settings.autoRoute && <input type="hidden" name="autoRoute" value="on" />}
         <Field label="Monthly limit (analyses)" hint="Up to 2,000. Buddy stops asking the AI once this is used.">
           <input
             name="monthlyLimit"

@@ -81,6 +81,10 @@ export default async function SettingsPage({ params }: { params: Promise<{ works
               <dd className="text-slate-900" data-testid="ai-status">
                 {ai.enabled ? "On" : "Off"}
               </dd>
+              <dt className="text-slate-500">Automatic routing</dt>
+              <dd className="text-slate-900" data-testid="ai-auto-route">
+                {ai.autoRoute ? "On" : "Off (rules only suggest a team)"}
+              </dd>
               <dt className="text-slate-500">Analyses this month</dt>
               <dd className="text-slate-900" data-testid="ai-usage">
                 {ai.usedThisMonth} of {ai.monthlyLimit}
@@ -102,7 +106,7 @@ export default async function SettingsPage({ params }: { params: Promise<{ works
             </dl>
             {canEdit ? (
               <div className="border-t border-slate-100 pt-4">
-                <AiSettingsForm organizationId={orgId} settings={ai} />
+                <AiSettingsForm organizationId={orgId} settings={ai} isOwner={membership.role === "owner"} />
               </div>
             ) : (
               <p className="text-xs text-slate-500">Only owners and admins can change these.</p>

@@ -1,6 +1,6 @@
 # Buddy: project context
 
-Last updated: 2026-10-24 (Phase 3: stages 11 to 13, plus Gemini option).
+Last updated: 2026-10-24 (Phase 3: stages 11 to 14, plus Gemini option).
 Keep this file accurate. Update it at the end of every stage.
 
 ## 1. Product vision
@@ -95,7 +95,7 @@ Demo details:
 | `/w/[workspace]/issues` | `app/w/[workspace]/issues/page.tsx` | Issues from the database, newest first (up to 200), filter by status, urgency and team, search customer/reference/subject/message. Filters are in the address bar (plain GET form) | |
 | `/w/[workspace]/issues/new` | `components/issues/issue-forms.tsx` | Add an issue: customer, channel, subject, message, urgency, sentiment, type, team, category (`createIssue`). When AI is on and set up, urgency, sentiment and type default to "Let AI decide" (saved with the usual defaults, then filled by the AI); an empty category is also filled | |
 | `/w/[workspace]/issues/[issueId]` | `app/w/[workspace]/issues/[issueId]/page.tsx` | Issue detail, change status, assignee, team and category (any member of the workspace, `updateIssue`), history from `issue_activity`. "AI analysis" panel (`components/issues/ai-panel.tsx`, `app/actions/ai.ts`): right after creation it runs `analyseIssue` in a separate request (`?analyse=<fields>`), shows the summary, next step, themes and each suggestion with an Accept button when it differs (`acceptAiValue`), "Analyse again", and failures with the reason | Real Claude answers not yet checked against the live API (no key in the cloud copy) |
-| `/w/[workspace]/routing` | `components/routing/routing-forms.tsx` | Routing rules from the database: add, edit (conditions on category, urgency, sentiment, type, channel, message text; match all or any), reorder, switch off, delete. Owners and admins edit (`app/actions/routing.ts`); members see them read-only. "Route open issues that have no team" gives each open issue without a team the team its first matching rule suggests (`routeUnassignedIssues`, up to 500 at a time). The issue page shows the matching rule and an "Apply suggestion" button (`applySuggestedTeam`, any member). Both recompute the match on the server and never overwrite a team someone already chose | Suggest only: no automatic routing when an issue arrives (Phase 3) |
+| `/w/[workspace]/routing` | `components/routing/routing-forms.tsx` | Routing rules from the database: add, edit (conditions on category, urgency, sentiment, type, channel, message text; match all or any), reorder, switch off, delete. Owners and admins edit (`app/actions/routing.ts`); members see them read-only. "Route open issues that have no team" gives each open issue without a team the team its first matching rule suggests (`routeUnassignedIssues`, up to 500 at a time). The issue page shows the matching rule and an "Apply suggestion" button (`applySuggestedTeam`, any member). Both recompute the match on the server and never overwrite a team someone already chose | Automatic routing only after AI analysis, when an owner switched it on (Phase 3 stage 14) |
 | `/w/[workspace]/settings` | `components/settings/settings-forms.tsx` | Company name, industry, time zone, first-response targets; add/rename/delete teams (name, lead, email, colour) and categories; "AI analysis" card (on/off, monthly limit, analyses used this month and approximate cost, whether this server has an AI key). Owners and admins edit (`app/actions/settings.ts`); members see it read-only | Team email is display only. AI switch does nothing yet (stage 13 runs analyses) |
 
 Every `/w/[workspace]` page has a "Something went wrong, try again" screen
@@ -204,7 +204,8 @@ How access works:
   composite foreign keys so they cannot point at another organisation.
 - Organisation `slug` cannot be changed after creation.
 - AI analysis (Phase 3): owners and admins switch it on and set the monthly
-  limit. `issue_analyses` is read-only for users; rows are added only by
+  limit; only owners change `ai_auto_route` (trigger
+  `organizations_only_owner_sets_auto_route`). `issue_analyses` is read-only for users; rows are added only by
   `start_issue_analysis` (member of the issue's company, AI on, under the
   monthly limit counted since the 1st in UTC including failed attempts, not
   the same issue within 30 seconds; locks the company row so two requests
@@ -324,8 +325,9 @@ run keeps the Playwright report for 7 days (Actions > the run > Artifacts).
   validation for writes; SQL migrations in `supabase/migrations/`; the app
   never uses the secret key.
 - **Routing suggests, people decide.** Rules never move an issue on their own
-  until Phase 3; "Apply suggestion" and "Route open issues that have no team"
-  are buttons.
+  unless an owner switched on "Apply routing automatically" (Phase 3), which
+  only fills an empty team after AI analysis; "Apply suggestion" and "Route
+  open issues that have no team" are buttons.
 - **Saves report success only after the database confirms**, and updates ask
   for the row back, because a refused update changes 0 rows without an error.
 - **Tests run against a local Supabase**, never the hosted project:
@@ -473,4 +475,15 @@ routing use AI values, 15 docs.
   set. Settings names the service; cost is estimated per model at paid
   prices (Gemini's free tier is $0, but Google may use free-tier content to
   improve its products: made-up messages only). Unit tests with a stand-in
-  client. Not yet run against the real Gemini API.
+  client. PR #12, merged 2026-10-24. Jugal ran a real Gemini analysis on
+  their PC on 2026-10-24 and it worked (Critical, Negative, Complaint,
+  Billing, 95% sure).
+- Stage 14: the Issues list shows an "AI suggested" badge and the AI summary
+  for analysed issues. Routing rules already see AI values because accepted
+  values are copied onto the issue. New owner-only switch
+  `organizations.ai_auto_route` (migration `20261024150000_ai_auto_route.sql`,
+  a trigger refuses the change from anyone but an owner): after an analysis,
+  `analyseIssue` gives an issue with no team the team of its first matching
+  rule, only while it still has no team. 157/157 security checks, 7/7
+  browser tests (new `tests/e2e/ai-routing.spec.ts`), 53 unit tests, lint,
+  type check, build (2026-10-24).

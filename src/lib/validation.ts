@@ -153,6 +153,7 @@ export const updateOrganizationSchema = z.object({
 export const updateAiSettingsSchema = z.object({
   organizationId: z.string().uuid(),
   enabled: z.enum(["on", "off"]),
+  autoRoute: z.enum(["on", "off"]),
   monthlyLimit: z.coerce
     .number({ message: "Enter a number." })
     .int("Use a whole number.")

@@ -1,3 +1,4 @@
+import { Sparkles } from "lucide-react";
 import type { IssueStatus, Sentiment, Urgency } from "@/lib/types";
 import { sentimentLabels, statusLabels, urgencyLabels } from "@/lib/labels";
 
@@ -40,4 +41,13 @@ export function StatusBadge({ status }: { status: IssueStatus }) {
 
 export function Tag({ children }: { children: React.ReactNode }) {
   return <span className={`${base} bg-slate-100 text-slate-700`}>{children}</span>;
+}
+
+/** Marks values that came from AI analysis rather than a person. */
+export function AiBadge() {
+  return (
+    <span className={`${base} bg-brand-50 text-brand-700`}>
+      <Sparkles className="h-3 w-3" aria-hidden /> AI suggested
+    </span>
+  );
 }

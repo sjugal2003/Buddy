@@ -6,6 +6,8 @@ import type { AnalyseResult } from "@/lib/ai/schema";
 import { getCurrentUser } from "@/lib/auth";
 import { friendlyError } from "@/lib/errors";
 import { createClient } from "@/lib/supabase/server";
+import { getIssue, listRoutingRules, toRoutable } from "@/lib/data/live";
+import { findMatchingRule } from "@/lib/routing";
 import { acceptAiValueSchema, analyseIssueSchema, type AiField } from "@/lib/validation";
 import type { FormState } from "./types";
 
@@ -13,6 +15,8 @@ import type { FormState } from "./types";
 // start_issue_analysis checks membership, the on/off switch, the monthly
 // limit and the 30-second wait before anything is sent to the AI, and
 // finish_issue_analysis records the answer (or the failure) exactly once.
+// If an owner switched on automatic routing, an issue without a team then
+// gets the team its first matching rule names.
 
 const SIGNED_OUT: FormState = { error: "Your session has ended. Please sign in again." };
 const NOT_SET_UP = "AI is not set up on this server yet (add GEMINI_API_KEY or ANTHROPIC_API_KEY to .env.local).";
@@ -93,7 +97,41 @@ export async function analyseIssue(issueId: string, fill: AiField[]): Promise<Fo
       error: friendlyError(accepted.error, "The AI answered, but we couldn't fill in the issue. Use the Accept buttons.", "analyseIssue"),
     };
   }
-  return { success: "AI analysis finished." };
+  if (!issue) return { success: "AI analysis finished." };
+  return autoRoute(issue.organization_id, parsed.data.issueId);
+}
+
+/** Applies the first matching routing rule when the company asked for that. */
+async function autoRoute(organizationId: string, issueId: string): Promise<FormState> {
+  const supabase = await createClient();
+  const { data: org, error: orgError } = await supabase
+    .from("organizations")
+    .select("ai_auto_route")
+    .eq("id", organizationId)
+    .single();
+  if (orgError) console.error("[autoRoute] settings", orgError.code);
+  if (!org?.ai_auto_route) return { success: "AI analysis finished." };
+
+  // Read again after the AI values were filled in, so rules see them.
+  const issue = await getIssue(organizationId, issueId);
+  if (!issue || issue.teamId) return { success: "AI analysis finished." };
+  const rule = findMatchingRule(await listRoutingRules(organizationId), toRoutable(issue));
+  if (!rule) return { success: "AI analysis finished. No routing rule matches this issue." };
+
+  // Only while the issue still has no team: never overwrite a person's choice.
+  const { data, error } = await supabase
+    .from("issues")
+    .update({ team_id: rule.teamId })
+    .eq("id", issueId)
+    .is("team_id", null)
+    .select("id");
+  refresh();
+  if (error) {
+    return {
+      error: friendlyError(error, "The AI finished, but we couldn't apply the routing rule. Use the suggestion button.", "autoRoute"),
+    };
+  }
+  return { success: data?.length ? `AI analysis finished. Routing rule "${rule.name}" was applied.` : "AI analysis finished." };
 }
 
 /** Use one AI suggestion on the issue (the Accept buttons). */
