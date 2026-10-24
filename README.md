@@ -271,7 +271,7 @@ which step failed, with a screenshot.
 | `/w/<company>` | Your real workspace: dashboard cards (urgent, due within 2 hours, targets missed, escalations, no team, waiting, this week), recent activity, members, roles, invitations |
 | `/w/<company>/issues` | Customer issues: search, filters (including deadlines and escalations), add, status, assignee, team, category, history, deadlines, "Record first response", escalations with Acknowledge; AI analysis panel and "AI suggested" marks when AI is on |
 | `/w/<company>/routing` | Routing rules: add, edit, reorder, switch off, delete (owners and admins); route open issues that have no team |
-| `/w/<company>/data-sources` | Import a CSV file (owners and admins: match columns, preview, open or past conversations), and every import with its counts and rejected-row reasons. Gmail is not connected yet |
+| `/w/<company>/data-sources` | Import a CSV file (owners and admins: match columns, preview, open or past conversations), "Analyse with AI" for an import's issues (asks first, shows the month's remaining analyses), and every import with its counts and rejected-row reasons. Gmail is not connected yet |
 | `/w/<company>/settings` | Company profile, first-response and resolution targets, AI analysis (on/off, monthly limit, automatic routing), escalation conditions with "Check now" and the automatic-check status, teams, categories (owners and admins edit; automatic routing owners only) |
 | `/demo/<company>/...` | The Phase 1 demo with fictional data (dashboard, inbox, intelligence, routing, data sources, reports, automation, settings) |
 

@@ -1,5 +1,6 @@
 import { notFound } from "next/navigation";
 import { CsvImport } from "@/components/data-sources/csv-import";
+import { ImportAiButton } from "@/components/data-sources/import-ai-button";
 import { Card } from "@/components/ui/card";
 import { PageHeader } from "@/components/ui/page-header";
 import { requireUser } from "@/lib/auth";
@@ -83,6 +84,7 @@ export default async function DataSourcesPage({ params }: { params: Promise<{ wo
                     <th className="py-2 pr-4 text-right font-medium">Imported</th>
                     <th className="py-2 pr-4 text-right font-medium">Already in Buddy</th>
                     <th className="py-2 text-right font-medium">Rejected</th>
+                    {canImport && <th className="py-2 pl-4 font-medium">AI</th>}
                   </tr>
                 </thead>
                 <tbody className="divide-y divide-slate-100">
@@ -117,6 +119,11 @@ export default async function DataSourcesPage({ params }: { params: Promise<{ wo
                       <td className="py-2 pr-4 text-right text-slate-900">{run.imported}</td>
                       <td className="py-2 pr-4 text-right text-slate-900">{run.skippedDuplicate}</td>
                       <td className="py-2 text-right text-slate-900">{run.rejected}</td>
+                      {canImport && (
+                        <td className="py-2 pl-4">
+                          {run.imported > 0 && run.status !== "running" && <ImportAiButton runId={run.id} compact />}
+                        </td>
+                      )}
                     </tr>
                   ))}
                 </tbody>

@@ -5,6 +5,7 @@ import Link from "next/link";
 import { useRouter } from "next/navigation";
 import { finishCsvImport, importCsvChunk, startCsvImport, type RowOutcome } from "@/app/actions/imports";
 import { FormMessage } from "@/components/auth/auth-card";
+import { ImportAiButton } from "@/components/data-sources/import-ai-button";
 import { Field, inputClass, primaryButton, secondaryButton } from "@/components/ui/form";
 import {
   MAX_IMPORT_BYTES,
@@ -45,6 +46,7 @@ interface Result {
   rejected: { row: number | null; reason: string }[];
   /** Set when the import stopped part-way. */
   error?: string;
+  runId?: string;
 }
 
 const numberFormat = new Intl.NumberFormat("en-GB");
@@ -152,7 +154,7 @@ export function CsvImport({ organizationId, timeZone, slug }: { organizationId: 
       setResult({ imported: 0, duplicate: 0, rejected: [], error: started.error });
       return;
     }
-    const totals: Result = { imported: 0, duplicate: 0, rejected: [] };
+    const totals: Result = { imported: 0, duplicate: 0, rejected: [], runId: started.runId };
     let done = 0;
     let failure: string | undefined;
     for (const chunk of chunkRows(rows)) {
@@ -231,6 +233,14 @@ export function CsvImport({ organizationId, timeZone, slug }: { organizationId: 
               ))}
               {result.rejected.length > 200 && <li>…and {n(result.rejected.length - 200)} more.</li>}
             </ul>
+          </div>
+        )}
+        {result.imported > 0 && result.runId && (
+          <div className="border-t border-slate-100 pt-4">
+            <p className="mb-2 text-xs text-slate-500">
+              Imported issues start as Medium and Neutral with no category. The AI can fill these in; it asks first.
+            </p>
+            <ImportAiButton runId={result.runId} />
           </div>
         )}
         <div className="flex flex-wrap gap-2">
