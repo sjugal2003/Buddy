@@ -38,6 +38,11 @@ Router, React 19, TypeScript strict, Tailwind v4). Full background:
   value a person chose, and never moves an issue unless the owner switched
   on automatic routing.
   Tests and CI use `BUDDY_AI_MODE=fake`; no test may call the paid API.
+- Gmail: only through `src/lib/gmail/` (server only), read-only scope. The
+  refresh token is encrypted with `GMAIL_TOKEN_KEY` and reachable only via
+  security-definer functions; never send it to the browser or log it. Fetched
+  emails go through `import_issues` like CSV rows. Tests and CI use
+  `BUDDY_GMAIL_MODE=fake`; no test may contact Google.
 
 ## Database
 
