@@ -186,6 +186,7 @@ which step failed, with a screenshot.
 | `Port 3000 is in use, trying 3001` | Another `npm.cmd run dev` is still running; close it, because sign-in links only return to port 3000 |
 | `npm.cmd install` lists vulnerabilities | Tell Claude; never run `npm audit fix --force` (it breaks the lint tools) |
 | `npx.cmd supabase start` says it cannot connect to Docker | Open Docker Desktop and wait until it is running |
+| `git pull` says your local changes to `package-lock.json` would be overwritten | `npm.cmd install` rewrote that file. Run `git checkout -- package-lock.json`, then `git pull` and `npm.cmd install` again |
 
 ## Pages
 
