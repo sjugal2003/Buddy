@@ -11,7 +11,7 @@ import { RecordFirstResponseButton } from "@/components/issues/record-response-b
 import { AcknowledgeForm } from "@/components/escalations/escalation-forms";
 import { EscalationBadge } from "@/components/escalations/escalation-badge";
 import { deadlines } from "@/lib/targets";
-import { escalationConditionLabels, isEscalationCondition, openEscalationLevel } from "@/lib/escalations";
+import { escalationConditionLabels, openEscalationLevel } from "@/lib/escalations";
 import { aiServiceStatus } from "@/lib/ai";
 import { requireUser } from "@/lib/auth";
 import {
@@ -27,73 +27,16 @@ import {
   listRoutingRules,
   listTeams,
   toRoutable,
-  type IssueActivity,
 } from "@/lib/data/live";
 import { describeReasons, matchedConditions, routeIssue } from "@/lib/routing";
 import { ApplySuggestionButton, DismissSuggestionButton } from "@/components/routing/routing-forms";
-import { channelLabels, intentLabels, sentimentLabels, statusLabels, urgencyLabels } from "@/lib/labels";
+import { channelLabels, intentLabels } from "@/lib/labels";
 import { formatDateTime, formatDateTimeIn } from "@/lib/format";
-import { aiFieldSchema, intentSchema, sentimentSchema, statusSchema, urgencySchema } from "@/lib/validation";
+import { describeActivity } from "@/lib/activity";
+import { aiFieldSchema } from "@/lib/validation";
 import { z } from "zod";
 
 export const dynamic = "force-dynamic";
-
-function statusName(value: string | null) {
-  const parsed = statusSchema.safeParse(value);
-  return parsed.success ? statusLabels[parsed.data] : (value ?? "none");
-}
-
-const fieldNames: Record<string, string> = { sentiment: "sentiment", intent: "type", urgency: "urgency", category: "category" };
-
-/** A value as people read it, e.g. "very_negative" becomes "Very negative". */
-function valueName(field: string, value: string | null) {
-  const label =
-    (field === "urgency" && urgencySchema.safeParse(value).success && urgencyLabels[value as keyof typeof urgencyLabels]) ||
-    (field === "sentiment" && sentimentSchema.safeParse(value).success && sentimentLabels[value as keyof typeof sentimentLabels]) ||
-    (field === "intent" && intentSchema.safeParse(value).success && intentLabels[value as keyof typeof intentLabels]);
-  return label || (value ?? "none");
-}
-
-function describe(event: IssueActivity) {
-  switch (event.kind) {
-    case "created":
-      return `Issue created as ${statusName(event.toValue)}`;
-    case "status_changed":
-      return `Status changed from ${statusName(event.fromValue)} to ${statusName(event.toValue)}`;
-    case "assignee_changed":
-      if (!event.toValue) return `Unassigned (was ${event.fromValue})`;
-      return event.fromValue ? `Reassigned from ${event.fromValue} to ${event.toValue}` : `Assigned to ${event.toValue}`;
-    case "team_changed":
-      return event.toValue ? `Moved to team ${event.toValue}` : `Removed from team ${event.fromValue ?? ""}`.trim();
-    case "escalated":
-      // Written by the escalation check: from_value is the level, to_value the reason.
-      return event.fromValue ? `Escalated (level ${event.fromValue}): ${event.toValue ?? ""}`.trim() : "Escalated";
-    case "routing_applied":
-      // from_value is the rule's name, to_value the team, written by apply_routing_rule.
-      return `Moved to team ${event.toValue ?? ""} by routing rule “${event.fromValue ?? ""}”`;
-    case "routing_dismissed":
-      return "Routing suggestion dismissed";
-    case "escalation_acknowledged": {
-      const what = isEscalationCondition(event.fromValue) ? ` (${escalationConditionLabels[event.fromValue]})` : "";
-      return `Escalation acknowledged${what}${event.toValue ? `: “${event.toValue}”` : ""}`;
-    }
-    case "category_changed":
-      return `Category changed from ${event.fromValue ?? "No category"} to ${event.toValue ?? "No category"}`;
-    case "first_response":
-      return "First response recorded";
-    case "resolved":
-      return `Resolved (was ${statusName(event.fromValue)})`;
-    case "reopened":
-      return `Reopened as ${statusName(event.toValue)}`;
-    case "ai_analysed":
-      return `Analysed by AI (suggested urgency ${valueName("urgency", event.toValue)})`;
-    case "ai_accepted": {
-      // from_value is "<field>:<old value>", written by accept_issue_analysis.
-      const [field, ...rest] = (event.fromValue ?? "").split(":");
-      return `Accepted AI ${fieldNames[field] ?? field}: ${valueName(field, rest.join(":"))} → ${valueName(field, event.toValue)}`;
-    }
-  }
-}
 
 export default async function IssuePage({
   params,
@@ -329,7 +272,7 @@ export default async function IssuePage({
                 {activity.map((event) => (
                   <li key={event.id} className="relative text-sm">
                     <span className="absolute -left-[21px] top-1.5 h-2 w-2 rounded-full bg-slate-300" />
-                    <p className="text-slate-800">{describe(event)}</p>
+                    <p className="text-slate-800">{describeActivity(event)}</p>
                     <p className="flex items-center gap-1 text-xs text-slate-500">
                       <Clock className="h-3 w-3" aria-hidden /> {formatDateTime(event.at)}
                       {event.actorName && <> · {event.actorName}</>}

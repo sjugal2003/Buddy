@@ -69,10 +69,18 @@ describe("issues", () => {
       team: "",
       q: "",
       due: "",
+      escalated: "",
       sort: "",
     });
     expect(issueFiltersSchema.parse({ due: "bogus", sort: "oldest" })).toMatchObject({ due: "", sort: "" });
     expect(issueFiltersSchema.parse({ due: "overdue", sort: "attention" })).toMatchObject({ due: "overdue", sort: "attention" });
+    // The workspace home's cards link to these.
+    expect(issueFiltersSchema.parse({ urgency: "urgent", due: "2h", escalated: "open" })).toMatchObject({
+      urgency: "urgent",
+      due: "2h",
+      escalated: "open",
+    });
+    expect(issueFiltersSchema.parse({ escalated: "all" }).escalated).toBe("");
     expect(issueFiltersSchema.parse({ status: "all", q: "  o'neil,(id.eq.1)*  " }).q).toBe("o'neil id.eq.1");
   });
 });
