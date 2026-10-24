@@ -62,6 +62,17 @@ describe("issues", () => {
     expect(createIssueSchema.safeParse({ ...base, subject: "x".repeat(201) }).success).toBe(false);
   });
 
+  it("keeps the customer's email optional, tidy and valid", () => {
+    expect(createIssueSchema.parse(base)).toMatchObject({ customerEmail: null });
+    expect(createIssueSchema.parse({ ...base, customerEmail: "  " })).toMatchObject({ customerEmail: null });
+    expect(createIssueSchema.parse({ ...base, customerEmail: " Dana@Example.COM " })).toMatchObject({
+      customerEmail: "dana@example.com",
+    });
+    for (const bad of ["dana", "dana@example", "dana @example.com", "a@b@c.com", `${"x".repeat(250)}@e.com`]) {
+      expect(createIssueSchema.safeParse({ ...base, customerEmail: bad }).success).toBe(false);
+    }
+  });
+
   it("falls back to safe filters and strips odd characters from searches", () => {
     expect(issueFiltersSchema.parse({ status: "nonsense", urgency: 3, team: "x", q: undefined })).toEqual({
       status: "active",
