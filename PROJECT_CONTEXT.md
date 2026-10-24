@@ -95,7 +95,7 @@ Demo details:
 | `/w/[workspace]/issues` | `app/w/[workspace]/issues/page.tsx` | Issues from the database, newest first (up to 200), filter by status, urgency, team and deadline (overdue / due soon), sort by "needs attention first", search customer/reference/subject/message. Each open issue shows its next deadline (`DeadlineBadge`) and an "Escalated · level N" badge while it has an unacknowledged escalation. Deadline filters and sorting look at up to 1,000 issues (`DEADLINE_SCAN_LIMIT`). Filters are in the address bar (plain GET form). Issues with AI values show an "AI suggested" badge (`AiBadge`) and the AI summary instead of the message preview | |
 | `/w/[workspace]/issues/new` | `components/issues/issue-forms.tsx` | Add an issue: customer, channel, subject, message, urgency, sentiment, type, team, category (`createIssue`). When AI is on and set up, urgency, sentiment and type default to "Let AI decide" (saved with the usual defaults, then filled by the AI); an empty category is also filled | |
 | `/w/[workspace]/issues/[issueId]` | `app/w/[workspace]/issues/[issueId]/page.tsx` | Issue detail, change status, assignee, team and category (any member of the workspace, `updateIssue`), history from `issue_activity` (status, resolved, reopened, team, category, assignee, first response, AI). "Deadlines" card: first-response and resolution deadline in the company time zone, worked out on the server (`src/lib/targets.ts`), "Record first response" button (`recordFirstResponse`, any member), reopen count. "Escalations" card (when there are any): level, condition, reason, and Acknowledge with an optional note (`acknowledgeEscalation`, any member). "AI analysis" panel (`components/issues/ai-panel.tsx`, `app/actions/ai.ts`): right after creation it runs `analyseIssue` in a separate request (`?analyse=<fields>`), shows the summary, next step, themes and each suggestion with an Accept button when it differs (`acceptAiValue`), "Analyse again", and failures with the reason | Checked with real Gemini answers by Jugal (2026-10-24); Claude not yet tried with a real key |
-| `/w/[workspace]/routing` | `components/routing/routing-forms.tsx` | Routing rules from the database: add, edit (conditions on category, urgency, sentiment, type, channel, message text; match all or any), reorder, switch off, delete. Owners and admins edit (`app/actions/routing.ts`); members see them read-only. "Route open issues that have no team" gives each open issue without a team the team its first matching rule suggests (`routeUnassignedIssues`, up to 500 at a time). The issue page shows the matching rule and an "Apply suggestion" button (`applySuggestedTeam`, any member). Both recompute the match on the server and never overwrite a team someone already chose | Automatic routing only after AI analysis, when an owner switched it on (Phase 3 stage 14) |
+| `/w/[workspace]/routing` | `components/routing/routing-forms.tsx` | Routing rules from the database: add, edit (conditions on category, urgency, sentiment, type, channel, message text; match all or any), reorder, switch off, delete. Owners and admins edit (`app/actions/routing.ts`); members see them read-only. Every rule is checked (`routeIssue` in `src/lib/routing.ts`); when matching rules name different teams the issue shows a conflict instead of "top rule wins". "Route open issues that have no team" gives each open issue without a team the team its matching rules agree on (`routeUnassignedIssues`, up to 500 at a time) and reports how many were skipped because of a conflict. The issue page explains the suggestion ("Suggested team: Payments, because rule "Billing to Payments" matched: category is Billing"), with "Apply suggestion" (`applySuggestedTeam`, any member), "Dismiss suggestion" (`dismissRoutingSuggestion`), and one button per rule in a conflict. Applying goes through `apply_routing_rule`, which records the rule in History. Everything recomputes the match on the server and never overwrites a team someone already chose; dismissed and conflicting issues are skipped by bulk and automatic routing | Automatic routing only after AI analysis, when an owner switched it on (Phase 3 stage 14) |
 | `/w/[workspace]/settings` | `components/settings/settings-forms.tsx` | Company name, industry, time zone, first-response and resolution targets; add/rename/delete teams (name, lead, email, colour) and categories; "AI analysis" card (on/off, monthly limit, analyses used this month and approximate cost, whether this server has an AI key). Owners and admins edit (`app/actions/settings.ts`); members see it read-only. "Apply routing automatically" (owners only). "Escalations" card: switch conditions on and set thresholds, "Check now" (`app/actions/escalations.ts`), last check, and plain notes that automatic checks are not running and notifications are not set up | Team email is display only |
 
 Every `/w/[workspace]` page has a "Something went wrong, try again" screen
@@ -182,7 +182,8 @@ Files (`supabase/`):
 | `migrations/20261024150000_ai_auto_route.sql` | Stage 14: `organizations.ai_auto_route` (default off) and a trigger that lets only owners change it |
 | `migrations/20261025090000_resolution_tracking.sql` | Phase 4 stage 16: `organizations.resolution_hours_*` (8/24/72/120 by default, 1 to 2,160); `issues.first_response_by`, `reopened_count`, `waiting_seconds`, `waiting_since` (kept by the `issue_track_lifecycle` trigger); `record_first_response(issue)`; history kinds `category_changed`, `first_response`, `resolved`, `reopened` |
 | `migrations/20261025120000_escalations.sql` | Phase 4 stage 17: `escalation_settings` (one row per company, all conditions off), `escalations` (unique per issue, condition and open spell), `escalation_runs` log; `run_escalation_check(company)` (owners and admins; the internal `private.run_escalation_check` does the work), `acknowledge_escalation(id, note)`; history kind `escalation_acknowledged` |
-| `tests/security_test.sql` | 224 checks of tenant isolation, roles, invitations, teams, categories, settings, routing rules, AI analysis, resolution tracking and escalations; runs in one transaction and rolls back |
+| `migrations/20261025150000_routing_explanations.sql` | Phase 4 stage 18: `issues.routing_dismissed_at` (cleared when category, urgency, type or channel changes); `apply_routing_rule(issue, rule, expected team)` and `dismiss_routing_suggestion(issue)`; history kinds `routing_applied`, `routing_dismissed` |
+| `tests/security_test.sql` | 246 checks of tenant isolation, roles, invitations, teams, categories, settings, routing rules, AI analysis, resolution tracking, escalations and routing history; runs in one transaction and rolls back |
 | `tests/local-supabase-stub.sql` | Minimal stand-in for Supabase's `auth` schema and roles, for plain PostgreSQL only. Never run on Supabase |
 
 Tables: `profiles`, `organizations`, `organization_members`,
@@ -228,6 +229,11 @@ How access works:
   written only by the check, which looks at one company's open issues and
   never changes an issue. Any member can acknowledge an escalation once
   (`acknowledge_escalation`); nobody can add, edit or delete them directly.
+- Routing (Phase 4 stage 18): `apply_routing_rule` sets a team only from an
+  enabled rule of the issue's own company and only if the team is still what
+  the app read; it gives nobody a new power because members can already set
+  a team by hand. `routing_dismissed_at` is set only by
+  `dismiss_routing_suggestion` (any member).
 
 ## 8. Authentication status
 
@@ -295,8 +301,8 @@ npx.cmd supabase db push
 
 | Command | What it checks | Needs |
 |---|---|---|
-| `npm.cmd test` | Unit tests (`tests/unit/`): routing rule matching, analytics, input rules, deadlines, escalations, AI engine with stand-in clients | Nothing |
-| `npm.cmd run test:db` | `supabase/tests/security_test.sql` (224 checks); rolls itself back | Local Supabase |
+| `npm.cmd test` | Unit tests (`tests/unit/`): routing rule matching, conflicts and explanations, analytics, input rules, deadlines, escalations, AI engine with stand-in clients | Nothing |
+| `npm.cmd run test:db` | `supabase/tests/security_test.sql` (246 checks); rolls itself back | Local Supabase |
 | `npm.cmd run test:e2e` | Browser tests (`tests/e2e/`, Playwright): sign-up, invitations, roles, issues, settings, routing, AI analysis and automatic routing (free test analyser), deadlines and first response, escalations, cross-company access | Local Supabase, test browser |
 
 Local Supabase needs Docker Desktop. One-time setup, then each time:
@@ -508,7 +514,8 @@ routing use AI values, 15 docs.
   `organizations.ai_auto_route` (migration `20261024150000_ai_auto_route.sql`,
   a trigger refuses the change from anyone but an owner): after an analysis,
   `analyseIssue` gives an issue with no team the team of its first matching
-  rule, only while it still has no team. 157/157 security checks, 7/7
+  rule, only while it still has no team (since stage 18: only when the
+  matching rules agree). 157/157 security checks, 7/7
   browser tests (new `tests/e2e/ai-routing.spec.ts`), 53 unit tests, lint,
   type check, build (2026-10-24). PR #14, merged 2026-10-24. Verified by
   Jugal on the hosted project: Gemini analysed a payment complaint, the
@@ -546,4 +553,14 @@ explanations and conflicts, 19 dashboard, 20 scheduled checks (pg_cron),
   (stage 20) and no notifications (Phase 6). Migration
   `20261025120000_escalations.sql`. 224/224 security checks, 9/9 browser
   tests (new `tests/e2e/escalations.spec.ts`), 70 unit tests, lint, type
-  check, build (2026-10-24).
+  check, build (2026-10-24). PR #17, merged 2026-10-24.
+- Stage 18: routing explanations and conflicts. The issue page says which
+  rule matched and why; when matching rules name different teams it shows a
+  conflict with a button per rule. Bulk and automatic routing skip conflicts
+  and dismissed suggestions and say how many were skipped. "Dismiss
+  suggestion" hides it until the category, urgency, type or channel changes.
+  A team set by a rule is recorded as "Moved to team X by routing rule ...".
+  The demo pages keep "first match wins" (`findMatchingRule`). Migration
+  `20261025150000_routing_explanations.sql`. 246/246 security checks, 9/9
+  browser tests (routing test extended), 75 unit tests, lint, type check,
+  build (2026-10-24).

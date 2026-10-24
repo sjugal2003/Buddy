@@ -46,7 +46,7 @@ test("AI in the inbox and routing: rules use AI values, and automatic routing is
   await test.step("with automatic routing off, the rule only suggests the team", async () => {
     await newIssue("Service down");
     await shows(p, "text=Accepted AI urgency: Medium → Critical");
-    await shows(p, 'main p:has-text("Critical to Escalations"):has-text("suggests Escalations")');
+    await shows(p, '[data-testid="routing-suggestion"]:has-text("Suggested team: Escalations"):has-text("Critical to Escalations")');
     await expect(p.locator("select[name=teamId]")).toHaveValue("");
   });
 

@@ -124,6 +124,8 @@ export interface LiveIssue {
   waitingSeconds: number;
   waitingSince: string | null;
   reopenedCount: number;
+  /** When someone dismissed the routing suggestion, or null. */
+  routingDismissedAt: string | null;
   /** The AI's one-line summary, or "" if there is none. */
   summary: string;
   updatedAt: string;
@@ -143,7 +145,9 @@ export interface IssueActivity {
     | "first_response"
     | "resolved"
     | "reopened"
-    | "escalation_acknowledged";
+    | "escalation_acknowledged"
+    | "routing_applied"
+    | "routing_dismissed";
   fromValue: string | null;
   toValue: string | null;
   actorName: string | null;
@@ -164,7 +168,7 @@ export interface IssueFilters {
 export const ISSUE_LIST_LIMIT = 200;
 
 const ISSUE_COLUMNS =
-  "id, reference, customer_name, channel, subject, message, received_at, sentiment, intent, urgency, status, assignee_name, team_id, category_id, analysis_source, summary, first_response_at, resolved_at, waiting_seconds, waiting_since, reopened_count, updated_at";
+  "id, reference, customer_name, channel, subject, message, received_at, sentiment, intent, urgency, status, assignee_name, team_id, category_id, analysis_source, summary, first_response_at, resolved_at, waiting_seconds, waiting_since, reopened_count, routing_dismissed_at, updated_at";
 
 type IssueRow = {
   id: string;
@@ -188,6 +192,7 @@ type IssueRow = {
   waiting_seconds: number;
   waiting_since: string | null;
   reopened_count: number;
+  routing_dismissed_at: string | null;
   updated_at: string;
 };
 
@@ -214,6 +219,7 @@ function toIssue(row: IssueRow): LiveIssue {
     waitingSeconds: row.waiting_seconds,
     waitingSince: row.waiting_since,
     reopenedCount: row.reopened_count,
+    routingDismissedAt: row.routing_dismissed_at,
     updatedAt: row.updated_at,
   };
 }
@@ -533,7 +539,7 @@ export function toRoutable(issue: LiveIssue): RoutableMessage {
   };
 }
 
-/** Open issues that have no team yet, newest first. */
+/** Open issues that have no team yet and no dismissed suggestion, newest first. */
 export async function listUnroutedIssues(organizationId: string, limit: number): Promise<LiveIssue[]> {
   const supabase = await createClient();
   const { data, error } = await supabase
@@ -541,6 +547,7 @@ export async function listUnroutedIssues(organizationId: string, limit: number):
     .select(ISSUE_COLUMNS)
     .eq("organization_id", organizationId)
     .is("team_id", null)
+    .is("routing_dismissed_at", null)
     .neq("status", "resolved")
     .order("received_at", { ascending: false })
     .limit(limit);

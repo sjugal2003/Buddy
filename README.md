@@ -132,12 +132,14 @@ per hour.
    page read-only.
 10. Give an issue a team and category. The Issues page can filter by team.
 11. Open **Routing** and add a rule, for example "If Category is Billing,
-    suggest Payments". Rules are checked top to bottom and the first match
-    wins; use the arrows to reorder and **Switch off** to pause one.
+    suggest Payments". Every rule is checked; if two matching rules name
+    different teams, the issue shows a conflict and a person chooses. Use the
+    arrows to reorder and **Switch off** to pause one.
 12. Open an issue with no team that matches the rule. Under the Handling form
-    it says which rule matches; press **Apply suggestion** to give it that
-    team. On the Routing page, **Route open issues that have no team** does
-    the same for every open issue without a team.
+    it says which rule matches and why; press **Apply suggestion** to give it
+    that team, or **Dismiss suggestion** to hide it. On the Routing page,
+    **Route open issues that have no team** does the same for every open
+    issue without a team, skipping conflicts and dismissed suggestions.
 
 ## AI analysis (optional)
 
@@ -174,7 +176,8 @@ If both keys are set, Claude is used.
    category like any other value.
 7. Optional, owners only: tick **Apply routing automatically** in the same
    card. Then a newly analysed issue that has no team goes straight to the
-   team its first matching routing rule names (the history shows the move).
+   team its matching routing rules name (the history shows the move). If
+   the rules disagree, it is left for a person.
    Left off, rules only suggest a team and a person presses the button.
 
 What is sent to the AI service: the subject, the message (first 4,000

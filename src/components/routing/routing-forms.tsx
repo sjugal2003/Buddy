@@ -6,6 +6,7 @@ import {
   applySuggestedTeam,
   createRule,
   deleteRule,
+  dismissRoutingSuggestion,
   moveRule,
   routeUnassignedIssues,
   toggleRule,
@@ -363,11 +364,14 @@ export function RouteUnassignedButton({ organizationId }: { organizationId: stri
 export function ApplySuggestionButton({
   organizationId,
   issueId,
-  teamName,
+  ruleId,
+  label,
 }: {
   organizationId: string;
   issueId: string;
-  teamName: string;
+  /** The server checks this rule still matches the issue before using it. */
+  ruleId: string;
+  label: string;
 }) {
   const [state, action, pending] = useActionState<FormState, FormData>(applySuggestedTeam, {});
   return (
@@ -375,8 +379,24 @@ export function ApplySuggestionButton({
       <form action={action}>
         <input type="hidden" name="organizationId" value={organizationId} />
         <input type="hidden" name="issueId" value={issueId} />
+        <input type="hidden" name="ruleId" value={ruleId} />
         <button type="submit" disabled={pending} className={`${secondaryButton} w-full`}>
-          {pending ? "Applying…" : `Apply suggestion: give it to ${teamName}`}
+          {pending ? "Applying…" : label}
+        </button>
+      </form>
+      <FormMessage error={state.error} success={state.success} />
+    </div>
+  );
+}
+
+export function DismissSuggestionButton({ issueId }: { issueId: string }) {
+  const [state, action, pending] = useActionState<FormState, FormData>(dismissRoutingSuggestion, {});
+  return (
+    <div className="space-y-2">
+      <form action={action}>
+        <input type="hidden" name="issueId" value={issueId} />
+        <button type="submit" disabled={pending} className="text-xs font-medium text-slate-500 hover:text-slate-700 hover:underline">
+          {pending ? "Dismissing…" : "Dismiss suggestion"}
         </button>
       </form>
       <FormMessage error={state.error} success={state.success} />
