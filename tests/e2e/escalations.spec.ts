@@ -1,5 +1,17 @@
 import { expect, test } from "@playwright/test";
+import pg from "pg";
 import { createOrg, hidden, shows, signUpAndConfirm, stamp } from "./helpers";
+
+/** Does what the 15-minute database scheduler does, against the local test database only. */
+async function runScheduledChecks() {
+  const client = new pg.Client({ connectionString: "postgresql://postgres:postgres@127.0.0.1:54322/postgres" });
+  await client.connect();
+  try {
+    await client.query("select private.run_scheduled_escalation_checks()");
+  } finally {
+    await client.end();
+  }
+}
 
 // Escalations are raised by the database check (all its rules are tested in
 // supabase/tests/security_test.sql). Here: the Settings card, Check now,
@@ -52,6 +64,15 @@ test("escalations: settings, check now, badge, acknowledge", async ({ browser, b
     await p.click('button:has-text("Check now")');
     await shows(p, "text=Checked 1 open issue: no new escalations.");
     await expect(p.getByTestId("escalation-last-run")).toContainText("(Check now). Checked 1 open issue");
+    await expect(p.getByTestId("automatic-checks")).toHaveText("Not running. Use Check now.");
+  });
+
+  await test.step("a scheduled check shows in Settings and repeats nothing", async () => {
+    await runScheduledChecks();
+    await p.reload();
+    await expect(p.getByTestId("automatic-checks")).toContainText("Running every 15 minutes.");
+    await expect(p.getByTestId("automatic-checks")).toContainText("Last scheduled check:");
+    await expect(p.getByTestId("escalation-last-run")).toContainText("(scheduled). Checked 1 open issue: no new escalations.");
   });
 
   await test.step("the issue shows the escalation without changing its status", async () => {
@@ -83,5 +104,7 @@ test("escalations: settings, check now, badge, acknowledge", async ({ browser, b
     expect((await B.goto(issueUrl))?.status()).toBe(404);
     await B.goto(`/w/${slugB}/settings`);
     await expect(B.getByTestId("escalation-last-run")).toHaveText("Never run");
+    // Company B has never had a scheduled check.
+    await expect(B.getByTestId("automatic-checks")).toHaveText("Not running. Use Check now.");
   });
 });

@@ -907,6 +907,47 @@ select tests.expect_affected(format('update public.issues set category_id = %L w
 select tests.expect_rows(format('select 1 from public.issues where id = %L and routing_dismissed_at is null',
   current_setting('t.issue_esc')), 1, 'a category change brings the suggestion back');
 
+-- ---------------------------------------------------------------------------
+-- Scheduled escalation checks (Phase 4 stage 20)
+-- ---------------------------------------------------------------------------
+
+select tests.act_as(current_setting('t.invitee')::uuid);
+select tests.expect_error('select private.run_scheduled_escalation_checks()',
+  'a member cannot start the scheduled checks');
+select tests.act_as(current_setting('t.a_owner')::uuid);
+select tests.expect_error('select private.run_scheduled_escalation_checks()',
+  'an owner cannot start the scheduled checks directly');
+select tests.expect_error(format($q$insert into public.escalation_runs (organization_id, source) values (%L, 'scheduled')$q$,
+  current_setting('t.org_a')), 'nobody can fake a scheduled check from the app');
+
+reset role;
+select tests.expect_rows($q$select 1 from cron.job where jobname = 'buddy-escalation-check'
+  and schedule = '*/15 * * * *' and command = 'select private.run_scheduled_escalation_checks()' and active$q$, 1,
+  'the scheduler runs the checks every 15 minutes');
+update public.escalation_settings set first_response_enabled = false, resolution_enabled = false,
+  urgent_no_team_enabled = false, no_team_enabled = false, no_update_enabled = false
+  where organization_id = current_setting('t.org_b')::uuid;
+select set_config('t.esc_before', (select count(*)::text from public.escalations
+  where organization_id = current_setting('t.org_a')::uuid), true);
+select tests.expect_rows('select 1 where private.run_scheduled_escalation_checks() >= 1', 1,
+  'the scheduler checks the companies that have a condition on');
+select tests.expect_rows(format($q$select 1 from public.escalation_runs where organization_id = %L and source = 'scheduled'
+  and started_by is null and finished_at is not null and error is null$q$, current_setting('t.org_a')), 1,
+  'a scheduled check is logged for company A, with no person as its starter');
+select tests.expect_rows(format($q$select 1 from public.escalation_runs where organization_id = %L and source = 'scheduled'$q$,
+  current_setting('t.org_b')), 0, 'a company with every condition off is not checked');
+select tests.expect_rows(format('select 1 from public.escalations where organization_id = %L having count(*) = %s',
+  current_setting('t.org_a'), current_setting('t.esc_before')), 1,
+  'a scheduled check after Check now repeats no escalation');
+
+set local role authenticated;
+select tests.act_as(current_setting('t.invitee')::uuid);
+select tests.expect_rows(format($q$select 1 from public.escalation_runs where organization_id = %L and source = 'scheduled'$q$,
+  current_setting('t.org_a')), 1, 'members of company A see the scheduled check');
+select tests.act_as(current_setting('t.b_owner')::uuid);
+select tests.expect_rows($q$select 1 from public.escalation_runs where source = 'scheduled'$q$, 0,
+  'owner B cannot see company A''s scheduled checks');
+
 -- Deleting the issue keeps its analyses, so the monthly count cannot be reset.
 select tests.act_as(current_setting('t.a_owner')::uuid);
 select tests.expect_affected(format('delete from public.issues where id = %L', current_setting('t.issue_a')), 1,
