@@ -1092,6 +1092,85 @@ select tests.expect_error(format($q$insert into public.issues (organization_id, 
   'the database itself refuses a second issue for the same record');
 set local role authenticated;
 
+-- Gmail inbox connection (Phase 5 stage 25)
+-- ---------------------------------------------------------------------------
+
+select tests.act_as(current_setting('t.a_member')::uuid);
+select tests.expect_error(format($q$select public.save_mailbox_connection(%L, 'inbox@example.com', 'v1:aaaa:bbbb:cccc')$q$,
+  current_setting('t.org_a')), 'an admin cannot connect an inbox');
+select tests.act_as(current_setting('t.invitee')::uuid);
+select tests.expect_error(format($q$select public.save_mailbox_connection(%L, 'inbox@example.com', 'v1:aaaa:bbbb:cccc')$q$,
+  current_setting('t.org_a')), 'a member cannot connect an inbox');
+select tests.act_as(current_setting('t.b_owner')::uuid);
+select tests.expect_error(format($q$select public.save_mailbox_connection(%L, 'inbox@example.com', 'v1:aaaa:bbbb:cccc')$q$,
+  current_setting('t.org_a')), 'owner B cannot connect an inbox to company A');
+select tests.act_as(current_setting('t.a_owner')::uuid);
+select tests.expect_error(format($q$select public.save_mailbox_connection(%L, 'not an email', 'v1:aaaa:bbbb:cccc')$q$,
+  current_setting('t.org_a')), 'an invalid inbox address is refused');
+select tests.expect_error(format($q$select public.save_mailbox_connection(%L, 'inbox@example.com', 'plain-token-value')$q$,
+  current_setting('t.org_a')), 'a token that is not encrypted is refused');
+select public.save_mailbox_connection(current_setting('t.org_a')::uuid, 'Inbox@Example.com', 'v1:aaaa:bbbb:cccc');
+select tests.expect_rows(format($q$select 1 from public.mailbox_connections where organization_id = %L
+  and email_address = 'inbox@example.com' and connected_by = %L$q$, current_setting('t.org_a'), current_setting('t.a_owner')), 1,
+  'owner A connects an inbox (stored in lower case)');
+select tests.expect_rows(format($q$select 1 where public.mailbox_token(%L) = 'v1:aaaa:bbbb:cccc'$q$, current_setting('t.org_a')), 1,
+  'the owner can get the encrypted token back for the server');
+
+-- Reconnecting replaces, never duplicates.
+select public.save_mailbox_connection(current_setting('t.org_a')::uuid, 'inbox@example.com', 'v1:dddd:eeee:ffff');
+select tests.expect_rows(format($q$select 1 from public.mailbox_connections where organization_id = %L$q$,
+  current_setting('t.org_a')), 1, 'reconnecting keeps one connection per company');
+select tests.expect_rows(format($q$select 1 where public.mailbox_token(%L) = 'v1:dddd:eeee:ffff'$q$, current_setting('t.org_a')), 1,
+  'reconnecting replaces the token');
+
+select tests.act_as(current_setting('t.a_member')::uuid);
+select tests.expect_rows(format($q$select 1 where public.mailbox_token(%L) is not null$q$, current_setting('t.org_a')), 1,
+  'an admin can use the connected inbox (for fetching)');
+select tests.act_as(current_setting('t.invitee')::uuid);
+select tests.expect_rows(format($q$select 1 from public.mailbox_connections where organization_id = %L$q$,
+  current_setting('t.org_a')), 1, 'a member can see which inbox is connected');
+select tests.expect_error(format($q$select public.mailbox_token(%L)$q$, current_setting('t.org_a')),
+  'a member cannot get the token');
+select tests.expect_error('select * from public.mailbox_tokens', 'nobody can read the token table directly');
+select tests.expect_error(format($q$update public.mailbox_connections set email_address = 'x@example.com'
+  where organization_id = %L$q$, current_setting('t.org_a')), 'a member cannot change the connection');
+select tests.expect_error(format($q$insert into public.mailbox_connections (organization_id, email_address)
+  values (%L, 'x@example.com')$q$, current_setting('t.org_b')), 'nobody can add a connection directly');
+select tests.expect_error(format($q$select public.disconnect_mailbox(%L)$q$, current_setting('t.org_a')),
+  'a member cannot disconnect the inbox');
+
+select tests.act_as(current_setting('t.b_owner')::uuid);
+select tests.expect_rows(format($q$select 1 from public.mailbox_connections where organization_id = %L$q$,
+  current_setting('t.org_a')), 0, 'company B cannot see company A''s inbox');
+select tests.expect_error(format($q$select public.mailbox_token(%L)$q$, current_setting('t.org_a')),
+  'owner B cannot get company A''s token');
+select tests.expect_error(format($q$select public.disconnect_mailbox(%L)$q$, current_setting('t.org_a')),
+  'owner B cannot disconnect company A''s inbox');
+select tests.expect_rows(format($q$select 1 where public.mailbox_token(%L) is null$q$, current_setting('t.org_b')), 1,
+  'company B has no inbox connected');
+
+select tests.act_as(current_setting('t.a_member')::uuid);
+select tests.expect_error(format($q$select public.disconnect_mailbox(%L)$q$, current_setting('t.org_a')),
+  'an admin cannot disconnect the inbox');
+select tests.act_as(current_setting('t.a_owner')::uuid);
+select tests.expect_rows(format($q$select 1 where public.disconnect_mailbox(%L)$q$, current_setting('t.org_a')), 1,
+  'the owner disconnects the inbox');
+select tests.expect_rows(format($q$select 1 from public.mailbox_connections where organization_id = %L$q$,
+  current_setting('t.org_a')), 0, 'the connection is gone');
+select tests.expect_rows(format($q$select 1 where public.mailbox_token(%L) is null$q$, current_setting('t.org_a')), 1,
+  'and so is the token');
+select tests.expect_rows(format($q$select 1 where not public.disconnect_mailbox(%L)$q$, current_setting('t.org_a')), 1,
+  'disconnecting again reports that nothing was connected');
+
+select tests.act_as(null);
+reset role;
+set local role anon;
+select tests.expect_error(format($q$select public.mailbox_token(%L)$q$, current_setting('t.org_a')),
+  'a signed-out visitor cannot reach the token');
+select tests.expect_error('select * from public.mailbox_connections', 'a signed-out visitor cannot see connections');
+reset role;
+set local role authenticated;
+
 -- Deleting the issue keeps its analyses, so the monthly count cannot be reset.
 select tests.act_as(current_setting('t.a_owner')::uuid);
 select tests.expect_affected(format('delete from public.issues where id = %L', current_setting('t.issue_a')), 1,

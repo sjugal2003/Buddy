@@ -1,11 +1,16 @@
 import { notFound } from "next/navigation";
+import { FormMessage } from "@/components/auth/auth-card";
 import { CsvImport } from "@/components/data-sources/csv-import";
+import { GmailDisconnect } from "@/components/data-sources/gmail-disconnect";
 import { ImportAiButton } from "@/components/data-sources/import-ai-button";
 import { Card } from "@/components/ui/card";
 import { PageHeader } from "@/components/ui/page-header";
 import { requireUser } from "@/lib/auth";
-import { getMembershipBySlug, listImportRuns, type ImportRun } from "@/lib/data/live";
+import { getMailboxConnection, getMembershipBySlug, listImportRuns, type ImportRun } from "@/lib/data/live";
+import { gmailStatus } from "@/lib/gmail";
+import { gmailResultMessages } from "@/lib/gmail/oauth";
 import { formatDateTimeIn } from "@/lib/format";
+import { primaryButton } from "@/components/ui/form";
 
 export const dynamic = "force-dynamic";
 
@@ -17,14 +22,44 @@ const statusLabels: Record<ImportRun["status"], string> = {
 
 const sourceLabels: Record<ImportRun["source"], string> = { csv: "Spreadsheet (CSV)", gmail: "Gmail" };
 
-export default async function DataSourcesPage({ params }: { params: Promise<{ workspace: string }> }) {
+export default async function DataSourcesPage({
+  params,
+  searchParams,
+}: {
+  params: Promise<{ workspace: string }>;
+  searchParams: Promise<{ gmail?: string }>;
+}) {
   const { workspace: slug } = await params;
+  const { gmail: gmailResult } = await searchParams;
   const user = await requireUser(`/w/${slug}/data-sources`);
   const membership = await getMembershipBySlug(user.id, slug);
   if (!membership) notFound();
 
   const timeZone = membership.organization.timezone;
-  const runs = await listImportRuns(membership.organization.id);
+  const [runs, mailbox] = await Promise.all([
+    listImportRuns(membership.organization.id),
+    getMailboxConnection(membership.organization.id),
+  ]);
+  const gmailService = gmailStatus();
+  const isOwner = membership.role === "owner";
+  // "Connected" is shown only when the connection is really there, whatever the address bar says.
+  const gmailMessage =
+    gmailResult === "connected"
+      ? mailbox
+        ? { success: `Gmail connected: ${mailbox.emailAddress}.` }
+        : { error: gmailResultMessages.save_failed }
+      : gmailResult === "disconnected" || gmailResult === "disconnected_local"
+        ? mailbox
+          ? null
+          : {
+              success:
+                gmailResult === "disconnected"
+                  ? "Gmail disconnected. Google has cancelled Buddy's access."
+                  : "Gmail disconnected in Buddy, but Google could not be told. Remove Buddy at myaccount.google.com/permissions to be sure.",
+            }
+        : gmailResult && gmailResultMessages[gmailResult]
+        ? { error: gmailResultMessages[gmailResult] }
+        : null;
   // Only decides whether to show the import box; the database refuses imports from members.
   const canImport = membership.role === "owner" || membership.role === "admin";
 
@@ -48,9 +83,67 @@ export default async function DataSourcesPage({ params }: { params: Promise<{ wo
             </li>
             <li className="flex flex-wrap items-baseline justify-between gap-2 py-2">
               <span className="font-medium text-slate-900">Gmail</span>
-              <span className="text-slate-600">Not connected. Coming in a later update.</span>
+              <span className="text-slate-600" data-testid="gmail-source-status">
+                {mailbox ? `Connected: ${mailbox.emailAddress} (read-only)` : "Not connected."}
+              </span>
             </li>
           </ul>
+        </Card>
+
+        <Card
+          title="Gmail inbox"
+          description="Read-only: Buddy can read messages but can never send, delete or change email. One inbox per company."
+        >
+          <div className="space-y-4 text-sm" data-testid="gmail-card">
+            {gmailMessage && <FormMessage {...gmailMessage} />}
+            {mailbox ? (
+              <dl className="grid grid-cols-[auto_1fr] gap-x-6 gap-y-1">
+                <dt className="text-slate-500">Inbox</dt>
+                <dd className="break-all text-slate-900" data-testid="gmail-address">
+                  {mailbox.emailAddress}
+                </dd>
+                <dt className="text-slate-500">Connected</dt>
+                <dd className="text-slate-900">
+                  {formatDateTimeIn(mailbox.connectedAt, timeZone)}
+                  {mailbox.connectedByName && ` by ${mailbox.connectedByName}`}
+                </dd>
+                <dt className="text-slate-500">Fetching email</dt>
+                <dd className="text-slate-900">Not available yet: &ldquo;Fetch new email&rdquo; comes in the next update.</dd>
+              </dl>
+            ) : (
+              <p className="text-slate-600" data-testid="gmail-not-connected">
+                No inbox connected.
+              </p>
+            )}
+            {gmailService === "not_configured" && !mailbox ? (
+              <p className="text-xs text-slate-500" data-testid="gmail-not-configured">
+                Gmail is not set up on this server yet: add GOOGLE_CLIENT_ID, GOOGLE_CLIENT_SECRET and GMAIL_TOKEN_KEY to
+                .env.local (see the README).
+              </p>
+            ) : isOwner ? (
+              mailbox ? (
+                <GmailDisconnect organizationId={membership.organization.id} slug={slug} />
+              ) : (
+                <div className="space-y-2">
+                  <a
+                    href={`/api/gmail/connect?workspace=${slug}`}
+                    className={primaryButton}
+                    data-testid="gmail-connect"
+                  >
+                    Connect Gmail
+                  </a>
+                  <p className="text-xs text-slate-500">
+                    Google asks you to sign in and allow read-only access. Use a test inbox with made-up emails until Buddy
+                    is ready for real customer data.
+                  </p>
+                </div>
+              )
+            ) : (
+              <p className="text-xs text-slate-500" data-testid="gmail-owner-only">
+                Only owners can connect or disconnect the inbox.
+              </p>
+            )}
+          </div>
         </Card>
 
         <Card

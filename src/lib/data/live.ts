@@ -856,3 +856,31 @@ export async function listImportRuns(organizationId: string, limit = 50): Promis
     error: row.error,
   }));
 }
+
+export interface MailboxConnection {
+  emailAddress: string;
+  connectedByName: string | null;
+  connectedAt: string;
+  lastFetchedAt: string | null;
+}
+
+/** The company's connected Gmail inbox, if any. Never includes the token. */
+export async function getMailboxConnection(organizationId: string): Promise<MailboxConnection | null> {
+  const supabase = await createClient();
+  const { data, error } = await supabase
+    .from("mailbox_connections")
+    .select("email_address, connected_at, last_fetched_at, connector:profiles (full_name)")
+    .eq("organization_id", organizationId)
+    .maybeSingle();
+  if (error) {
+    console.error("[getMailboxConnection]", error.code, error.message);
+    throw new Error("Could not load the inbox connection.");
+  }
+  if (!data) return null;
+  return {
+    emailAddress: data.email_address,
+    connectedByName: (data.connector as unknown as { full_name: string } | null)?.full_name || null,
+    connectedAt: data.connected_at,
+    lastFetchedAt: data.last_fetched_at,
+  };
+}
