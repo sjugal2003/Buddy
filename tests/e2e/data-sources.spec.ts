@@ -63,7 +63,7 @@ test("data sources: customer email, honest source list and import history per co
     await p.getByRole("link", { name: "Data sources" }).click();
     await p.waitForURL(`**${W}/data-sources`);
     const sources = p.getByTestId("source-list");
-    await expect(sources).toContainText("Not available yet");
+    await expect(sources).toContainText("Available: owners and admins import a file below.");
     await expect(sources).toContainText("Not connected");
     await expect(p.getByTestId("imports-empty")).toHaveText("No imports yet.");
   });
@@ -98,6 +98,8 @@ test("data sources: customer email, honest source list and import history per co
     await acceptInvite(M, link, slugA);
     await M.goto(`${W}/data-sources`);
     await expect(M.getByTestId("import-row")).toHaveCount(1);
+    await expect(M.getByTestId("import-not-allowed")).toBeVisible();
+    await expect(M.getByTestId("csv-file")).toHaveCount(0);
   });
 
   await test.step("another company sees none of it", async () => {

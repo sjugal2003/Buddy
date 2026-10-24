@@ -1,6 +1,6 @@
 # Buddy: project context
 
-Last updated: 2026-10-24 (Phase 5 stage 22: import foundation, waiting for review).
+Last updated: 2026-10-24 (Phase 5 stage 23: CSV import, waiting for review).
 Keep this file accurate. Update it at the end of every stage.
 
 ## 1. Product vision
@@ -96,7 +96,7 @@ Demo details:
 | `/w/[workspace]/issues/new` | `components/issues/issue-forms.tsx` | Add an issue: customer, optional customer email (stage 22, stored in lower case), channel, subject, message, urgency, sentiment, type, team, category (`createIssue`). When AI is on and set up, urgency, sentiment and type default to "Let AI decide" (saved with the usual defaults, then filled by the AI); an empty category is also filled | |
 | `/w/[workspace]/issues/[issueId]` | `app/w/[workspace]/issues/[issueId]/page.tsx` | Issue detail (with the customer's email and, for imported issues, the source and its ID), change status, assignee, team and category (any member of the workspace, `updateIssue`), history from `issue_activity` (status, resolved, reopened, team, category, assignee, first response, AI). "Deadlines" card: first-response and resolution deadline in the company time zone, worked out on the server (`src/lib/targets.ts`), "Record first response" button (`recordFirstResponse`, any member), reopen count. "Escalations" card (when there are any): level, condition, reason, and Acknowledge with an optional note (`acknowledgeEscalation`, any member). "AI analysis" panel (`components/issues/ai-panel.tsx`, `app/actions/ai.ts`): right after creation it runs `analyseIssue` in a separate request (`?analyse=<fields>`), shows the summary, next step, themes and each suggestion with an Accept button when it differs (`acceptAiValue`), "Analyse again", and failures with the reason | Checked with real Gemini answers by Jugal (2026-10-24); Claude not yet tried with a real key |
 | `/w/[workspace]/routing` | `components/routing/routing-forms.tsx` | Routing rules from the database: add, edit (conditions on category, urgency, sentiment, type, channel, message text; match all or any), reorder, switch off, delete. Owners and admins edit (`app/actions/routing.ts`); members see them read-only. Every rule is checked (`routeIssue` in `src/lib/routing.ts`); when matching rules name different teams the issue shows a conflict instead of "top rule wins". "Route open issues that have no team" gives each open issue without a team the team its matching rules agree on (`routeUnassignedIssues`, up to 500 at a time) and reports how many were skipped because of a conflict. The issue page explains the suggestion ("Suggested team: Payments, because rule "Billing to Payments" matched: category is Billing"), with "Apply suggestion" (`applySuggestedTeam`, any member), "Dismiss suggestion" (`dismissRoutingSuggestion`), and one button per rule in a conflict. Applying goes through `apply_routing_rule`, which records the rule in History. Everything recomputes the match on the server and never overwrites a team someone already chose; dismissed and conflicting issues are skipped by bulk and automatic routing | Automatic routing only after AI analysis, when an owner switched it on (Phase 3 stage 14) |
-| `/w/[workspace]/data-sources` | `app/w/[workspace]/data-sources/page.tsx` | Phase 5 stage 22. Lists the sources honestly (typed in: available; CSV import: not available yet; Gmail: not connected) and the company's import history from `import_runs`: when, source and file name, who, status, rows examined, imported, already in Buddy, rejected, and the reasons rows were rejected (row number and reason only). Any member can see it | |
+| `/w/[workspace]/data-sources` | `app/w/[workspace]/data-sources/page.tsx` | Phase 5 stage 22. Lists the sources honestly (typed in: available; CSV import: available to owners and admins; Gmail: not connected). "Import a CSV file" (stage 23, `components/data-sources/csv-import.tsx`, `app/actions/imports.ts`, pure logic in `src/lib/csv-import.ts`): the browser reads the file (up to 5 MB and 5,000 rows; comma, semicolon or tab; quoted cells), guesses each column from the headings (dropdowns to change), reads dates as year-month-day, day/month/year or month/day/year (guessed, changeable; times without a zone are the company's time zone), uses the message's first words when there is no subject column and a chosen channel when there is none, previews the first 10 rows and every row that will be rejected with the database's own reason, then asks "Open issues" or "Past conversations, already resolved" before Import. Rows go to `import_issues` in pieces of at most 500 rows and about 700 KB (the server action limit is 1 MB); the result (imported, already in Buddy, rejected with reasons) comes only from what the database reports, and a piece that fails marks the import "Stopped with an error" with the counts so far. Members see "Only owners and admins can import files." The file itself is never uploaded or stored. Also and the company's import history from `import_runs`: when, source and file name, who, status, rows examined, imported, already in Buddy, rejected, and the reasons rows were rejected (row number and reason only). Any member can see it | |
 | `/w/[workspace]/settings` | `components/settings/settings-forms.tsx` | Company name, industry, time zone, first-response and resolution targets; add/rename/delete teams (name, lead, email, colour) and categories; "AI analysis" card (on/off, monthly limit, analyses used this month and approximate cost, whether this server has an AI key). Owners and admins edit (`app/actions/settings.ts`); members see it read-only. "Apply routing automatically" (owners only). "Escalations" card: switch conditions on and set thresholds, "Check now" (`app/actions/escalations.ts`), last check, "Automatic checks" (judged only from the latest scheduled check actually logged: "Not running. Use Check now." until one is seen, "Running every 15 minutes." while they arrive, a warning after 45 minutes without one) and a note that notifications are not set up | Team email is display only |
 
 Every `/w/[workspace]` page has a "Something went wrong, try again" screen
@@ -318,9 +318,9 @@ npx.cmd supabase db push
 
 | Command | What it checks | Needs |
 |---|---|---|
-| `npm.cmd test` | Unit tests (`tests/unit/`): routing rule matching, conflicts and explanations, analytics, input rules, deadlines, escalations, AI engine with stand-in clients | Nothing |
+| `npm.cmd test` | Unit tests (`tests/unit/`): routing rule matching, conflicts and explanations, analytics, input rules, deadlines, escalations, CSV reading and checks, AI engine with stand-in clients | Nothing |
 | `npm.cmd run test:db` | `supabase/tests/security_test.sql` (294 checks); rolls itself back | Local Supabase |
-| `npm.cmd run test:e2e` | Browser tests (`tests/e2e/`, Playwright): sign-up, invitations, roles, issues, settings, routing, AI analysis and automatic routing (free test analyser), deadlines and first response, escalations, dashboard counts, cross-company access | Local Supabase, test browser |
+| `npm.cmd run test:e2e` | Browser tests (`tests/e2e/`, Playwright): sign-up, invitations, roles, issues, settings, routing, AI analysis and automatic routing (free test analyser), deadlines and first response, escalations, dashboard counts, data sources and CSV import, cross-company access | Local Supabase, test browser |
 
 Local Supabase needs Docker Desktop. One-time setup, then each time:
 
@@ -426,6 +426,14 @@ run keeps the Playwright report for 7 days (Actions > the run > Artifacts).
   tier costs nothing but Google may use what is sent.
 - Code lives in the private GitHub repo `sjugal2003/Buddy` (from 2026-10-23).
   Each stage arrives as a pull request.
+
+- **CSV import (stage 23):** closing the page or losing the connection
+  part-way leaves that import "Not finished" in the history; the rows already
+  saved stay, and importing the same file again adds only the rest (repeats
+  are skipped). Imports cannot be undone in one step: imported issues are
+  deleted one by one by an owner or admin. Rows without an ID column are
+  matched by customer name, received time and message, so editing any of
+  those in the file makes the row new again.
 
 ## 13. Security requirements (apply from Phase 2 on)
 
@@ -635,6 +643,13 @@ Phase 5 (data sources). Jugal approved the plan and its six decisions on
   optional customer email on the new-issue form and issue page; Data sources
   tab with import history. No upload yet (stage 23). 294/294 security
   checks, 11/11 browser tests (new `tests/e2e/data-sources.spec.ts`), 88
-  unit tests, lint, type check, build, `npm audit` 0 (2026-10-24). Waiting
-  for Jugal's review; the migration is applied to the hosted project only
-  after the PR is merged.
+  unit tests, lint, type check, build, `npm audit` 0 (2026-10-24). PR #22,
+  merged 2026-10-24; applied and checked on Jugal's hosted project (customer
+  email on a new issue, Data sources "No imports yet").
+- Stage 23: CSV import on the Data sources page (see section 5). No
+  database change. 294/294 security checks, 13/13 browser tests (new
+  `tests/e2e/csv-import.spec.ts`, including a 1,201-row file sent in three
+  pieces and the same file in another company), 102 unit tests (new
+  `tests/unit/csv-import.test.ts`), lint, type check, build, `npm audit` 0
+  (2026-10-24). Waiting for Jugal's review. Not in this stage: AI analysis of
+  imported issues (stage 24).

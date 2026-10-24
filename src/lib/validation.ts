@@ -276,3 +276,33 @@ export const acknowledgeEscalationSchema = z.object({
   escalationId: z.string().uuid(),
   note: z.string().trim().max(500, "Keep the note to 500 characters or fewer."),
 });
+
+// CSV import (Phase 5 stage 23). Shapes only: public.import_issues checks
+// each row's content again and gives the reasons. Limits are one over the
+// database's so an over-long value is still rejected there, with its reason.
+export const importRowSchema = z.object({
+  row: z.number().int().min(1).max(1_000_000),
+  record_id: z.string().max(201),
+  customer_name: z.string().max(121),
+  customer_email: z.string().max(255),
+  channel: z.string().max(40),
+  subject: z.string().max(201),
+  message: z.string().max(10001),
+  received_at: z.string().max(40).nullable(),
+});
+
+export const startImportSchema = z.object({
+  organizationId: z.string().uuid(),
+  fileName: z.string().trim().max(200),
+});
+
+export const importChunkSchema = z.object({
+  runId: z.string().uuid(),
+  rows: z.array(importRowSchema).min(1).max(500),
+  asHistory: z.boolean(),
+});
+
+export const finishImportSchema = z.object({
+  runId: z.string().uuid(),
+  error: z.string().trim().max(500).nullable(),
+});
