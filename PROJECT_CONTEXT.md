@@ -1,6 +1,6 @@
 # Buddy: project context
 
-Last updated: 2026-10-24 (Phase 3: stages 11 and 12).
+Last updated: 2026-10-24 (Phase 3: stages 11 to 13).
 Keep this file accurate. Update it at the end of every stage.
 
 ## 1. Product vision
@@ -93,8 +93,8 @@ Demo details:
 | `/invite?token=` | `components/org/members.tsx` | Accept an invitation (`accept_invitation`) | |
 | `/w/[workspace]` | `app/w/[workspace]/page.tsx` | Real workspace home: open issue count, members, role changes (owners), remove/leave, invite links and open invitations (owners and admins) | |
 | `/w/[workspace]/issues` | `app/w/[workspace]/issues/page.tsx` | Issues from the database, newest first (up to 200), filter by status, urgency and team, search customer/reference/subject/message. Filters are in the address bar (plain GET form) | |
-| `/w/[workspace]/issues/new` | `components/issues/issue-forms.tsx` | Add an issue by hand: customer, channel, subject, message, urgency, sentiment, type, team, category (`createIssue`) | Classification is manual until Phase 3 |
-| `/w/[workspace]/issues/[issueId]` | `app/w/[workspace]/issues/[issueId]/page.tsx` | Issue detail, change status, assignee, team and category (any member of the workspace, `updateIssue`), history from `issue_activity` | |
+| `/w/[workspace]/issues/new` | `components/issues/issue-forms.tsx` | Add an issue: customer, channel, subject, message, urgency, sentiment, type, team, category (`createIssue`). When AI is on and set up, urgency, sentiment and type default to "Let AI decide" (saved with the usual defaults, then filled by the AI); an empty category is also filled | |
+| `/w/[workspace]/issues/[issueId]` | `app/w/[workspace]/issues/[issueId]/page.tsx` | Issue detail, change status, assignee, team and category (any member of the workspace, `updateIssue`), history from `issue_activity`. "AI analysis" panel (`components/issues/ai-panel.tsx`, `app/actions/ai.ts`): right after creation it runs `analyseIssue` in a separate request (`?analyse=<fields>`), shows the summary, next step, themes and each suggestion with an Accept button when it differs (`acceptAiValue`), "Analyse again", and failures with the reason | Real Claude answers not yet checked against the live API (no key in the cloud copy) |
 | `/w/[workspace]/routing` | `components/routing/routing-forms.tsx` | Routing rules from the database: add, edit (conditions on category, urgency, sentiment, type, channel, message text; match all or any), reorder, switch off, delete. Owners and admins edit (`app/actions/routing.ts`); members see them read-only. "Route open issues that have no team" gives each open issue without a team the team its first matching rule suggests (`routeUnassignedIssues`, up to 500 at a time). The issue page shows the matching rule and an "Apply suggestion" button (`applySuggestedTeam`, any member). Both recompute the match on the server and never overwrite a team someone already chose | Suggest only: no automatic routing when an issue arrives (Phase 3) |
 | `/w/[workspace]/settings` | `components/settings/settings-forms.tsx` | Company name, industry, time zone, first-response targets; add/rename/delete teams (name, lead, email, colour) and categories; "AI analysis" card (on/off, monthly limit, analyses used this month and approximate cost, whether this server has an AI key). Owners and admins edit (`app/actions/settings.ts`); members see it read-only | Team email is display only. AI switch does nothing yet (stage 13 runs analyses) |
 
@@ -176,8 +176,9 @@ Files (`supabase/`):
 | `migrations/20261023120000_core_schema.sql` | The 10 tables, checks, indexes, triggers (updated_at, resolved_at, issue history, profile on sign-up) |
 | `migrations/20261023120100_security.sql` | Table privileges allowlist, Row Level Security policies, membership functions |
 | `migrations/20261023160000_issue_category_update.sql` | Stage 8a: members may change an issue's category |
+| `migrations/20261024120000_ai_accept.sql` | Stage 13: `accept_issue_analysis(analysis, fields)` copies a finished analysis's values onto its issue and writes `ai_accepted` history |
 | `migrations/20261024090000_ai_analysis.sql` | Stage 12: `organizations.ai_enabled` (default off) and `ai_monthly_limit` (default 500, 0 to 2,000); `issue_analyses` table; `start_issue_analysis` / `finish_issue_analysis`; history kinds `ai_analysed`, `ai_accepted` |
-| `tests/security_test.sql` | 144 checks of tenant isolation, roles, invitations, teams, categories, settings, routing rules and AI analysis; runs in one transaction and rolls back |
+| `tests/security_test.sql` | 152 checks of tenant isolation, roles, invitations, teams, categories, settings, routing rules and AI analysis; runs in one transaction and rolls back |
 | `tests/local-supabase-stub.sql` | Minimal stand-in for Supabase's `auth` schema and roles, for plain PostgreSQL only. Never run on Supabase |
 
 Tables: `profiles`, `organizations`, `organization_members`,
@@ -211,6 +212,9 @@ How access works:
   `finish_issue_analysis` (only by the person who started it, within 5
   minutes). Finished rows never change; deleting an issue keeps its
   analyses (issue_id cleared) so the count cannot be reset.
+- Members still cannot set sentiment, type, urgency or summary directly;
+  `accept_issue_analysis` is the only way, and only with the values of a
+  finished analysis of the same issue.
 
 ## 8. Authentication status
 
@@ -278,7 +282,7 @@ npx.cmd supabase db push
 | Command | What it checks | Needs |
 |---|---|---|
 | `npm.cmd test` | Unit tests (`tests/unit/`): routing rule matching, analytics, input rules | Nothing |
-| `npm.cmd run test:db` | `supabase/tests/security_test.sql` (144 checks); rolls itself back | Local Supabase |
+| `npm.cmd run test:db` | `supabase/tests/security_test.sql` (152 checks); rolls itself back | Local Supabase |
 | `npm.cmd run test:e2e` | Browser tests (`tests/e2e/`, Playwright): sign-up, invitations, roles, issues, settings, routing, cross-company access | Local Supabase, test browser |
 
 Local Supabase needs Docker Desktop. One-time setup, then each time:
@@ -451,4 +455,11 @@ routing use AI values, 15 docs.
   `issue_analyses` record, the monthly limit enforced in the database) and an
   "AI analysis" card in Settings. 144/144 security checks, 5/5 browser tests
   (new `tests/e2e/ai-settings.spec.ts`), 45 unit tests, lint, type check and
-  build pass locally (2026-10-24). Jugal must run `npx.cmd supabase db push`.
+  build pass locally (2026-10-24). PR #10, merged 2026-10-24.
+- Stage 13: analysis runs after an issue is saved; "Let AI decide" on the
+  new-issue form; AI panel with Accept buttons and "Analyse again"; history
+  entries; migration `20261024120000_ai_accept.sql`. Browser tests use the
+  test analyser (`BUDDY_AI_MODE=fake` in `playwright.config.ts`, which also
+  blanks `ANTHROPIC_API_KEY`). 152/152 security checks, 6/6 browser tests on
+  a production build, 45 unit tests, lint, type check, build (2026-10-24).
+  Not yet run against the real Claude API: Jugal checks that with their own key.

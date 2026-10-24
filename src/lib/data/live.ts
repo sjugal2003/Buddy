@@ -121,7 +121,7 @@ export interface LiveIssue {
 
 export interface IssueActivity {
   id: number;
-  kind: "created" | "status_changed" | "team_changed" | "assignee_changed" | "escalated";
+  kind: "created" | "status_changed" | "team_changed" | "assignee_changed" | "escalated" | "ai_analysed" | "ai_accepted";
   fromValue: string | null;
   toValue: string | null;
   actorName: string | null;
@@ -232,6 +232,68 @@ export async function getIssue(organizationId: string, issueId: string): Promise
     throw new Error("Could not load this issue.");
   }
   return data ? toIssue(data) : null;
+}
+
+export interface LiveAnalysis {
+  id: string;
+  status: "pending" | "done" | "failed";
+  failureReason: string | null;
+  sentiment: Sentiment | null;
+  intent: Intent | null;
+  urgency: Urgency | null;
+  categoryId: string | null;
+  themes: string[];
+  summary: string;
+  suggestedAction: string;
+  confidence: number | null;
+  model: string;
+  createdAt: string;
+}
+
+/** The most recent AI analysis of an issue, if any. */
+export async function getLatestAnalysis(organizationId: string, issueId: string): Promise<LiveAnalysis | null> {
+  const supabase = await createClient();
+  const { data, error } = await supabase
+    .from("issue_analyses")
+    .select(
+      "id, status, failure_reason, sentiment, intent, urgency, category_id, themes, summary, suggested_action, confidence, model, created_at",
+    )
+    .eq("organization_id", organizationId)
+    .eq("issue_id", issueId)
+    .order("created_at", { ascending: false })
+    .limit(1)
+    .maybeSingle();
+  if (error) {
+    console.error("[getLatestAnalysis]", error.code, error.message);
+    throw new Error("Could not load the AI analysis of this issue.");
+  }
+  if (!data) return null;
+  return {
+    id: data.id,
+    status: data.status,
+    failureReason: data.failure_reason,
+    sentiment: data.sentiment,
+    intent: data.intent,
+    urgency: data.urgency,
+    categoryId: data.category_id,
+    themes: data.themes ?? [],
+    summary: data.summary,
+    suggestedAction: data.suggested_action,
+    confidence: data.confidence === null ? null : Number(data.confidence),
+    model: data.model,
+    createdAt: data.created_at,
+  };
+}
+
+/** Whether AI analysis is switched on for this company. */
+export async function getAiEnabled(organizationId: string): Promise<boolean> {
+  const supabase = await createClient();
+  const { data, error } = await supabase.from("organizations").select("ai_enabled").eq("id", organizationId).single();
+  if (error) {
+    console.error("[getAiEnabled]", error.code, error.message);
+    throw new Error("Could not load the AI settings.");
+  }
+  return data.ai_enabled;
 }
 
 /** The change history of one issue, newest first. */

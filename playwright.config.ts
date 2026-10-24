@@ -60,6 +60,10 @@ export default defineConfig({
     env: {
       NEXT_PUBLIC_SUPABASE_URL: process.env.NEXT_PUBLIC_SUPABASE_URL!,
       NEXT_PUBLIC_SUPABASE_PUBLISHABLE_KEY: process.env.NEXT_PUBLIC_SUPABASE_PUBLISHABLE_KEY!,
+      // Tests use the free keyword analyser and never the paid AI, even when
+      // .env.local on this computer has a real key.
+      BUDDY_AI_MODE: "fake",
+      ANTHROPIC_API_KEY: "",
     },
   },
 });

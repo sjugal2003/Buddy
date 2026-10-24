@@ -1,5 +1,6 @@
 import { describe, expect, it } from "vitest";
 import {
+  analyseIssueSchema,
   createIssueSchema,
   createRuleSchema,
   fieldErrors,
@@ -114,5 +115,27 @@ describe("routing rules", () => {
 
   it("refuses an unknown match mode", () => {
     expect(createRuleSchema.safeParse({ ...base, match: "most", conditions: "[]" }).success).toBe(false);
+  });
+});
+
+describe("AI inputs", () => {
+  it("accepts 'Let AI decide' only for urgency, sentiment and type", () => {
+    const base = {
+      organizationId: "00000000-0000-4000-8000-000000000001",
+      teamId: "",
+      categoryId: "",
+      customerName: "Sam",
+      channel: "email",
+      subject: "Hi",
+      message: "Hello",
+    };
+    expect(createIssueSchema.safeParse({ ...base, urgency: "ai", sentiment: "ai", intent: "ai" }).success).toBe(true);
+    expect(createIssueSchema.safeParse({ ...base, urgency: "ai", sentiment: "ai", intent: "maybe" }).success).toBe(false);
+  });
+
+  it("only lets the AI fill known fields", () => {
+    const issueId = "00000000-0000-4000-8000-000000000001";
+    expect(analyseIssueSchema.safeParse({ issueId, fill: ["urgency", "category"] }).success).toBe(true);
+    expect(analyseIssueSchema.safeParse({ issueId, fill: ["status"] }).success).toBe(false);
   });
 });

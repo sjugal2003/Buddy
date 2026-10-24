@@ -69,14 +69,21 @@ function TeamAndCategory({
   );
 }
 
+function LetAiDecide({ aiReady }: { aiReady: boolean }) {
+  return aiReady ? <option value="ai">Let AI decide</option> : null;
+}
+
 export function NewIssueForm({
   organizationId,
   teams,
   categories,
+  aiReady,
 }: {
   organizationId: string;
   teams: LiveTeam[];
   categories: LiveCategory[];
+  /** AI is switched on for this company and set up on this server. */
+  aiReady: boolean;
 }) {
   const [state, action, pending] = useActionState<FormState, FormData>(createIssue, {});
   return (
@@ -104,19 +111,22 @@ export function NewIssueForm({
       </Field>
       <div className="grid gap-4 sm:grid-cols-3">
         <Field label="Urgency">
-          <select name="urgency" defaultValue="medium" className={inputClass}>
+          <select name="urgency" defaultValue={aiReady ? "ai" : "medium"} className={inputClass}>
+            <LetAiDecide aiReady={aiReady} />
             {options(urgencyLabels, urgencyOrder)}
           </select>
           <FieldError message={state.fieldErrors?.urgency} />
         </Field>
         <Field label="Sentiment">
-          <select name="sentiment" defaultValue="neutral" className={inputClass}>
+          <select name="sentiment" defaultValue={aiReady ? "ai" : "neutral"} className={inputClass}>
+            <LetAiDecide aiReady={aiReady} />
             {options<Sentiment>(sentimentLabels)}
           </select>
           <FieldError message={state.fieldErrors?.sentiment} />
         </Field>
         <Field label="Type">
-          <select name="intent" defaultValue="question" className={inputClass}>
+          <select name="intent" defaultValue={aiReady ? "ai" : "question"} className={inputClass}>
+            <LetAiDecide aiReady={aiReady} />
             {options<Intent>(intentLabels)}
           </select>
           <FieldError message={state.fieldErrors?.intent} />
@@ -130,7 +140,9 @@ export function NewIssueForm({
         errors={state.fieldErrors}
       />
       <p className="text-xs text-slate-500">
-        You set urgency, sentiment and type yourself for now. Automatic analysis comes in a later phase.
+        {aiReady
+          ? "After saving, AI fills in anything left as \"Let AI decide\" and an empty category. What you choose yourself is kept."
+          : "You set urgency, sentiment and type yourself. Owners and admins can switch on AI analysis in Settings."}
       </p>
       <FormMessage error={state.error} />
       <button type="submit" disabled={pending} className={primaryButton}>
