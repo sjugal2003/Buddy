@@ -1,4 +1,5 @@
 import { notFound } from "next/navigation";
+import { CsvImport } from "@/components/data-sources/csv-import";
 import { Card } from "@/components/ui/card";
 import { PageHeader } from "@/components/ui/page-header";
 import { requireUser } from "@/lib/auth";
@@ -23,6 +24,8 @@ export default async function DataSourcesPage({ params }: { params: Promise<{ wo
 
   const timeZone = membership.organization.timezone;
   const runs = await listImportRuns(membership.organization.id);
+  // Only decides whether to show the import box; the database refuses imports from members.
+  const canImport = membership.role === "owner" || membership.role === "admin";
 
   return (
     <>
@@ -40,13 +43,26 @@ export default async function DataSourcesPage({ params }: { params: Promise<{ wo
             </li>
             <li className="flex flex-wrap items-baseline justify-between gap-2 py-2">
               <span className="font-medium text-slate-900">Spreadsheet (CSV) import</span>
-              <span className="text-slate-600">Not available yet. Coming in the next update.</span>
+              <span className="text-slate-600">Available: owners and admins import a file below.</span>
             </li>
             <li className="flex flex-wrap items-baseline justify-between gap-2 py-2">
               <span className="font-medium text-slate-900">Gmail</span>
               <span className="text-slate-600">Not connected. Coming in a later update.</span>
             </li>
           </ul>
+        </Card>
+
+        <Card
+          title="Import a CSV file"
+          description="Adds customer messages from a spreadsheet. Use made-up customers until Buddy is ready for real data."
+        >
+          {canImport ? (
+            <CsvImport organizationId={membership.organization.id} timeZone={timeZone} slug={slug} />
+          ) : (
+            <p className="text-sm text-slate-600" data-testid="import-not-allowed">
+              Only owners and admins can import files.
+            </p>
+          )}
         </Card>
 
         <Card title="Import history" description="Each import, who ran it, and what happened to its rows.">

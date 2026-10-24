@@ -95,6 +95,23 @@ function offsetMs(at: Date, timeZone: string) {
   return asUtc - Math.floor(at.getTime() / 1000) * 1000;
 }
 
+/** The moment a wall-clock time in `timeZone` happens (month is 1 to 12). */
+export function zonedTimeToUtc(
+  year: number,
+  month: number,
+  day: number,
+  hour: number,
+  minute: number,
+  second: number,
+  timeZone: string,
+): Date {
+  const asUtc = Date.UTC(year, month - 1, day, hour, minute, second);
+  // Shift by the zone's offset; check again in case a clock change falls in between.
+  let guess = asUtc - offsetMs(new Date(asUtc), timeZone);
+  guess = asUtc - offsetMs(new Date(guess), timeZone);
+  return new Date(guess);
+}
+
 /** Monday 00:00 of the current week in the company's time zone, as a moment. */
 export function startOfWeek(now: Date, timeZone: string): Date {
   const w = wallClock(now, timeZone);
