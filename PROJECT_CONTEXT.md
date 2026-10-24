@@ -1,6 +1,6 @@
 # Buddy: project context
 
-Last updated: 2026-10-24 (Phase 3 complete: stages 11 to 15, plus Gemini option).
+Last updated: 2026-10-24 (Phase 4 complete: stages 16 to 21).
 Keep this file accurate. Update it at the end of every stage.
 
 ## 1. Product vision
@@ -235,6 +235,10 @@ How access works:
   the app read; it gives nobody a new power because members can already set
   a team by hand. `routing_dismissed_at` is set only by
   `dismiss_routing_suggestion` (any member).
+- Scheduled checks (Phase 4 stage 20): the pg_cron job runs
+  `private.run_scheduled_escalation_checks()` as the database owner. Nobody
+  can call it from the app, and nobody can write a check-log row directly,
+  so a "scheduled" row in Settings always comes from the real scheduler.
 
 ## 8. Authentication status
 
@@ -373,11 +377,19 @@ run keeps the Playwright report for 7 days (Actions > the run > Artifacts).
   filter on the server but show at most 200 issues; paging comes later.
 - The assignee is a name picked from the workspace's members (stored as
   text, `assignee_name`), not a link to a user account.
-- Category changes are not written to an issue's history (the history
-  trigger records status, team and assignee only).
 - Deleting a team or category clears it from issues; deleting a team that a
   routing rule uses is refused until the rule changes.
-- `first_response_at` is not set yet (needed for response-time reports).
+- Deadlines are counted around the clock (no business hours or holidays).
+- The workspace home counts the newest 1,000 open issues (it says so when
+  there are more), and unacknowledged escalations are read up to the
+  database's 1,000-row reply limit.
+- The "This week" card opens the full Issues list: there is no "this week"
+  filter, so only the six other cards match their list exactly.
+- Every scheduled escalation check adds a row to `escalation_runs` (about 96
+  a day per company with a condition on). Nothing tidies old rows yet.
+- A free Supabase project pauses after about a week without activity, and
+  pg_cron stops with it. Settings then warns that automatic checks may have
+  stopped; restoring the project in the Supabase dashboard starts them again.
 - Analytics are computed in the browser from the full issue list.
 - Demo issue history (`events`) is free text; real issues use the
   `issue_activity` table, written by a database trigger.
@@ -424,8 +436,10 @@ run keeps the Playwright report for 7 days (Actions > the run > Artifacts).
 2. Database, authentication, tenant isolation. **Done (2026-10-23).** Also
    brought forward from phase 4: issue tracking and suggest-only routing.
 3. AI analysis of customer messages. **Done (2026-10-24).**
-4. Routing, issue tracking, escalation. **In progress.**
-5. Supported data-source integrations.
+4. Routing, issue tracking, escalation. **Done (2026-10-24).**
+5. Supported data-source integrations. **Plan drafted (2026-10-24), waiting
+   for approval:** CSV import first, then a Gmail inbox read with a "Fetch new
+   email" button; public form and webhook after deployment.
 6. Notifications, schedules, reports.
 7. Security, reliability and deployment readiness.
 
@@ -584,4 +598,16 @@ explanations and conflicts, 19 dashboard, 20 scheduled checks (pg_cron),
   minutes without one. Still no email or chat notifications (Phase 6).
   256/256 security checks, 10/10 browser tests (escalations test runs the
   scheduled check once), 87 unit tests, lint, type check, build
-  (2026-10-24). Not yet seen running on the hosted project.
+  (2026-10-24). PR #20, merged 2026-10-24. Seen running on Jugal's hosted
+  project: Settings showed "Running every 15 minutes." with a scheduled
+  check at 17:30 Asia/Calcutta (12:00 UTC) on 2026-10-24.
+- Stage 21: documentation brought up to date (README, this file, known
+  limitations), full checks re-run on main after PR #20: 256/256 security
+  checks, 10/10 browser tests, 87 unit tests, lint, type check, build,
+  `npm audit` 0 (2026-10-24). Phase 5 plan drafted for approval:
+  https://claude.ai/artifact/CfWmbfR8736bJ6zZ7JJru9
+
+Phase 4 is complete. Verified on Jugal's hosted project: deadlines and the
+first-response button (stage 16), escalations, Check now and Acknowledge
+(stage 17), scheduled checks (stage 20). Stages 18 and 19 were applied
+there (db push on 2026-10-24) and covered by the browser tests.
