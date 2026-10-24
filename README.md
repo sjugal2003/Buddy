@@ -38,6 +38,21 @@ npm.cmd run dev
 
 Open http://localhost:3000. Press `Ctrl + C` in PowerShell to stop it.
 
+To get the latest changes later, stop the app and run:
+
+```powershell
+cd D:\Buddy
+git pull
+npm.cmd ci
+npx.cmd supabase db push
+npm.cmd run dev
+```
+
+Use `npm.cmd ci`, not `npm.cmd install`, after a pull. `ci` installs exactly
+what `package-lock.json` lists and never rewrites that file, so the next
+`git pull` won't be blocked. (`db push` is only needed once Supabase is
+connected; it says "up to date" when there is nothing new.)
+
 Without Supabase settings the app runs in **demo mode only**: the home page
 says so, and the fictional companies are at `/demo/brightline` and
 `/demo/cedarleaf`.
@@ -226,7 +241,7 @@ which step failed, with a screenshot.
 | The AI panel says Gemini's limit was reached | The free tier allows only a few requests per minute and per day; wait and press **Analyse again** |
 | The AI panel says the account has no credit (Claude) | Check the credit and spend limit at console.anthropic.com |
 | `npx.cmd supabase start` says it cannot connect to Docker | Open Docker Desktop and wait until it is running |
-| `git pull` says your local changes to `package-lock.json` would be overwritten | `npm.cmd install` rewrote that file. Run `git checkout -- package-lock.json`, then `git pull` and `npm.cmd install` again |
+| `git pull` says your local changes to `package-lock.json` would be overwritten | `npm.cmd install` rewrote that file. Run `git checkout -- package-lock.json`, then `git pull` and `npm.cmd ci`. Use `npm.cmd ci` from then on so it doesn't happen again |
 
 ## Pages
 

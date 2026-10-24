@@ -262,7 +262,7 @@ Use `npm.cmd` because PowerShell may block `npm.ps1`.
 
 ```powershell
 cd D:\Buddy
-npm.cmd install          # install dependencies
+npm.cmd ci               # install dependencies exactly as locked (use after git pull)
 npm.cmd run dev          # start at http://localhost:3000 (Ctrl + C to stop)
 npm.cmd run lint         # lint
 npx.cmd tsc --noEmit     # type check
