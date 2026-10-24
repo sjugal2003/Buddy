@@ -34,7 +34,9 @@ Router, React 19, TypeScript strict, Tailwind v4). Full background:
 - Shared types: `src/lib/types.ts`. Pure logic: `src/lib/analytics.ts`,
   `src/lib/routing.ts`.
 - AI analysis: only through `getAnalyser()` in `src/lib/ai/` (server only;
-  Claude or Gemini, picked by which key is set).
+  Claude or Gemini, picked by which key is set). AI never overwrites a
+  value a person chose, and never moves an issue unless the owner switched
+  on automatic routing.
   Tests and CI use `BUDDY_AI_MODE=fake`; no test may call the paid API.
 
 ## Database
@@ -79,4 +81,4 @@ configured Supabase project.
 
 Do not run `npm audit fix --force`: it makes breaking upgrades (for example it
 downgrades `eslint-config-next`). Upgrade the flagged package on its own
-instead (see PROJECT_CONTEXT.md §12). `npm audit` reported 0 on 2026-10-23.
+instead (see PROJECT_CONTEXT.md §12). `npm audit` reported 0 on 2026-10-24.
