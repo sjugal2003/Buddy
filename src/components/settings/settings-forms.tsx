@@ -113,7 +113,7 @@ export function AiSettingsForm({ organizationId, settings }: { organizationId: s
             <span className="font-medium text-slate-900">Analyse new issues with AI</span>
             <span className="block text-xs text-slate-500">
               Sends each issue&apos;s subject, message (up to 4,000 characters), channel and your category names to
-              Claude. Never the customer&apos;s name.
+              the AI service (Gemini or Claude). Never the customer&apos;s name.
             </span>
           </span>
         </label>

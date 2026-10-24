@@ -17,6 +17,14 @@ import type { AiField } from "@/lib/validation";
 // that differs from the issue has its own Accept button, and nothing a person
 // chose is changed without one.
 
+/** The stored model name as people read it. */
+function modelName(model: string) {
+  if (model === "fake") return "Test analyser";
+  if (model.startsWith("gemini-3.5-flash-lite")) return "Gemini 3.5 Flash-Lite";
+  if (model.startsWith("claude-haiku-5-5")) return "Claude Haiku 5.5";
+  return model;
+}
+
 /** A pending analysis older than this never finished (the server stopped). */
 const STUCK_AFTER_MS = 5 * 60_000;
 
@@ -83,7 +91,7 @@ export function AiPanel({
     return <p className="text-sm text-slate-500">AI analysis is off for this company. Owners and admins can switch it on in Settings.</p>;
   }
   if (!aiConfigured) {
-    return <p className="text-sm text-slate-500">AI is not set up on this server yet (ANTHROPIC_API_KEY is missing from .env.local).</p>;
+    return <p className="text-sm text-slate-500">AI is not set up on this server yet (add GEMINI_API_KEY or ANTHROPIC_API_KEY to .env.local).</p>;
   }
 
   const stuck = analysis?.status === "pending" && openedAt - new Date(analysis.createdAt).getTime() > STUCK_AFTER_MS;
@@ -133,7 +141,7 @@ export function AiPanel({
             <span className="inline-flex items-center gap-1 rounded-full bg-brand-50 px-2 py-0.5 font-medium text-brand-700">
               <Sparkles className="h-3 w-3" aria-hidden /> AI suggested
             </span>
-            {analysis.model === "fake" ? "Test analyser" : analysis.model} · {formatDateTime(analysis.createdAt)}
+            {modelName(analysis.model)} · {formatDateTime(analysis.createdAt)}
             {analysis.confidence !== null && <> · {Math.round(analysis.confidence * 100)}% sure</>}
           </p>
           <p className="text-slate-800">{analysis.summary}</p>

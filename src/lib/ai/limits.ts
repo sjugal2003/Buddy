@@ -8,8 +8,12 @@ export const MAX_MONTHLY_LIMIT = 2000;
 /** Seconds to wait before the same issue can be analysed again. */
 export const RETRY_COOLDOWN_SECONDS = 30;
 
-/** Claude Haiku 5.5 prices in US dollars per million tokens (prompts up to 100K tokens). */
-export const PRICE_PER_MILLION = { input: 0.1, output: 0.5 };
+/** Paid prices in US dollars per million tokens. Claude Haiku 5.5 is for prompts up to 100K tokens. */
+export const PRICE_PER_MILLION = {
+  claude: { input: 0.1, output: 0.5 },
+  // Gemini 3.5 Flash-Lite on Google's paid tier. Its free tier costs nothing, within Google's limits.
+  gemini: { input: 0.3, output: 2.5 },
+};
 
 export interface AiAllowanceInput {
   enabled: boolean;
@@ -52,7 +56,13 @@ export function monthStart(now: Date) {
   return new Date(Date.UTC(now.getUTCFullYear(), now.getUTCMonth(), 1));
 }
 
-/** Approximate cost in US dollars, for the usage line in Settings. */
-export function estimateCostUsd(usage: AiUsage) {
-  return (usage.inputTokens * PRICE_PER_MILLION.input + usage.outputTokens * PRICE_PER_MILLION.output) / 1_000_000;
+/**
+ * Approximate cost in US dollars at paid prices, for the usage line in
+ * Settings. `model` is the model name stored with each analysis; the free
+ * test analyser costs nothing.
+ */
+export function estimateCostUsd(usage: AiUsage, model = "claude") {
+  const price = model.startsWith("gemini") ? PRICE_PER_MILLION.gemini : model === "fake" ? null : PRICE_PER_MILLION.claude;
+  if (!price) return 0;
+  return (usage.inputTokens * price.input + usage.outputTokens * price.output) / 1_000_000;
 }

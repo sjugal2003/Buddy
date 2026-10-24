@@ -110,8 +110,10 @@ export type AnalyseFailure =
   | "refused"
   | "bad_answer";
 
+export type AiProvider = "claude" | "gemini" | "fake";
+
 export interface Analyser {
-  /** "claude" for the real service, "fake" for the test stand-in. */
-  kind: "claude" | "fake";
+  /** The real services ("claude", "gemini") or "fake", the free test stand-in. */
+  kind: AiProvider;
   analyse(input: AnalysisInput): Promise<AnalyseResult>;
 }

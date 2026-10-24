@@ -1,6 +1,6 @@
 # Buddy: project context
 
-Last updated: 2026-10-24 (Phase 3: stages 11 to 13).
+Last updated: 2026-10-24 (Phase 3: stages 11 to 13, plus Gemini option).
 Keep this file accurate. Update it at the end of every stage.
 
 ## 1. Product vision
@@ -38,7 +38,7 @@ department, track and escalate them, and see reports.
 | Unit tests | Vitest | 4.1.x |
 | Browser tests | Playwright (`@playwright/test`) | 1.56 |
 | Database test runner | `pg` (Node PostgreSQL client) | 8.x |
-| AI analysis (Phase 3) | Claude Haiku 5.5 (`claude-haiku-5-5`) through `@anthropic-ai/sdk`, server only | SDK 1.2 |
+| AI analysis (Phase 3) | Claude Haiku 5.5 (`claude-haiku-5-5`) through `@anthropic-ai/sdk`, or Gemini 3.5 Flash-Lite (`gemini-3.5-flash-lite`) through `@google/genai`; server only, picked by which key is set | SDKs 1.2 and 2.31 |
 
 `package.json` pins `postcss` to `^8.5.31` through `overrides` (security fix).
 
@@ -252,7 +252,8 @@ never commit values. Without them the app runs in demo-only mode.
 | `NEXT_PUBLIC_SUPABASE_URL` | Yes (safe) | Address of the Supabase project |
 | `NEXT_PUBLIC_SUPABASE_PUBLISHABLE_KEY` | Yes (safe, RLS protects data) | Sign-in and user-scoped queries |
 | Secret key (`sb_secret_...`) | **Never** | Not used by the app. Must never be added |
-| `ANTHROPIC_API_KEY` | **Never** (server only, no `NEXT_PUBLIC_`) | Turns on Claude analysis (Phase 3). Read only in `src/lib/ai/index.ts`. Missing means AI is shown as not set up |
+| `ANTHROPIC_API_KEY` | **Never** (server only, no `NEXT_PUBLIC_`) | Turns on Claude analysis (Phase 3). Read only in `src/lib/ai/index.ts`. Wins if both AI keys are set |
+| `GEMINI_API_KEY` | **Never** (server only, no `NEXT_PUBLIC_`) | Turns on Gemini analysis when there is no Anthropic key. Read only in `src/lib/ai/index.ts`. Neither key means AI is shown as not set up |
 | `BUDDY_AI_MODE` | No | `fake` swaps in the free keyword test analyser (automated tests and CI). Leave unset otherwise |
 
 ## 10. Development commands (Windows PowerShell)
@@ -463,3 +464,13 @@ routing use AI values, 15 docs.
   blanks `ANTHROPIC_API_KEY`). 152/152 security checks, 6/6 browser tests on
   a production build, 45 unit tests, lint, type check, build (2026-10-24).
   Not yet run against the real Claude API: Jugal checks that with their own key.
+  PR #11, merged 2026-10-24.
+- Gemini option (Jugal chose "support both, use Gemini now", 2026-10-24):
+  `src/lib/ai/gemini.ts` (Gemini 3.5 Flash-Lite, same prompt and checks,
+  JSON schema output from the zod answer schema, 1,024-token cap including
+  thinking, thinking left at the model's default); `getAnalyser` uses
+  Claude if `ANTHROPIC_API_KEY` is set, else Gemini if `GEMINI_API_KEY` is
+  set. Settings names the service; cost is estimated per model at paid
+  prices (Gemini's free tier is $0, but Google may use free-tier content to
+  improve its products: made-up messages only). Unit tests with a stand-in
+  client. Not yet run against the real Gemini API.

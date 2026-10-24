@@ -10,8 +10,7 @@ import {
   TeamRow,
 } from "@/components/settings/settings-forms";
 import { requireUser } from "@/lib/auth";
-import { aiServiceStatus } from "@/lib/ai";
-import { estimateCostUsd } from "@/lib/ai/limits";
+import { aiServiceStatus, providerNames } from "@/lib/ai";
 import { getAiSettings, getMembershipBySlug, getOrganizationSettings, listCategories, listTeams } from "@/lib/data/live";
 import { urgencyLabels, urgencyOrder } from "@/lib/labels";
 
@@ -34,7 +33,7 @@ export default async function SettingsPage({ params }: { params: Promise<{ works
     listCategories(orgId),
   ]);
   const aiService = aiServiceStatus();
-  const aiCost = estimateCostUsd({ inputTokens: ai.inputTokens, outputTokens: ai.outputTokens });
+  const aiCost = ai.estimatedCostUsd;
   // Listed on the server so the page and the browser show the same options.
   const timeZones = Array.from(new Set(["UTC", settings.timezone, ...Intl.supportedValuesOf("timeZone")]));
 
@@ -71,7 +70,7 @@ export default async function SettingsPage({ params }: { params: Promise<{ works
           )}
         </Card>
 
-        <Card title="AI analysis" description="Claude Haiku 5.5 suggests each issue's sentiment, type, urgency and category.">
+        <Card title="AI analysis" description="AI suggests each issue's sentiment, type, urgency and category.">
           <div className="space-y-4">
             <p className="text-xs text-slate-500">
               When on, each new issue is analysed after it is saved. Results are marked &ldquo;AI suggested&rdquo; and
@@ -86,16 +85,19 @@ export default async function SettingsPage({ params }: { params: Promise<{ works
               <dd className="text-slate-900" data-testid="ai-usage">
                 {ai.usedThisMonth} of {ai.monthlyLimit}
                 {ai.usedThisMonth > 0 && (
-                  <span className="text-slate-500"> (about ${aiCost < 0.01 ? "0.01 or less" : aiCost.toFixed(2)})</span>
+                  <span className="text-slate-500">
+                    {" "}
+                    (about ${aiCost < 0.01 ? "0.01 or less" : aiCost.toFixed(2)} at paid prices)
+                  </span>
                 )}
               </dd>
               <dt className="text-slate-500">AI service on this server</dt>
               <dd className="text-slate-900">
-                {aiService === "claude"
-                  ? "Set up"
+                {aiService === "not_configured"
+                  ? "Not set up: add GEMINI_API_KEY or ANTHROPIC_API_KEY to .env.local"
                   : aiService === "fake"
-                    ? "Test analyser (no real AI, free)"
-                    : "Not set up: add ANTHROPIC_API_KEY to .env.local"}
+                    ? providerNames.fake
+                    : `Set up: ${providerNames[aiService]}`}
               </dd>
             </dl>
             {canEdit ? (
