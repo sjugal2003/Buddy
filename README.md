@@ -145,6 +145,25 @@ per hour.
     **Route open issues that have no team** does the same for every open
     issue without a team, skipping conflicts and dismissed suggestions.
 
+### Try the data sources
+
+Use made-up customers only until Phase 7.
+
+1. Open **Data sources** > **Import a CSV file** and choose
+   `samples/test-import.csv` from the Buddy folder. The preview flags rows 5
+   and 6; keep **Open issues** and press **Import**. Expected: 3 imported,
+   1 already in Buddy (row 7 repeats ticket T-101), 2 rejected with reasons.
+   Import the same file again: 0 imported, 4 already in Buddy.
+2. With AI on (see below), press **Analyse with AI** on that import. It shows
+   how many analyses it will use and how many are left this month before
+   anything is sent.
+3. With Gmail set up (see "Gmail inbox" below) and a **brand-new test Gmail**
+   connected, send it two or three made-up emails from another account, then
+   press **Fetch new email**: each becomes an issue. Press it again: "No new
+   email since the last fetch."
+4. Sign in as a member: they see the import history and which inbox is
+   connected, but no import, fetch or connect buttons.
+
 ## AI analysis (optional)
 
 Buddy can ask an AI to fill in each new issue's sentiment, type, urgency,
@@ -305,8 +324,8 @@ copy of the app on port 3100):
 
 ```powershell
 npx.cmd supabase start     # first time downloads a few GB; later about 30 seconds
-npm.cmd run test:db        # should end with "152 security checks passed"
-npm.cmd run test:e2e       # should end with "4 passed"
+npm.cmd run test:db        # should end with "342 security checks passed"
+npm.cmd run test:e2e       # should end with "16 passed"
 npx.cmd supabase stop
 ```
 
@@ -330,6 +349,12 @@ which step failed, with a screenshot.
 | The AI panel says Gemini's limit was reached | The free tier allows only a few requests per minute and per day; wait and press **Analyse again** |
 | The AI panel says the account has no credit (Claude) | Check the credit and spend limit at console.anthropic.com |
 | `npx.cmd supabase start` says it cannot connect to Docker | Open Docker Desktop and wait until it is running |
+| Google Cloud asks for a card or a free trial | Not needed for Buddy: dismiss it and open console.cloud.google.com/projectcreate directly. The Gmail API and sign-in client are free |
+| Google says "Access blocked: Buddy dev has not completed the Google verification process" | The Gmail address isn't a test user: Google Auth platform > **Audience** > **Test users** > **Add users** |
+| Google says `redirect_uri_mismatch` | The client's redirect URI must be exactly `http://localhost:3000/api/gmail/callback` (no extra slash or space) |
+| Data sources says Gmail is not set up | One of `GOOGLE_CLIENT_ID`, `GOOGLE_CLIENT_SECRET`, `GMAIL_TOKEN_KEY` is missing from `.env.local`, or `npm.cmd run dev` wasn't restarted |
+| Fetch says Google's sign-in has ended | Normal after 7 days in Testing mode: **Disconnect Gmail**, then **Connect Gmail** again |
+| Fetch brought in real emails (the wrong inbox was connected) | Don't analyse them. Disconnect, then delete them: Supabase dashboard > **SQL Editor**, run `delete from public.issues where source = 'gmail' and organization_id = (select id from public.organizations where slug = 'your-company');` (run it as `select count(*) ...` first to check the number). Connect a brand-new test Gmail instead |
 | `git pull` says your local changes to `package-lock.json` would be overwritten | `npm.cmd install` rewrote that file. Run `git checkout -- package-lock.json`, then `git pull` and `npm.cmd ci`. Use `npm.cmd ci` from then on so it doesn't happen again |
 
 ## Pages
@@ -359,6 +384,9 @@ src/
   lib/data/index.ts       demo data access
   lib/data/live.ts        database reads, always as the signed-in user
   lib/ai/                 AI analysis (server only): Gemini, Claude, test analyser
+  lib/csv-import.ts       reading and checking CSV files (runs in the browser)
+  lib/gmail/              Gmail sign-in, token encryption and fetching (server only)
+  app/api/gmail/          the Connect Gmail redirect and Google's return address
   lib/supabase/           Supabase clients (server, middleware)
   lib/validation.ts       input rules (zod) for everything the browser sends
 supabase/
@@ -367,6 +395,7 @@ supabase/
   templates/              email template used by the local Supabase
 tests/unit/               unit tests (Vitest)
 tests/e2e/                browser tests (Playwright)
+samples/test-import.csv   made-up CSV for trying the import
 scripts/test-db.mjs       runs the database security tests locally
 .github/workflows/        the automatic checks GitHub runs on every PR
 ```

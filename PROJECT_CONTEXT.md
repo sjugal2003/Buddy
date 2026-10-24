@@ -1,6 +1,6 @@
 # Buddy: project context
 
-Last updated: 2026-10-24 (Phase 5 stage 26: Fetch new email, waiting for review).
+Last updated: 2026-10-24 (Phase 5 complete: stage 27 wrap-up).
 Keep this file accurate. Update it at the end of every stage.
 
 ## 1. Product vision
@@ -387,6 +387,15 @@ run keeps the Playwright report for 7 days (Actions > the run > Artifacts).
   tests never call a paid API.
 - **Saves report success only after the database confirms**, and updates ask
   for the row back, because a refused update changes 0 rows without an error.
+- **Phase 5 data-source choices (approved 2026-10-24):** every source
+  saves issues through one function (`import_issues`), which checks each row
+  again and keeps one issue per source record, so nothing is imported twice;
+  CSV files are read in the browser and never stored; Gmail is read-only,
+  one inbox per company, fetched only when someone presses the button (no
+  automatic fetching), with the Google token encrypted by a server-only key
+  in a table nobody can query; AI on imported issues only after a
+  confirmation that shows the month's remaining analyses; test data only
+  until Phase 7.
 - **Tests run against a local Supabase**, never the hosted project:
   `test:db` refuses other hosts and the browser tests take their settings from
   `npx supabase status`.
@@ -445,8 +454,10 @@ run keeps the Playwright report for 7 days (Actions > the run > Artifacts).
 - **CSV import (stage 23):** closing the page or losing the connection
   part-way leaves that import "Not finished" in the history; the rows already
   saved stay, and importing the same file again adds only the rest (repeats
-  are skipped). Imports cannot be undone in one step: imported issues are
-  deleted one by one by an owner or admin. Rows without an ID column are
+  are skipped). There is no way in the app to undo an import or delete an
+  issue yet (the database lets owners and admins delete, but no screen offers
+  it); for now unwanted imported issues are removed in the Supabase SQL
+  Editor (see the README's troubleshooting table). Rows without an ID column are
   matched by customer name, received time and message, so editing any of
   those in the file makes the row new again.
 
@@ -490,7 +501,7 @@ run keeps the Playwright report for 7 days (Actions > the run > Artifacts).
    brought forward from phase 4: issue tracking and suggest-only routing.
 3. AI analysis of customer messages. **Done (2026-10-24).**
 4. Routing, issue tracking, escalation. **Done (2026-10-24).**
-5. Supported data-source integrations. **In progress.** Plan approved
+5. Supported data-source integrations. **Done (2026-10-24).** Plan approved
    2026-10-24 (https://claude.ai/artifact/CfWmbfR8736bJ6zZ7JJru9): CSV import
    first, then a Gmail inbox read with a "Fetch new email" button; AI on
    imports only after confirming, within the monthly limit; public form and
@@ -708,5 +719,18 @@ Phase 5 (data sources). Jugal approved the plan and its six decisions on
   tests (new `tests/e2e/gmail-fetch.spec.ts` with a pretend inbox of three
   emails: fetched once, fetching again adds nothing, member and other company
   cannot fetch), 126 unit tests (new `tests/unit/gmail-message.test.ts`),
-  lint, type check, build, `npm audit` 0 (2026-10-24). Not yet tried against
-  real Gmail. Waiting for Jugal's review.
+  lint, type check, build, `npm audit` 0 (2026-10-24). PR #26, merged
+  2026-10-24; checked on Jugal's PC with real Gmail: a new test inbox
+  fetched, and pressing again said "No new email since the last fetch".
+- Stage 27: documentation brought up to date (README: trying the data
+  sources, Gmail troubleshooting, test counts; `samples/test-import.csv`;
+  CLAUDE.md Gmail rules; this file). No code or database change.
+
+Phase 5 is complete. Verified on Jugal's hosted project: customer email
+(stage 22), CSV import (stage 23), AI for imports (stage 24), Gmail connect
+(stage 25) and Fetch new email (stage 26). Deferred by Jugal's decisions:
+automatic Gmail fetching, the public contact form and webhook (Phase 7, after
+deployment and security hardening), and helpdesk, live chat, app store,
+review, survey and social integrations (one at a time, once Jugal names the
+tools). Real customer data waits for Phase 7's security review. Next:
+Phase 6 (notifications, schedules, reports) needs its own plan and approval.
