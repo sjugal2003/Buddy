@@ -115,6 +115,29 @@ export default async function IssuePage({
       <div className="grid gap-6 lg:grid-cols-[1fr_20rem]">
         <div className="space-y-6">
           <Card title={`From ${issue.customerName}`}>
+            {(issue.customerEmail || issue.source !== "manual") && (
+              <dl className="mb-3 grid grid-cols-[auto_1fr] gap-x-4 gap-y-1 text-xs" data-testid="issue-origin">
+                {issue.customerEmail && (
+                  <>
+                    <dt className="text-slate-500">Email</dt>
+                    <dd className="break-all text-slate-800" data-testid="customer-email">
+                      {issue.customerEmail}
+                    </dd>
+                  </>
+                )}
+                {issue.source !== "manual" && (
+                  <>
+                    <dt className="text-slate-500">Imported from</dt>
+                    <dd className="text-slate-800">
+                      {issue.source === "csv" ? "Spreadsheet (CSV)" : "Gmail"}
+                      {issue.sourceRecordId && !issue.sourceRecordId.startsWith("fp:") && (
+                        <span className="text-slate-500"> (ID {issue.sourceRecordId})</span>
+                      )}
+                    </dd>
+                  </>
+                )}
+              </dl>
+            )}
             <blockquote className="whitespace-pre-wrap rounded-lg bg-slate-50 p-3 text-sm leading-relaxed text-slate-800">
               {issue.message}
             </blockquote>

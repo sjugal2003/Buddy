@@ -1,6 +1,6 @@
 # Buddy: project context
 
-Last updated: 2026-10-24 (Phase 3 complete: stages 11 to 15, plus Gemini option).
+Last updated: 2026-10-24 (Phase 5 stage 22: import foundation, waiting for review).
 Keep this file accurate. Update it at the end of every stage.
 
 ## 1. Product vision
@@ -93,9 +93,10 @@ Demo details:
 | `/invite?token=` | `components/org/members.tsx` | Accept an invitation (`accept_invitation`) | |
 | `/w/[workspace]` | `app/w/[workspace]/page.tsx` | Real workspace home: dashboard cards (urgent, due within 2 hours, targets missed, escalations not acknowledged, no team, waiting on customer, this week's resolved vs opened), each linking to the Issues list with the matching filter; the 10 latest history entries; members, role changes (owners), remove/leave, invite links and open invitations (owners and admins) | |
 | `/w/[workspace]/issues` | `app/w/[workspace]/issues/page.tsx` | Issues from the database, newest first (up to 200), filter by status, urgency (or Critical or High together), team, deadline (overdue / due soon / due within 2 hours) and unacknowledged escalation, sort by "needs attention first", search customer/reference/subject/message. Each open issue shows its next deadline (`DeadlineBadge`) and an "Escalated · level N" badge while it has an unacknowledged escalation. Deadline filters and sorting look at up to 1,000 issues (`DEADLINE_SCAN_LIMIT`). Filters are in the address bar (plain GET form). Issues with AI values show an "AI suggested" badge (`AiBadge`) and the AI summary instead of the message preview | |
-| `/w/[workspace]/issues/new` | `components/issues/issue-forms.tsx` | Add an issue: customer, channel, subject, message, urgency, sentiment, type, team, category (`createIssue`). When AI is on and set up, urgency, sentiment and type default to "Let AI decide" (saved with the usual defaults, then filled by the AI); an empty category is also filled | |
-| `/w/[workspace]/issues/[issueId]` | `app/w/[workspace]/issues/[issueId]/page.tsx` | Issue detail, change status, assignee, team and category (any member of the workspace, `updateIssue`), history from `issue_activity` (status, resolved, reopened, team, category, assignee, first response, AI). "Deadlines" card: first-response and resolution deadline in the company time zone, worked out on the server (`src/lib/targets.ts`), "Record first response" button (`recordFirstResponse`, any member), reopen count. "Escalations" card (when there are any): level, condition, reason, and Acknowledge with an optional note (`acknowledgeEscalation`, any member). "AI analysis" panel (`components/issues/ai-panel.tsx`, `app/actions/ai.ts`): right after creation it runs `analyseIssue` in a separate request (`?analyse=<fields>`), shows the summary, next step, themes and each suggestion with an Accept button when it differs (`acceptAiValue`), "Analyse again", and failures with the reason | Checked with real Gemini answers by Jugal (2026-10-24); Claude not yet tried with a real key |
+| `/w/[workspace]/issues/new` | `components/issues/issue-forms.tsx` | Add an issue: customer, optional customer email (stage 22, stored in lower case), channel, subject, message, urgency, sentiment, type, team, category (`createIssue`). When AI is on and set up, urgency, sentiment and type default to "Let AI decide" (saved with the usual defaults, then filled by the AI); an empty category is also filled | |
+| `/w/[workspace]/issues/[issueId]` | `app/w/[workspace]/issues/[issueId]/page.tsx` | Issue detail (with the customer's email and, for imported issues, the source and its ID), change status, assignee, team and category (any member of the workspace, `updateIssue`), history from `issue_activity` (status, resolved, reopened, team, category, assignee, first response, AI). "Deadlines" card: first-response and resolution deadline in the company time zone, worked out on the server (`src/lib/targets.ts`), "Record first response" button (`recordFirstResponse`, any member), reopen count. "Escalations" card (when there are any): level, condition, reason, and Acknowledge with an optional note (`acknowledgeEscalation`, any member). "AI analysis" panel (`components/issues/ai-panel.tsx`, `app/actions/ai.ts`): right after creation it runs `analyseIssue` in a separate request (`?analyse=<fields>`), shows the summary, next step, themes and each suggestion with an Accept button when it differs (`acceptAiValue`), "Analyse again", and failures with the reason | Checked with real Gemini answers by Jugal (2026-10-24); Claude not yet tried with a real key |
 | `/w/[workspace]/routing` | `components/routing/routing-forms.tsx` | Routing rules from the database: add, edit (conditions on category, urgency, sentiment, type, channel, message text; match all or any), reorder, switch off, delete. Owners and admins edit (`app/actions/routing.ts`); members see them read-only. Every rule is checked (`routeIssue` in `src/lib/routing.ts`); when matching rules name different teams the issue shows a conflict instead of "top rule wins". "Route open issues that have no team" gives each open issue without a team the team its matching rules agree on (`routeUnassignedIssues`, up to 500 at a time) and reports how many were skipped because of a conflict. The issue page explains the suggestion ("Suggested team: Payments, because rule "Billing to Payments" matched: category is Billing"), with "Apply suggestion" (`applySuggestedTeam`, any member), "Dismiss suggestion" (`dismissRoutingSuggestion`), and one button per rule in a conflict. Applying goes through `apply_routing_rule`, which records the rule in History. Everything recomputes the match on the server and never overwrites a team someone already chose; dismissed and conflicting issues are skipped by bulk and automatic routing | Automatic routing only after AI analysis, when an owner switched it on (Phase 3 stage 14) |
+| `/w/[workspace]/data-sources` | `app/w/[workspace]/data-sources/page.tsx` | Phase 5 stage 22. Lists the sources honestly (typed in: available; CSV import: not available yet; Gmail: not connected) and the company's import history from `import_runs`: when, source and file name, who, status, rows examined, imported, already in Buddy, rejected, and the reasons rows were rejected (row number and reason only). Any member can see it | |
 | `/w/[workspace]/settings` | `components/settings/settings-forms.tsx` | Company name, industry, time zone, first-response and resolution targets; add/rename/delete teams (name, lead, email, colour) and categories; "AI analysis" card (on/off, monthly limit, analyses used this month and approximate cost, whether this server has an AI key). Owners and admins edit (`app/actions/settings.ts`); members see it read-only. "Apply routing automatically" (owners only). "Escalations" card: switch conditions on and set thresholds, "Check now" (`app/actions/escalations.ts`), last check, "Automatic checks" (judged only from the latest scheduled check actually logged: "Not running. Use Check now." until one is seen, "Running every 15 minutes." while they arrive, a warning after 45 minutes without one) and a note that notifications are not set up | Team email is display only |
 
 Every `/w/[workspace]` page has a "Something went wrong, try again" screen
@@ -184,12 +185,13 @@ Files (`supabase/`):
 | `migrations/20261025120000_escalations.sql` | Phase 4 stage 17: `escalation_settings` (one row per company, all conditions off), `escalations` (unique per issue, condition and open spell), `escalation_runs` log; `run_escalation_check(company)` (owners and admins; the internal `private.run_escalation_check` does the work), `acknowledge_escalation(id, note)`; history kind `escalation_acknowledged` |
 | `migrations/20261025150000_routing_explanations.sql` | Phase 4 stage 18: `issues.routing_dismissed_at` (cleared when category, urgency, type or channel changes); `apply_routing_rule(issue, rule, expected team)` and `dismiss_routing_suggestion(issue)`; history kinds `routing_applied`, `routing_dismissed` |
 | `migrations/20261025180000_scheduled_escalation_checks.sql` | Phase 4 stage 20: enables `pg_cron`; `private.run_scheduled_escalation_checks()` (database owner only) runs the escalation check, source `scheduled`, for every company with a condition on; cron job `buddy-escalation-check` every 15 minutes |
-| `tests/security_test.sql` | 256 checks of tenant isolation, roles, invitations, teams, categories, settings, routing rules, AI analysis, resolution tracking, escalations, routing history and scheduled checks; runs in one transaction and rolls back |
+| `migrations/20261026090000_import_foundation.sql` | Phase 5 stage 22: `import_runs` log (read-only for members); `issues.source` (`manual`/`csv`/`gmail`, existing issues become `manual`), `source_record_id`, `import_run_id`, `customer_email`; unique index on (company, source, source record) so a record becomes one issue per company; `start_import`, `import_issues` (up to 500 rows a call, checks every row again, skips duplicates, can save past conversations as resolved at their received time), `finish_import`. Owners and admins only; CSV only until Gmail arrives |
+| `tests/security_test.sql` | 294 checks of tenant isolation, roles, invitations, teams, categories, settings, routing rules, AI analysis, resolution tracking, escalations, routing history, scheduled checks and imports; runs in one transaction and rolls back |
 | `tests/local-supabase-stub.sql` | Minimal stand-in for Supabase's `auth` schema and roles, for plain PostgreSQL only. Never run on Supabase |
 
 Tables: `profiles`, `organizations`, `organization_members`,
 `organization_invitations`, `teams`, `categories`, `issues`, `issue_activity`,
-`routing_rules`, `automation_settings`, `issue_analyses` (Phase 3), `escalation_settings`, `escalations`, `escalation_runs` (Phase 4). Deferred: `data_sources` (Phase 5),
+`routing_rules`, `automation_settings`, `issue_analyses` (Phase 3), `escalation_settings`, `escalations`, `escalation_runs` (Phase 4), `import_runs` (Phase 5). Deferred: a Gmail connection table (Phase 5 stage 25),
 `notification_records` (Phase 6). Full design and reasons: Phase 2 plan doc
 (https://claude.ai/artifact/7nwyfG2deY29tg9rpVLsBs).
 
@@ -235,6 +237,20 @@ How access works:
   the app read; it gives nobody a new power because members can already set
   a team by hand. `routing_dismissed_at` is set only by
   `dismiss_routing_suggestion` (any member).
+- Scheduled checks (Phase 4 stage 20): the pg_cron job runs
+  `private.run_scheduled_escalation_checks()` as the database owner. Nobody
+  can call it from the app, and nobody can write a check-log row directly,
+  so a "scheduled" row in Settings always comes from the real scheduler.
+- Imports (Phase 5 stage 22): only owners and admins of the company can
+  start an import (`start_import`), and only the person who started it can
+  add rows (`import_issues`) or finish it (`finish_import`, owners and admins).
+  Rows are checked again in the database whatever the browser checked.
+  Nobody can write `import_runs` or the source fields directly; members can
+  type `customer_email` on a new issue but nobody can change it afterwards.
+  A record ID (or, without one, a fingerprint of name, received time and
+  message) becomes at most one issue per company, enforced by a unique
+  index, so two imports at the same time cannot both add it. The import log
+  keeps row numbers and reasons only, never the customer's text.
 
 ## 8. Authentication status
 
@@ -303,7 +319,7 @@ npx.cmd supabase db push
 | Command | What it checks | Needs |
 |---|---|---|
 | `npm.cmd test` | Unit tests (`tests/unit/`): routing rule matching, conflicts and explanations, analytics, input rules, deadlines, escalations, AI engine with stand-in clients | Nothing |
-| `npm.cmd run test:db` | `supabase/tests/security_test.sql` (256 checks); rolls itself back | Local Supabase |
+| `npm.cmd run test:db` | `supabase/tests/security_test.sql` (294 checks); rolls itself back | Local Supabase |
 | `npm.cmd run test:e2e` | Browser tests (`tests/e2e/`, Playwright): sign-up, invitations, roles, issues, settings, routing, AI analysis and automatic routing (free test analyser), deadlines and first response, escalations, dashboard counts, cross-company access | Local Supabase, test browser |
 
 Local Supabase needs Docker Desktop. One-time setup, then each time:
@@ -373,11 +389,19 @@ run keeps the Playwright report for 7 days (Actions > the run > Artifacts).
   filter on the server but show at most 200 issues; paging comes later.
 - The assignee is a name picked from the workspace's members (stored as
   text, `assignee_name`), not a link to a user account.
-- Category changes are not written to an issue's history (the history
-  trigger records status, team and assignee only).
 - Deleting a team or category clears it from issues; deleting a team that a
   routing rule uses is refused until the rule changes.
-- `first_response_at` is not set yet (needed for response-time reports).
+- Deadlines are counted around the clock (no business hours or holidays).
+- The workspace home counts the newest 1,000 open issues (it says so when
+  there are more), and unacknowledged escalations are read up to the
+  database's 1,000-row reply limit.
+- The "This week" card opens the full Issues list: there is no "this week"
+  filter, so only the six other cards match their list exactly.
+- Every scheduled escalation check adds a row to `escalation_runs` (about 96
+  a day per company with a condition on). Nothing tidies old rows yet.
+- A free Supabase project pauses after about a week without activity, and
+  pg_cron stops with it. Settings then warns that automatic checks may have
+  stopped; restoring the project in the Supabase dashboard starts them again.
 - Analytics are computed in the browser from the full issue list.
 - Demo issue history (`events`) is free text; real issues use the
   `issue_activity` table, written by a database trigger.
@@ -424,8 +448,13 @@ run keeps the Playwright report for 7 days (Actions > the run > Artifacts).
 2. Database, authentication, tenant isolation. **Done (2026-10-23).** Also
    brought forward from phase 4: issue tracking and suggest-only routing.
 3. AI analysis of customer messages. **Done (2026-10-24).**
-4. Routing, issue tracking, escalation. **In progress.**
-5. Supported data-source integrations.
+4. Routing, issue tracking, escalation. **Done (2026-10-24).**
+5. Supported data-source integrations. **In progress.** Plan approved
+   2026-10-24 (https://claude.ai/artifact/CfWmbfR8736bJ6zZ7JJru9): CSV import
+   first, then a Gmail inbox read with a "Fetch new email" button; AI on
+   imports only after confirming, within the monthly limit; public form and
+   webhook in Phase 7 after deployment; other sources one at a time later;
+   optional `customer_email` on issues.
 6. Notifications, schedules, reports.
 7. Security, reliability and deployment readiness.
 
@@ -584,4 +613,28 @@ explanations and conflicts, 19 dashboard, 20 scheduled checks (pg_cron),
   minutes without one. Still no email or chat notifications (Phase 6).
   256/256 security checks, 10/10 browser tests (escalations test runs the
   scheduled check once), 87 unit tests, lint, type check, build
-  (2026-10-24). Not yet seen running on the hosted project.
+  (2026-10-24). PR #20, merged 2026-10-24. Seen running on Jugal's hosted
+  project: Settings showed "Running every 15 minutes." with a scheduled
+  check at 17:30 Asia/Calcutta (12:00 UTC) on 2026-10-24.
+- Stage 21: documentation brought up to date (README, this file, known
+  limitations), full checks re-run on main after PR #20: 256/256 security
+  checks, 10/10 browser tests, 87 unit tests, lint, type check, build,
+  `npm audit` 0 (2026-10-24). Phase 5 plan drafted for approval:
+  https://claude.ai/artifact/CfWmbfR8736bJ6zZ7JJru9
+
+Phase 4 is complete. Verified on Jugal's hosted project: deadlines and the
+first-response button (stage 16), escalations, Check now and Acknowledge
+(stage 17), scheduled checks (stage 20). Stages 18 and 19 were applied
+there (db push on 2026-10-24) and covered by the browser tests.
+
+Phase 5 (data sources). Jugal approved the plan and its six decisions on
+2026-10-24. One stage per PR, each reviewed before the next starts.
+- Stage 22: import foundation. Migration
+  `20261026090000_import_foundation.sql` (source fields, customer email,
+  `import_runs`, `start_import` / `import_issues` / `finish_import`);
+  optional customer email on the new-issue form and issue page; Data sources
+  tab with import history. No upload yet (stage 23). 294/294 security
+  checks, 11/11 browser tests (new `tests/e2e/data-sources.spec.ts`), 88
+  unit tests, lint, type check, build, `npm audit` 0 (2026-10-24). Waiting
+  for Jugal's review; the migration is applied to the hosted project only
+  after the PR is merged.

@@ -5,7 +5,7 @@ import { createClient } from "@/lib/supabase/server";
 import type { RoutableMessage } from "@/lib/routing";
 import type { EscalationCondition } from "@/lib/escalations";
 import type { DashboardIssue } from "@/lib/dashboard";
-import type { Channel, Intent, IssueStatus, RoutingRule, RuleCondition, Sentiment, Urgency } from "@/lib/types";
+import type { Channel, Intent, IssueSource, IssueStatus, RoutingRule, RuleCondition, Sentiment, Urgency } from "@/lib/types";
 
 // Reads for real (signed-in) workspaces. Every query runs as the signed-in
 // user, so the database only returns rows from their own organisations.
@@ -107,6 +107,11 @@ export interface LiveIssue {
   id: string;
   reference: string;
   customerName: string;
+  customerEmail: string | null;
+  /** Where the issue came from: typed in, or an import. */
+  source: IssueSource;
+  /** The record's ID in its source; null for typed-in issues. */
+  sourceRecordId: string | null;
   channel: Channel;
   subject: string;
   message: string;
@@ -171,12 +176,15 @@ export interface IssueFilters {
 export const ISSUE_LIST_LIMIT = 200;
 
 const ISSUE_COLUMNS =
-  "id, reference, customer_name, channel, subject, message, received_at, sentiment, intent, urgency, status, assignee_name, team_id, category_id, analysis_source, summary, first_response_at, resolved_at, waiting_seconds, waiting_since, reopened_count, routing_dismissed_at, updated_at";
+  "id, reference, customer_name, customer_email, source, source_record_id, channel, subject, message, received_at, sentiment, intent, urgency, status, assignee_name, team_id, category_id, analysis_source, summary, first_response_at, resolved_at, waiting_seconds, waiting_since, reopened_count, routing_dismissed_at, updated_at";
 
 type IssueRow = {
   id: string;
   reference: string;
   customer_name: string;
+  customer_email: string | null;
+  source: string;
+  source_record_id: string | null;
   channel: string;
   subject: string;
   message: string;
@@ -204,6 +212,9 @@ function toIssue(row: IssueRow): LiveIssue {
     id: row.id,
     reference: row.reference,
     customerName: row.customer_name,
+    customerEmail: row.customer_email,
+    source: row.source as IssueSource,
+    sourceRecordId: row.source_record_id,
     channel: row.channel as Channel,
     subject: row.subject,
     message: row.message,
@@ -796,4 +807,52 @@ export async function openEscalationLevels(organizationId: string, issueIds: str
     for (const row of data ?? []) levels.set(row.issue_id, Math.max(levels.get(row.issue_id) ?? 0, row.level));
   }
   return levels;
+}
+
+export interface ImportRun {
+  id: string;
+  source: "csv" | "gmail";
+  fileName: string;
+  startedByName: string | null;
+  startedAt: string;
+  finishedAt: string | null;
+  status: "running" | "finished" | "failed";
+  rowsExamined: number;
+  imported: number;
+  skippedDuplicate: number;
+  rejected: number;
+  problems: { row: number | null; reason: string }[];
+  error: string | null;
+}
+
+/** The company's imports, newest first. */
+export async function listImportRuns(organizationId: string, limit = 50): Promise<ImportRun[]> {
+  const supabase = await createClient();
+  const { data, error } = await supabase
+    .from("import_runs")
+    .select(
+      "id, source, file_name, started_at, finished_at, status, rows_examined, imported, skipped_duplicate, rejected, problems, error, starter:profiles (full_name)",
+    )
+    .eq("organization_id", organizationId)
+    .order("started_at", { ascending: false })
+    .limit(limit);
+  if (error) {
+    console.error("[listImportRuns]", error.code, error.message);
+    throw new Error("Could not load the import history.");
+  }
+  return (data ?? []).map((row) => ({
+    id: row.id,
+    source: row.source as ImportRun["source"],
+    fileName: row.file_name,
+    startedByName: (row.starter as unknown as { full_name: string } | null)?.full_name || null,
+    startedAt: row.started_at,
+    finishedAt: row.finished_at,
+    status: row.status as ImportRun["status"],
+    rowsExamined: row.rows_examined,
+    imported: row.imported,
+    skippedDuplicate: row.skipped_duplicate,
+    rejected: row.rejected,
+    problems: Array.isArray(row.problems) ? (row.problems as ImportRun["problems"]) : [],
+    error: row.error,
+  }));
 }

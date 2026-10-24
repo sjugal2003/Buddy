@@ -27,6 +27,7 @@ export async function createIssue(_prev: FormState, formData: FormData): Promise
     teamId: formData.get("teamId") ?? "",
     categoryId: formData.get("categoryId") ?? "",
     customerName: formData.get("customerName"),
+    customerEmail: formData.get("customerEmail") ?? "",
     channel: formData.get("channel"),
     subject: formData.get("subject"),
     message: formData.get("message"),
@@ -50,6 +51,7 @@ export async function createIssue(_prev: FormState, formData: FormData): Promise
     .insert({
       organization_id: parsed.data.organizationId,
       customer_name: parsed.data.customerName,
+      customer_email: parsed.data.customerEmail,
       channel: parsed.data.channel,
       subject: parsed.data.subject,
       message: parsed.data.message,

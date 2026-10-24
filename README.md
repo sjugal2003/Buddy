@@ -1,13 +1,17 @@
 # Buddy: Customer Service Intelligence Hub
 
-**Status: Phase 3 complete (2026-10-24).** Sign-in, company workspaces,
+**Status: Phase 4 complete; Phase 5 (data sources) in progress (2026-10-24).** Sign-in, company workspaces,
 invitations, roles, customer issues, teams, categories, company settings and
 routing rules work against a Supabase database protected by Row Level
 Security, with automated tests on every change. An optional AI (Gemini or
 Claude, with your own key) suggests each new issue's sentiment, type, urgency,
 category and a summary; every AI value is labelled and can be changed.
-Routing rules *suggest* a team, unless an owner switches on automatic routing.
-Issues are typed in by hand; there is no connection to outside services yet.
+Routing rules *suggest* a team (and show a conflict when rules disagree),
+unless an owner switches on automatic routing. Each issue has first-response
+and resolution deadlines; escalations flag issues that need attention (with
+"Check now" and automatic checks every 15 minutes), and the workspace home
+shows live counts. Escalations only appear in Buddy: no email or chat
+messages are sent yet. Issues are typed in by hand (with an optional customer email); the Data sources tab shows the import history, and CSV import arrives in the next update. There is no connection to outside services yet.
 It is **not production-ready** and must not hold real customer data yet.
 
 ## Run it on Windows
@@ -264,10 +268,11 @@ which step failed, with a screenshot.
 | `/auth/confirm` | Where the confirmation email link lands |
 | `/onboarding` | Create a company workspace (you become its owner) |
 | `/invite?token=...` | Accept an invitation |
-| `/w/<company>` | Your real workspace: open issue count, members, roles, invitations |
-| `/w/<company>/issues` | Customer issues: search, filters, add, status, assignee, team, category, history; AI analysis panel and "AI suggested" marks when AI is on |
+| `/w/<company>` | Your real workspace: dashboard cards (urgent, due within 2 hours, targets missed, escalations, no team, waiting, this week), recent activity, members, roles, invitations |
+| `/w/<company>/issues` | Customer issues: search, filters (including deadlines and escalations), add, status, assignee, team, category, history, deadlines, "Record first response", escalations with Acknowledge; AI analysis panel and "AI suggested" marks when AI is on |
 | `/w/<company>/routing` | Routing rules: add, edit, reorder, switch off, delete (owners and admins); route open issues that have no team |
-| `/w/<company>/settings` | Company profile, response targets, AI analysis (on/off, monthly limit, automatic routing), teams, categories (owners and admins edit; automatic routing owners only) |
+| `/w/<company>/data-sources` | Which sources are available (CSV import and Gmail are not yet), and every import with its counts and rejected-row reasons |
+| `/w/<company>/settings` | Company profile, first-response and resolution targets, AI analysis (on/off, monthly limit, automatic routing), escalation conditions with "Check now" and the automatic-check status, teams, categories (owners and admins edit; automatic routing owners only) |
 | `/demo/<company>/...` | The Phase 1 demo with fictional data (dashboard, inbox, intelligence, routing, data sources, reports, automation, settings) |
 
 ## Project layout

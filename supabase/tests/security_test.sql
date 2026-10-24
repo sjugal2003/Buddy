@@ -948,6 +948,150 @@ select tests.act_as(current_setting('t.b_owner')::uuid);
 select tests.expect_rows($q$select 1 from public.escalation_runs where source = 'scheduled'$q$, 0,
   'owner B cannot see company A''s scheduled checks');
 
+-- ---------------------------------------------------------------------------
+-- Imports: source fields, customer email, import log (Phase 5 stage 22)
+-- ---------------------------------------------------------------------------
+
+set local role authenticated;
+select tests.act_as(current_setting('t.invitee')::uuid);
+select tests.expect_error(format($q$select public.start_import(%L, 'csv', 'x.csv')$q$, current_setting('t.org_a')),
+  'a member cannot start an import');
+select tests.act_as(current_setting('t.outsider')::uuid);
+select tests.expect_error(format($q$select public.start_import(%L, 'csv', 'x.csv')$q$, current_setting('t.org_a')),
+  'an outsider cannot start an import in company A');
+select tests.act_as(current_setting('t.b_owner')::uuid);
+select tests.expect_error(format($q$select public.start_import(%L, 'csv', 'x.csv')$q$, current_setting('t.org_a')),
+  'owner B cannot start an import in company A');
+select tests.act_as(current_setting('t.a_owner')::uuid);
+select tests.expect_error(format($q$select public.start_import(%L, 'gmail', '')$q$, current_setting('t.org_a')),
+  'Gmail imports cannot be started this way');
+select set_config('t.run_a', public.start_import(current_setting('t.org_a')::uuid, 'csv', 'october.csv')::text, true);
+select tests.expect_rows(format($q$select 1 from public.import_runs where id = %L and status = 'running'
+  and started_by = %L and file_name = 'october.csv'$q$, current_setting('t.run_a'), current_setting('t.a_owner')), 1,
+  'owner A starts an import');
+
+select set_config('t.import_result', public.import_issues(current_setting('t.run_a')::uuid, $j$[
+  {"row": 2, "customer_name": "Test Customer", "customer_email": "Test@Example.com", "channel": "email",
+   "subject": "Late delivery", "message": "My parcel is late.", "received_at": "2026-10-01T09:00:00Z", "record_id": "T-1"},
+  {"row": 3, "customer_name": "Test Customer", "channel": "email",
+   "subject": "Late delivery", "message": "Same ID again.", "received_at": "2026-10-01T09:00:00Z", "record_id": "T-1"},
+  {"row": 4, "customer_name": "Other Customer", "channel": "live_chat",
+   "subject": "Refund", "message": "Where is my refund?", "received_at": "2026-10-02T10:00:00Z"},
+  {"row": 5, "customer_name": "No Message", "channel": "email", "subject": "Empty", "message": "  ",
+   "received_at": "2026-10-02T10:00:00Z"},
+  {"row": 6, "customer_name": "Bad Channel", "channel": "fax", "subject": "Hi", "message": "Hello",
+   "received_at": "2026-10-02T10:00:00Z"},
+  {"row": 7, "customer_name": "Bad Date", "channel": "email", "subject": "Hi", "message": "Hello",
+   "received_at": "next tuesday"},
+  {"row": 8, "customer_name": "Future", "channel": "email", "subject": "Hi", "message": "Hello",
+   "received_at": "2099-01-01T00:00:00Z"},
+  {"row": 9, "customer_name": "Bad Email", "customer_email": "not-an-address", "channel": "email",
+   "subject": "Hi", "message": "Hello", "received_at": "2026-10-02T10:00:00Z"}
+]$j$::jsonb)::text, true);
+select tests.expect_rows($q$select 1 from jsonb_array_elements(current_setting('t.import_result')::jsonb) x
+  where x->>'outcome' = 'imported'$q$, 2, 'valid rows are imported');
+select tests.expect_rows($q$select 1 from jsonb_array_elements(current_setting('t.import_result')::jsonb) x
+  where x->>'outcome' = 'duplicate' and (x->>'row')::int = 3$q$, 1, 'a second row with the same ID is skipped as a duplicate');
+select tests.expect_rows($q$select 1 from jsonb_array_elements(current_setting('t.import_result')::jsonb) x
+  where x->>'outcome' = 'rejected'$q$, 5, 'empty message, unknown channel, bad date, future date and bad email are rejected');
+select tests.expect_rows(format($q$select 1 from public.issues where import_run_id = %L and source = 'csv'
+  and created_by = %L and analysis_source = 'manual' and status = 'new'$q$,
+  current_setting('t.run_a'), current_setting('t.a_owner')), 2, 'imported issues are new, manual and owned by the importer');
+select tests.expect_rows(format($q$select 1 from public.issues where import_run_id = %L and source_record_id = 'T-1'
+  and customer_email = 'test@example.com' and received_at = '2026-10-01T09:00:00Z'$q$, current_setting('t.run_a')), 1,
+  'the ID, the email (in lower case) and the received time are kept');
+select tests.expect_rows(format($q$select 1 from public.issues where import_run_id = %L and source_record_id like 'fp:%%'$q$,
+  current_setting('t.run_a')), 1, 'a row without an ID gets a fingerprint');
+select tests.expect_rows(format($q$select 1 from public.issue_activity a join public.issues i on i.id = a.issue_id
+  where i.import_run_id = %L and a.kind = 'created' and a.actor_id = %L$q$,
+  current_setting('t.run_a'), current_setting('t.a_owner')), 2, 'each imported issue has a "created" history entry');
+select tests.expect_rows(format($q$select 1 from public.import_runs where id = %L and rows_examined = 8 and imported = 2
+  and skipped_duplicate = 1 and rejected = 5 and jsonb_array_length(problems) = 5
+  and not problems::text ilike '%%hello%%'$q$, current_setting('t.run_a')), 1,
+  'the import log counts every row and keeps reasons without the customer''s text');
+
+select tests.expect_rows(format($q$select 1 from jsonb_array_elements(public.import_issues(%L, '[
+  {"row": 2, "customer_name": "Other Customer", "channel": "live_chat", "subject": "Refund",
+   "message": "Where is my refund?", "received_at": "2026-10-02T10:00:00Z"}]'::jsonb)) x where x->>'outcome' = 'duplicate'$q$,
+  current_setting('t.run_a')), 1, 'the same row without an ID is a duplicate the second time');
+select tests.expect_error(format($q$select public.import_issues(%L, (select jsonb_agg(jsonb_build_object('row', g))
+  from generate_series(1, 501) g))$q$, current_setting('t.run_a')), 'more than 500 rows at once is refused');
+
+select tests.act_as(current_setting('t.a_member')::uuid);
+select tests.expect_error(format($q$select public.import_issues(%L, '[]'::jsonb)$q$, current_setting('t.run_a')),
+  'an admin cannot add rows to an import someone else started');
+select tests.expect_error(format($q$select public.finish_import(%L)$q$, gen_random_uuid()),
+  'an unknown import cannot be finished');
+select tests.act_as(current_setting('t.b_owner')::uuid);
+select tests.expect_error(format($q$select public.import_issues(%L, '[]'::jsonb)$q$, current_setting('t.run_a')),
+  'owner B cannot add rows to company A''s import');
+select tests.expect_error(format($q$select public.finish_import(%L)$q$, current_setting('t.run_a')),
+  'owner B cannot finish company A''s import');
+
+select tests.act_as(current_setting('t.a_owner')::uuid);
+select public.finish_import(current_setting('t.run_a')::uuid);
+select tests.expect_rows(format($q$select 1 from public.import_runs where id = %L and status = 'finished'
+  and finished_at is not null and error is null$q$, current_setting('t.run_a')), 1, 'owner A finishes the import');
+select tests.expect_error(format($q$select public.import_issues(%L, '[]'::jsonb)$q$, current_setting('t.run_a')),
+  'a finished import takes no more rows');
+select tests.expect_error(format($q$select public.finish_import(%L)$q$, current_setting('t.run_a')),
+  'an import cannot be finished twice');
+
+-- Past conversations: resolved when they were received, never escalated as late.
+select set_config('t.run_h', public.start_import(current_setting('t.org_a')::uuid, 'csv', 'history.csv')::text, true);
+select tests.expect_rows(format($q$select 1 from jsonb_array_elements(public.import_issues(%L, '[
+  {"row": 2, "customer_name": "Old Customer", "channel": "email", "subject": "Old question",
+   "message": "From last year.", "received_at": "2025-06-01T08:00:00Z", "record_id": "H-1"}]'::jsonb, true)) x
+  where x->>'outcome' = 'imported'$q$, current_setting('t.run_h')), 1, 'a history row is imported');
+select tests.expect_rows(format($q$select 1 from public.issues where source_record_id = 'H-1' and organization_id = %L
+  and status = 'resolved' and resolved_at = '2025-06-01T08:00:00Z'$q$, current_setting('t.org_a')), 1,
+  'a history row is resolved at the time it was received, not today');
+select public.finish_import(current_setting('t.run_h')::uuid, 'The browser stopped before sending every row.');
+select tests.expect_rows(format($q$select 1 from public.import_runs where id = %L and status = 'failed' and imported = 1$q$,
+  current_setting('t.run_h')), 1, 'an import that stopped early is logged as failed, with what it saved');
+
+-- The same ID in another company is a different record.
+select tests.act_as(current_setting('t.b_owner')::uuid);
+select set_config('t.run_b', public.start_import(current_setting('t.org_b')::uuid, 'csv', 'b.csv')::text, true);
+select tests.expect_rows(format($q$select 1 from jsonb_array_elements(public.import_issues(%L, '[
+  {"row": 2, "customer_name": "B Customer", "channel": "email", "subject": "B issue",
+   "message": "Company B message.", "received_at": "2026-10-01T09:00:00Z", "record_id": "T-1"}]'::jsonb)) x
+  where x->>'outcome' = 'imported'$q$, current_setting('t.run_b')), 1,
+  'company B can import a record with the same ID as company A');
+select tests.expect_rows('select 1 from public.import_runs', 1, 'owner B sees only company B''s import');
+select tests.expect_rows(format('select 1 from public.issues where import_run_id in (%L, %L)',
+  current_setting('t.run_a'), current_setting('t.run_h')), 0, 'owner B sees none of company A''s imported issues');
+
+-- Members see their company's imports but cannot write the log or the source fields.
+select tests.act_as(current_setting('t.invitee')::uuid);
+select tests.expect_rows(format('select 1 from public.import_runs where organization_id = %L', current_setting('t.org_a')), 2,
+  'a member of company A sees its import history');
+select tests.expect_error(format($q$insert into public.import_runs (organization_id, source) values (%L, 'csv')$q$,
+  current_setting('t.org_a')), 'nobody can write the import log directly');
+select tests.expect_error(format($q$update public.import_runs set imported = 999 where id = %L$q$, current_setting('t.run_a')),
+  'nobody can change the import log');
+select tests.expect_error(format($q$delete from public.import_runs where id = %L$q$, current_setting('t.run_a')),
+  'nobody can delete from the import log');
+select tests.expect_error(format($q$insert into public.issues (organization_id, customer_name, channel, subject, message,
+  created_by, source, source_record_id) values (%L, 'Fake', 'email', 'Fake', 'Fake', %L, 'csv', 'T-9')$q$,
+  current_setting('t.org_a'), current_setting('t.invitee')), 'a member cannot label a typed issue as imported');
+select tests.expect_error(format($q$update public.issues set customer_email = 'x@example.com' where id = %L$q$,
+  current_setting('t.issue_esc')), 'nobody can change a customer''s email address after the fact');
+select tests.expect_affected(format($q$insert into public.issues (organization_id, customer_name, customer_email, channel,
+  subject, message, created_by) values (%L, 'Typed Customer', 'typed@example.com', 'email', 'Typed', 'Typed by hand', %L)$q$,
+  current_setting('t.org_a'), current_setting('t.invitee')), 1, 'a member can type an email address on a new issue');
+select tests.expect_rows($q$select 1 from public.issues where customer_name = 'Typed Customer' and source = 'manual'
+  and source_record_id is null$q$, 1, 'a typed issue is recorded as manual');
+select tests.expect_error(format($q$insert into public.issues (organization_id, customer_name, customer_email, channel,
+  subject, message, created_by) values (%L, 'Typed', 'Not An Email', 'email', 'Typed', 'Typed', %L)$q$,
+  current_setting('t.org_a'), current_setting('t.invitee')), 'an invalid email address is refused');
+
+reset role;
+select tests.expect_error(format($q$insert into public.issues (organization_id, customer_name, channel, subject, message,
+  source, source_record_id) values (%L, 'Copy', 'email', 'Copy', 'Copy', 'csv', 'T-1')$q$, current_setting('t.org_a')),
+  'the database itself refuses a second issue for the same record');
+set local role authenticated;
+
 -- Deleting the issue keeps its analyses, so the monthly count cannot be reset.
 select tests.act_as(current_setting('t.a_owner')::uuid);
 select tests.expect_affected(format('delete from public.issues where id = %L', current_setting('t.issue_a')), 1,

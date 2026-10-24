@@ -82,11 +82,23 @@ export const statusSchema = z.enum(["new", "open", "in_progress", "waiting_on_cu
 /** An optional link to a team or category: empty means none. */
 const optionalId = z.union([z.literal(""), z.string().uuid()]).transform((v) => v || null);
 
+/** An optional email address, stored in lower case; "" means none. */
+export const optionalEmailSchema = z
+  .string()
+  .trim()
+  .toLowerCase()
+  .max(254, "Use 254 characters or fewer.")
+  .refine((v) => v === "" || /^[^@\s]+@[^@\s]+\.[^@\s]+$/.test(v), "Enter a valid email address, or leave it empty.")
+  .transform((v) => v || null)
+  .optional()
+  .transform((v) => v ?? null);
+
 export const createIssueSchema = z.object({
   organizationId: z.string().uuid(),
   teamId: optionalId,
   categoryId: optionalId,
   customerName: z.string().trim().min(1, "Enter the customer's name.").max(120, "Use 120 characters or fewer."),
+  customerEmail: optionalEmailSchema,
   channel: channelSchema,
   subject: z.string().trim().min(1, "Enter a subject.").max(200, "Use 200 characters or fewer."),
   message: z.string().trim().min(1, "Enter what the customer said.").max(10000, "Use 10,000 characters or fewer."),

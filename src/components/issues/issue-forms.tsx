@@ -94,6 +94,10 @@ export function NewIssueForm({
           <input name="customerName" required maxLength={120} className={inputClass} />
           <FieldError message={state.fieldErrors?.customerName} />
         </Field>
+        <Field label="Customer email (optional)">
+          <input name="customerEmail" type="email" maxLength={254} className={inputClass} />
+          <FieldError message={state.fieldErrors?.customerEmail} />
+        </Field>
         <Field label="Where it came from">
           <select name="channel" defaultValue="email" className={inputClass}>
             {options<Channel>(channelLabels)}
