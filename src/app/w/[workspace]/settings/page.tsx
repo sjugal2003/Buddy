@@ -66,6 +66,12 @@ export default async function SettingsPage({ params }: { params: Promise<{ works
                   <dd className="text-slate-900">{settings.targetHours[u]} h</dd>
                 </div>
               ))}
+              {urgencyOrder.map((u) => (
+                <div key={`r-${u}`} className="contents">
+                  <dt className="text-slate-500">{urgencyLabels[u]} resolution target</dt>
+                  <dd className="text-slate-900">{settings.resolutionHours[u]} h</dd>
+                </div>
+              ))}
             </dl>
           )}
         </Card>

@@ -6,6 +6,9 @@ import { SentimentBadge, StatusBadge, UrgencyBadge } from "@/components/ui/badge
 import { FormMessage } from "@/components/auth/auth-card";
 import { UpdateIssueForm } from "@/components/issues/issue-forms";
 import { AiPanel } from "@/components/issues/ai-panel";
+import { DeadlineBadge } from "@/components/issues/deadline-badge";
+import { RecordFirstResponseButton } from "@/components/issues/record-response-button";
+import { deadlines } from "@/lib/targets";
 import { aiServiceStatus } from "@/lib/ai";
 import { requireUser } from "@/lib/auth";
 import {
@@ -13,6 +16,7 @@ import {
   getIssue,
   getLatestAnalysis,
   getMembershipBySlug,
+  getOrganizationSettings,
   listCategories,
   listIssueActivity,
   listMembers,
@@ -24,7 +28,7 @@ import {
 import { findMatchingRule } from "@/lib/routing";
 import { ApplySuggestionButton } from "@/components/routing/routing-forms";
 import { channelLabels, intentLabels, sentimentLabels, statusLabels, urgencyLabels } from "@/lib/labels";
-import { formatDateTime } from "@/lib/format";
+import { formatDateTime, formatDateTimeIn } from "@/lib/format";
 import { aiFieldSchema, intentSchema, sentimentSchema, statusSchema, urgencySchema } from "@/lib/validation";
 import { z } from "zod";
 
@@ -59,6 +63,14 @@ function describe(event: IssueActivity) {
       return event.toValue ? `Moved to team ${event.toValue}` : `Removed from team ${event.fromValue ?? ""}`.trim();
     case "escalated":
       return "Escalated";
+    case "category_changed":
+      return `Category changed from ${event.fromValue ?? "No category"} to ${event.toValue ?? "No category"}`;
+    case "first_response":
+      return "First response recorded";
+    case "resolved":
+      return `Resolved (was ${statusName(event.fromValue)})`;
+    case "reopened":
+      return `Reopened as ${statusName(event.toValue)}`;
     case "ai_analysed":
       return `Analysed by AI (suggested urgency ${valueName("urgency", event.toValue)})`;
     case "ai_accepted": {
@@ -84,14 +96,17 @@ export default async function IssuePage({
   const orgId = membership.organization.id;
   const issue = await getIssue(orgId, issueId);
   if (!issue) notFound();
-  const [activity, members, teams, categories, analysis, aiEnabled] = await Promise.all([
+  const [activity, members, teams, categories, analysis, aiEnabled, settings] = await Promise.all([
     listIssueActivity(orgId, issueId),
     listMembers(orgId),
     listTeams(orgId),
     listCategories(orgId),
     getLatestAnalysis(orgId, issueId),
     getAiEnabled(orgId),
+    getOrganizationSettings(orgId),
   ]);
+  // Worked out on the server with the server's clock, never the browser's.
+  const due = deadlines(issue, { firstResponse: settings.targetHours, resolution: settings.resolutionHours }, new Date());
   const rules = await listRoutingRules(orgId);
   const suggestedRule = findMatchingRule(rules, toRoutable(issue));
   const suggestedTeam = teams.find((t) => t.id === suggestedRule?.teamId);
@@ -178,6 +193,37 @@ export default async function IssuePage({
         </div>
 
         <div className="space-y-6">
+          <Card title="Deadlines" description={`Times in ${settings.timezone}, counted around the clock.`}>
+            <dl className="space-y-3 text-sm" data-testid="deadlines">
+              <div>
+                <dt className="mb-1">
+                  <DeadlineBadge kind="first_response" deadline={due.firstResponse} />
+                </dt>
+                <dd className="text-xs text-slate-500">
+                  {issue.firstResponseAt
+                    ? `Recorded ${formatDateTimeIn(issue.firstResponseAt, settings.timezone)}`
+                    : `Due ${formatDateTimeIn(due.firstResponse.dueAt, settings.timezone)}`}
+                </dd>
+              </div>
+              <div>
+                <dt className="mb-1">
+                  <DeadlineBadge kind="resolution" deadline={due.resolution} />
+                </dt>
+                <dd className="text-xs text-slate-500">
+                  {issue.status === "resolved" && issue.resolvedAt
+                    ? `Resolved ${formatDateTimeIn(issue.resolvedAt, settings.timezone)}`
+                    : `Due ${formatDateTimeIn(due.resolution.dueAt, settings.timezone)}`}
+                  {issue.reopenedCount > 0 && ` · reopened ${issue.reopenedCount} ${issue.reopenedCount === 1 ? "time" : "times"}`}
+                </dd>
+              </div>
+            </dl>
+            {!issue.firstResponseAt && (
+              <div className="mt-4 border-t border-slate-100 pt-4">
+                <RecordFirstResponseButton issueId={issue.id} />
+              </div>
+            )}
+          </Card>
+
           <Card title="AI analysis">
             <AiPanel
               issueId={issue.id}

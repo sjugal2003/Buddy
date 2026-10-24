@@ -18,6 +18,14 @@ export function formatDateTime(iso: string) {
   return `${dateTimeFormat.format(new Date(iso))} UTC`;
 }
 
+/** Date and time in a company's time zone, e.g. "24 Oct, 13:30 (Asia/Kolkata)". Server only. */
+export function formatDateTimeIn(iso: string | Date, timeZone: string) {
+  const text = new Intl.DateTimeFormat("en-GB", { day: "numeric", month: "short", hour: "2-digit", minute: "2-digit", timeZone }).format(
+    new Date(iso),
+  );
+  return `${text} (${timeZone})`;
+}
+
 export function formatHours(hours: number) {
   if (!Number.isFinite(hours)) return "–";
   if (hours < 1) return `${Math.round(hours * 60)} min`;

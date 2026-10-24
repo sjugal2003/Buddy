@@ -125,6 +125,9 @@ export const issueFiltersSchema = z.object({
   status: z.union([statusSchema, z.enum(["active", "all"])]).catch("active"),
   urgency: z.union([urgencySchema, z.literal("")]).catch(""),
   team: z.union([z.string().uuid(), z.literal("unassigned"), z.literal("")]).catch(""),
+  // Deadlines: "overdue" (a target missed) or "soon" (due within the last quarter of its time).
+  due: z.enum(["", "overdue", "soon"]).catch(""),
+  sort: z.enum(["", "attention"]).catch(""),
   // Only plain characters, so the search can't change the database query.
   q: z
     .string()
@@ -139,6 +142,13 @@ const targetHours = z.coerce
   .min(1, "Use at least 1 hour.")
   .max(720, "Use 720 hours (30 days) or fewer.");
 
+/** Hours to resolve an issue, per urgency: up to 90 days. */
+const resolutionHours = z.coerce
+  .number({ message: "Enter a number of hours." })
+  .int("Use whole hours.")
+  .min(1, "Use at least 1 hour.")
+  .max(2160, "Use 2,160 hours (90 days) or fewer.");
+
 export const updateOrganizationSchema = z.object({
   organizationId: z.string().uuid(),
   name: z.string().trim().min(1, "Enter the company name.").max(100, "Use 100 characters or fewer."),
@@ -148,6 +158,10 @@ export const updateOrganizationSchema = z.object({
   targetHigh: targetHours,
   targetMedium: targetHours,
   targetLow: targetHours,
+  resolutionCritical: resolutionHours,
+  resolutionHigh: resolutionHours,
+  resolutionMedium: resolutionHours,
+  resolutionLow: resolutionHours,
 });
 
 export const updateAiSettingsSchema = z.object({
