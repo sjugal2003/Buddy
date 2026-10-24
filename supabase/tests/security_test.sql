@@ -839,6 +839,74 @@ select tests.expect_rows(format('select 1 from public.run_escalation_check(%L) w
 select tests.expect_rows(format($q$select 1 from public.escalations where issue_id = %L and spell = 1
   and condition = 'first_response_breached'$q$, current_setting('t.issue_esc')), 1, 'the new escalation belongs to the new spell');
 
+-- ---------------------------------------------------------------------------
+-- Routing history and dismissed suggestions (Phase 4 stage 18)
+-- ---------------------------------------------------------------------------
+
+select tests.act_as(current_setting('t.a_owner')::uuid);
+select tests.expect_affected(format(
+  $q$insert into public.routing_rules (organization_id, name, conditions, team_id)
+     select %L, 'Broken to billing', '[{"field":"keyword","value":"broken"}]', id
+     from public.teams where organization_id = %L and name = 'A Billing'$q$,
+  current_setting('t.org_a'), current_setting('t.org_a')), 1, 'owner A adds a routing rule for the routing history checks');
+reset role;
+select set_config('t.rule_r', (select id::text from public.routing_rules where name = 'Broken to billing'), true);
+update public.issues set team_id = null, routing_dismissed_at = null where id = current_setting('t.issue_esc')::uuid;
+set local role authenticated;
+
+select tests.act_as(current_setting('t.b_owner')::uuid);
+select tests.expect_error(format('select public.apply_routing_rule(%L, %L, null)', current_setting('t.issue_esc'), current_setting('t.rule_r')),
+  'owner B cannot apply a rule to a company A issue');
+select tests.expect_error(format('select public.dismiss_routing_suggestion(%L)', current_setting('t.issue_esc')),
+  'owner B cannot dismiss a company A suggestion');
+
+select tests.act_as(current_setting('t.invitee')::uuid);
+select tests.expect_error(format('select public.apply_routing_rule(%L, gen_random_uuid(), null)', current_setting('t.issue_esc')),
+  'a rule from another company (or a deleted one) cannot be applied');
+select tests.expect_rows(format('select 1 where public.apply_routing_rule(%L, %L, null)', current_setting('t.issue_esc'), current_setting('t.rule_r')), 1,
+  'a member applies a rule to an issue with no team');
+select tests.expect_rows(format($q$select 1 from public.issues i join public.teams t on t.id = i.team_id
+  where i.id = %L and t.name = 'A Billing'$q$, current_setting('t.issue_esc')), 1, 'the issue gets the rule''s team');
+select tests.expect_rows(format($q$select 1 from public.issue_activity where issue_id = %L and kind = 'routing_applied'
+  and from_value = 'Broken to billing' and to_value = 'A Billing' and actor_id = %L$q$,
+  current_setting('t.issue_esc'), current_setting('t.invitee')), 1, 'the history names the rule and the team');
+select tests.expect_rows(format($q$select 1 from public.issue_activity where issue_id = %L and kind = 'team_changed'$q$,
+  current_setting('t.issue_esc')), 0, 'a team set by a rule is not recorded twice');
+select tests.expect_rows(format('select 1 where not public.apply_routing_rule(%L, %L, null)', current_setting('t.issue_esc'), current_setting('t.rule_r')), 1,
+  'a rule never overwrites a team that was set in the meantime');
+
+select tests.act_as(current_setting('t.a_owner')::uuid);
+select tests.expect_affected(format('update public.issues set team_id = null where id = %L', current_setting('t.issue_esc')), 1,
+  'owner A clears the team again');
+select tests.expect_rows(format($q$select 1 from (select kind from public.issue_activity where issue_id = %L
+  order by id desc limit 1) x where kind = 'team_changed'$q$, current_setting('t.issue_esc')), 1, 'a team changed by hand is still recorded');
+select tests.expect_affected(format('update public.routing_rules set enabled = false where id = %L', current_setting('t.rule_r')), 1,
+  'owner A switches the rule off');
+select tests.act_as(current_setting('t.invitee')::uuid);
+select tests.expect_error(format('select public.apply_routing_rule(%L, %L, null)', current_setting('t.issue_esc'), current_setting('t.rule_r')),
+  'a switched-off rule cannot be applied');
+select tests.act_as(current_setting('t.a_owner')::uuid);
+select tests.expect_affected(format('update public.routing_rules set enabled = true where id = %L', current_setting('t.rule_r')), 1,
+  'owner A switches the rule back on');
+
+select tests.act_as(current_setting('t.invitee')::uuid);
+select tests.expect_error(format('update public.issues set routing_dismissed_at = now() where id = %L', current_setting('t.issue_esc')),
+  'a member cannot set the dismissed time directly');
+select tests.expect_rows(format('select 1 where public.dismiss_routing_suggestion(%L) is not null', current_setting('t.issue_esc')), 1,
+  'a member dismisses the suggestion');
+select tests.expect_rows(format($q$select 1 from public.issue_activity where issue_id = %L and kind = 'routing_dismissed'
+  and actor_id = %L$q$, current_setting('t.issue_esc'), current_setting('t.invitee')), 1, 'dismissing is in the history');
+select tests.expect_error(format('select public.dismiss_routing_suggestion(%L)', current_setting('t.issue_esc')),
+  'a suggestion cannot be dismissed twice');
+select tests.expect_affected(format('update public.issues set status = %L where id = %L', 'in_progress', current_setting('t.issue_esc')), 1,
+  'a member changes the status');
+select tests.expect_rows(format('select 1 from public.issues where id = %L and routing_dismissed_at is not null',
+  current_setting('t.issue_esc')), 1, 'a status change keeps the suggestion dismissed');
+select tests.expect_affected(format('update public.issues set category_id = %L where id = %L',
+  current_setting('t.cat_a2'), current_setting('t.issue_esc')), 1, 'a member changes the category');
+select tests.expect_rows(format('select 1 from public.issues where id = %L and routing_dismissed_at is null',
+  current_setting('t.issue_esc')), 1, 'a category change brings the suggestion back');
+
 -- Deleting the issue keeps its analyses, so the monthly count cannot be reset.
 select tests.act_as(current_setting('t.a_owner')::uuid);
 select tests.expect_affected(format('delete from public.issues where id = %L', current_setting('t.issue_a')), 1,

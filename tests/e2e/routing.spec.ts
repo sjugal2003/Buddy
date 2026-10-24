@@ -68,7 +68,7 @@ test("routing rules suggest a team; nothing moves until someone applies it", asy
 
   await test.step("the issue page suggests a team, and applying it gives the issue that team", async () => {
     await newIssue("Charged twice", "Two payments taken.", "Billing");
-    await shows(p, "text=suggests Payments");
+    await shows(p, "text=Suggested team: Payments, because rule “Billing to Payments” matched: category is Billing.");
     await p.click('button:has-text("Apply suggestion")');
     await shows(p, "text=Moved to team Payments");
     await hidden(p, 'button:has-text("Apply suggestion")');
@@ -92,17 +92,53 @@ test("routing rules suggest a team; nothing moves until someone applies it", asy
     await p.locator('li:has-text("Refunds to Support")').locator('button:has-text("Switch off")').click();
     await shows(p, 'li:has-text("Refunds to Support (off)")');
     await p.click('button:has-text("Route open issues that have no team")');
-    await shows(p, "text=No rule matches the open issues without a team.");
+    await shows(p, "text=No issues were routed. 2 issues still have no team because no rule matches.");
   });
 
   await test.step("routing gives matching issues their team and counts the rest", async () => {
     await p.locator('li:has-text("Refunds to Support")').locator('button:has-text("Switch on")').click();
     await shows(p, 'li:has-text("Refunds to Support") >> button:has-text("Switch off")');
     await p.click('button:has-text("Route open issues that have no team")');
-    await shows(p, "text=Routed 1 issue. 1 still have no team because no rule matches them.");
+    await shows(p, "text=Routed 1 issue. 1 issue still has no team because no rule matches.");
     await p.goto(`${W}/issues?team=unassigned`);
     await shows(p, "text=Hello");
     await hidden(p, "text=Money back");
+  });
+
+  await test.step("a dismissed suggestion stays hidden, and bulk routing leaves it", async () => {
+    await newIssue("Card declined", "My payment failed.", "Billing");
+    await p.click('button:has-text("Dismiss suggestion")');
+    await shows(p, "text=The routing suggestion was dismissed.");
+    await shows(p, "li >> text=Routing suggestion dismissed");
+    await hidden(p, 'button:has-text("Apply suggestion")');
+    await p.goto(`${W}/routing`);
+    await p.click('button:has-text("Route open issues that have no team")');
+    await shows(p, "text=No issues were routed. 1 issue still has no team because no rule matches.");
+  });
+
+  await test.step("rules that name different teams are a conflict; bulk routing skips it and a person chooses", async () => {
+    await editor.locator("input[name=name]").fill("Billing to Support");
+    await editor.locator("select[name=teamId]").selectOption({ label: "Support" });
+    await editor.locator('select[aria-label="Condition 1 field"]').selectOption("category");
+    await editor.locator('select[aria-label="Condition 1 value"]').selectOption({ label: "Billing" });
+    await editor.locator('button:has-text("Add rule")').click();
+    await shows(p, 'text=Rule "Billing to Support" added.');
+    await newIssue("Invoice disputed", "The total looks wrong.", "Billing");
+    await shows(p, "text=Conflict: 2 rules match and name different teams.");
+    await hidden(p, 'button:has-text("Apply suggestion")');
+    const issueUrl = p.url();
+    await p.goto(`${W}/routing`);
+    await p.click('button:has-text("Route open issues that have no team")');
+    await shows(
+      p,
+      "text=No issues were routed. 1 issue was skipped because matching rules name different teams. 1 issue still has no team because no rule matches.",
+    );
+    await p.goto(issueUrl);
+    await p.locator('li:has-text("“Billing to Support” suggests Support")').locator('button:has-text("Use this rule")').click();
+    await shows(p, "text=Moved to team Support by routing rule “Billing to Support”");
+    await p.goto(`${W}/routing`);
+    await p.click('button[aria-label="Delete Billing to Support"]');
+    await expect(p.locator('li:has-text("Billing to Support")')).toHaveCount(0);
   });
 
   await test.step("owner edits a rule", async () => {

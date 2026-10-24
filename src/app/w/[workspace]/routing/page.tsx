@@ -27,7 +27,7 @@ export default async function RoutingPage({ params }: { params: Promise<{ worksp
     <>
       <PageHeader
         title="Routing rules"
-        description="Rules suggest which team should handle an issue. They are checked from top to bottom and the first match wins. Nothing moves until someone applies a suggestion."
+        description="Rules suggest which team should handle an issue. Every rule is checked. If matching rules name different teams, the issue shows a conflict and a person chooses. Nothing moves until someone applies a suggestion."
       />
 
       <div className="space-y-6">

@@ -29,8 +29,8 @@ import {
   toRoutable,
   type IssueActivity,
 } from "@/lib/data/live";
-import { findMatchingRule } from "@/lib/routing";
-import { ApplySuggestionButton } from "@/components/routing/routing-forms";
+import { describeReasons, matchedConditions, routeIssue } from "@/lib/routing";
+import { ApplySuggestionButton, DismissSuggestionButton } from "@/components/routing/routing-forms";
 import { channelLabels, intentLabels, sentimentLabels, statusLabels, urgencyLabels } from "@/lib/labels";
 import { formatDateTime, formatDateTimeIn } from "@/lib/format";
 import { aiFieldSchema, intentSchema, sentimentSchema, statusSchema, urgencySchema } from "@/lib/validation";
@@ -68,6 +68,11 @@ function describe(event: IssueActivity) {
     case "escalated":
       // Written by the escalation check: from_value is the level, to_value the reason.
       return event.fromValue ? `Escalated (level ${event.fromValue}): ${event.toValue ?? ""}`.trim() : "Escalated";
+    case "routing_applied":
+      // from_value is the rule's name, to_value the team, written by apply_routing_rule.
+      return `Moved to team ${event.toValue ?? ""} by routing rule “${event.fromValue ?? ""}”`;
+    case "routing_dismissed":
+      return "Routing suggestion dismissed";
     case "escalation_acknowledged": {
       const what = isEscalationCondition(event.fromValue) ? ` (${escalationConditionLabels[event.fromValue]})` : "";
       return `Escalation acknowledged${what}${event.toValue ? `: “${event.toValue}”` : ""}`;
@@ -119,8 +124,10 @@ export default async function IssuePage({
   // Worked out on the server with the server's clock, never the browser's.
   const due = deadlines(issue, { firstResponse: settings.targetHours, resolution: settings.resolutionHours }, new Date());
   const rules = await listRoutingRules(orgId);
-  const suggestedRule = findMatchingRule(rules, toRoutable(issue));
-  const suggestedTeam = teams.find((t) => t.id === suggestedRule?.teamId);
+  // Every rule is checked; rules that disagree about the team are a conflict.
+  const routing = routeIssue(rules, toRoutable(issue));
+  const teamName = (id: string) => teams.find((t) => t.id === id)?.name ?? "a deleted team";
+  const categoryNames = new Map(categories.map((c) => [c.id, c.name]));
   const team = teams.find((t) => t.id === issue.teamId);
   const category = categories.find((c) => c.id === issue.categoryId);
   const { created, analyse } = await searchParams;
@@ -181,17 +188,7 @@ export default async function IssuePage({
               categories={categories}
             />
             <div className="mt-4 border-t border-slate-100 pt-4 text-sm">
-              {suggestedRule && suggestedTeam ? (
-                <div className="space-y-2">
-                  <p className="text-slate-600">
-                    Routing rule <span className="font-medium text-slate-800">&ldquo;{suggestedRule.name}&rdquo;</span>{" "}
-                    suggests <span className="font-medium text-slate-800">{suggestedTeam.name}</span>.
-                  </p>
-                  {suggestedTeam.id !== issue.teamId && (
-                    <ApplySuggestionButton organizationId={orgId} issueId={issue.id} teamName={suggestedTeam.name} />
-                  )}
-                </div>
-              ) : (
+              {routing.kind === "none" ? (
                 <p className="text-slate-500">
                   No{" "}
                   <Link href={`/w/${slug}/routing`} className="text-brand-700 hover:underline">
@@ -199,6 +196,57 @@ export default async function IssuePage({
                   </Link>{" "}
                   matches this issue.
                 </p>
+              ) : issue.routingDismissedAt ? (
+                <p className="text-slate-500" data-testid="routing-suggestion">
+                  The routing suggestion was dismissed. It comes back if the category, urgency, type or channel changes.
+                </p>
+              ) : routing.kind === "match" ? (
+                <div className="space-y-2" data-testid="routing-suggestion">
+                  <p className="text-slate-600">
+                    Suggested team: <span className="font-medium text-slate-800">{teamName(routing.teamId)}</span>, because
+                    rule <span className="font-medium text-slate-800">&ldquo;{routing.rule.name}&rdquo;</span> matched:{" "}
+                    {describeReasons(routing.reasons, categoryNames)}.
+                  </p>
+                  {routing.teamId === issue.teamId ? (
+                    <p className="text-xs text-slate-500">The issue already has this team.</p>
+                  ) : (
+                    <>
+                      <ApplySuggestionButton
+                        organizationId={orgId}
+                        issueId={issue.id}
+                        ruleId={routing.rule.id}
+                        label={`Apply suggestion: give it to ${teamName(routing.teamId)}`}
+                      />
+                      <DismissSuggestionButton issueId={issue.id} />
+                    </>
+                  )}
+                </div>
+              ) : (
+                <div className="space-y-3" data-testid="routing-suggestion">
+                  <p className="font-medium text-amber-800">
+                    Conflict: {routing.rules.length} rules match and name different teams. Choose one, or pick a team above.
+                  </p>
+                  <ul className="space-y-3">
+                    {routing.rules.map((rule) => (
+                      <li key={rule.id} className="space-y-1">
+                        <p className="text-slate-600">
+                          <span className="font-medium text-slate-800">&ldquo;{rule.name}&rdquo;</span> suggests{" "}
+                          <span className="font-medium text-slate-800">{teamName(rule.teamId)}</span>:{" "}
+                          {describeReasons(matchedConditions(rule, toRoutable(issue)), categoryNames)}.
+                        </p>
+                        {rule.teamId !== issue.teamId && (
+                          <ApplySuggestionButton
+                            organizationId={orgId}
+                            issueId={issue.id}
+                            ruleId={rule.id}
+                            label={`Use this rule: give it to ${teamName(rule.teamId)}`}
+                          />
+                        )}
+                      </li>
+                    ))}
+                  </ul>
+                  <DismissSuggestionButton issueId={issue.id} />
+                </div>
               )}
             </div>
           </Card>

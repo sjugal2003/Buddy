@@ -166,7 +166,7 @@ export function AiSettingsForm({
           <span>
             <span className="font-medium text-slate-900">Apply routing automatically</span>
             <span className="block text-xs text-slate-500">
-              After the AI analyses an issue that has no team, give it the team its first matching routing rule
+              After the AI analyses an issue that has no team, give it the team its matching routing rules
               names. Off means rules only suggest a team.
               {!isOwner && " Only an owner can change this."}
             </span>

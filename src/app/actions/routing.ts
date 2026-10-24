@@ -12,7 +12,7 @@ import {
   toRoutable,
   type LiveIssue,
 } from "@/lib/data/live";
-import { findMatchingRule } from "@/lib/routing";
+import { canApplyRule, routeIssue } from "@/lib/routing";
 import type { RuleCondition } from "@/lib/types";
 import {
   createRuleSchema,
@@ -163,39 +163,68 @@ export async function moveRule(_prev: FormState, formData: FormData): Promise<Fo
   return done("Order saved.");
 }
 
-async function setTeam(issue: LiveIssue, teamId: string) {
+/**
+ * Gives the issue the team of one rule, through the database function that
+ * also records the rule in the history. Changes nothing if the issue's team
+ * is no longer what we read: a team someone chose is never overwritten.
+ */
+async function applyRule(issue: LiveIssue, ruleId: string) {
   const supabase = await createClient();
-  // Only if the issue still has no team, or the same one we read: never
-  // overwrite a team someone chose in the meantime.
-  let query = supabase.from("issues").update({ team_id: teamId }).eq("id", issue.id);
-  query = issue.teamId ? query.eq("team_id", issue.teamId) : query.is("team_id", null);
-  return query.select("id");
+  return supabase.rpc("apply_routing_rule", {
+    p_issue_id: issue.id,
+    p_rule_id: ruleId,
+    p_expected_team: issue.teamId,
+  });
 }
 
-/** Gives one issue the team its first matching rule suggests. */
+/** Gives one issue the team of the suggested rule, or of the rule a person picked in a conflict. */
 export async function applySuggestedTeam(_prev: FormState, formData: FormData): Promise<FormState> {
   if (!(await getCurrentUser())) return SIGNED_OUT;
   const organizationId = idSchema.safeParse(formData.get("organizationId"));
   const issueId = idSchema.safeParse(formData.get("issueId"));
-  if (!organizationId.success || !issueId.success) return { error: "Something went wrong. Reload the page and try again." };
+  const ruleId = idSchema.safeParse(formData.get("ruleId"));
+  if (!organizationId.success || !issueId.success || !ruleId.success) {
+    return { error: "Something went wrong. Reload the page and try again." };
+  }
 
-  // Worked out again here rather than trusting a team sent by the browser.
+  // Worked out again here rather than trusting the browser: the rule must
+  // still be the suggestion, or one of the rules in a conflict.
   const issue = await getIssue(organizationId.data, issueId.data);
   if (!issue) return { error: "This issue no longer exists, or you no longer have access to it." };
-  const rule = findMatchingRule(await listRoutingRules(organizationId.data), toRoutable(issue));
-  if (!rule) return { error: "No routing rule matches this issue any more." };
+  const rules = await listRoutingRules(organizationId.data);
+  const outcome = routeIssue(rules, toRoutable(issue));
+  if (!canApplyRule(outcome, ruleId.data)) return { error: "That rule no longer matches this issue. Reload the page to see why." };
+  const rule = rules.find((r) => r.id === ruleId.data)!;
   if (rule.teamId === issue.teamId) return { success: "The issue already has that team." };
 
-  const { data, error } = await setTeam(issue, rule.teamId);
+  const { data, error } = await applyRule(issue, rule.id);
   if (error) return { error: friendlyError(error, "We couldn't change the team. Please try again.", "applySuggestedTeam") };
-  if (!data?.length) return { error: "Someone changed this issue's team just now. Reload the page to see it." };
+  if (!data) return { error: "Someone changed this issue's team just now. Reload the page to see it." };
   return done("Team applied.");
+}
+
+/** Hides the suggestion on one issue until its category, urgency, type or channel changes. */
+export async function dismissRoutingSuggestion(_prev: FormState, formData: FormData): Promise<FormState> {
+  if (!(await getCurrentUser())) return SIGNED_OUT;
+  const issueId = idSchema.safeParse(formData.get("issueId"));
+  if (!issueId.success) return { error: "Something went wrong. Reload the page and try again." };
+
+  const supabase = await createClient();
+  const { error } = await supabase.rpc("dismiss_routing_suggestion", { p_issue_id: issueId.data });
+  if (error) return { error: friendlyError(error, "We couldn't dismiss the suggestion. Please try again.", "dismissRoutingSuggestion") };
+  return done("Suggestion dismissed.");
 }
 
 /** How many open issues without a team are looked at in one go. */
 const ROUTE_BATCH = 500;
 
-/** Gives every open issue without a team the team its first matching rule suggests. */
+const plural = (n: number, one: string, many: string) => `${n} ${n === 1 ? one : many}`;
+
+/**
+ * Gives every open issue without a team the team its matching rules agree on.
+ * Issues whose rules name different teams, or whose suggestion was dismissed,
+ * are left for a person.
+ */
 export async function routeUnassignedIssues(_prev: FormState, formData: FormData): Promise<FormState> {
   if (!(await getCurrentUser())) return SIGNED_OUT;
   const organizationId = idSchema.safeParse(formData.get("organizationId"));
@@ -203,34 +232,33 @@ export async function routeUnassignedIssues(_prev: FormState, formData: FormData
 
   const issues = await listUnroutedIssues(organizationId.data, ROUTE_BATCH);
   const rules = await listRoutingRules(organizationId.data);
-  const supabase = await createClient();
   let routed = 0;
   let unmatched = 0;
+  let conflicts = 0;
   for (const issue of issues) {
-    const rule = findMatchingRule(rules, toRoutable(issue));
-    if (!rule) {
+    const outcome = routeIssue(rules, toRoutable(issue));
+    if (outcome.kind === "none") {
       unmatched++;
       continue;
     }
-    const { data, error } = await supabase
-      .from("issues")
-      .update({ team_id: rule.teamId })
-      .eq("id", issue.id)
-      .is("team_id", null)
-      .select("id");
+    if (outcome.kind === "conflict") {
+      conflicts++;
+      continue;
+    }
+    const { data, error } = await applyRule(issue, outcome.rule.id);
     if (error) {
       const message = friendlyError(error, "We couldn't route all the issues.", "routeUnassigned");
       if (routed === 0) return { error: message };
       revalidatePath("/w/[workspace]", "layout");
       return { error: `${message} ${routed} were routed before the problem.` };
     }
-    routed += data?.length ?? 0;
+    if (data) routed++;
   }
 
-  if (issues.length === 0) return { success: "There are no open issues without a team." };
-  if (routed === 0) return { success: "No rule matches the open issues without a team." };
-  return done(
-    `Routed ${routed} ${routed === 1 ? "issue" : "issues"}.` +
-      (unmatched ? ` ${unmatched} still have no team because no rule matches them.` : ""),
-  );
+  if (issues.length === 0) return { success: "There are no open issues without a team (or their suggestions were dismissed)." };
+  const skipped =
+    (conflicts ? ` ${plural(conflicts, "issue was", "issues were")} skipped because matching rules name different teams.` : "") +
+    (unmatched ? ` ${plural(unmatched, "issue still has", "issues still have")} no team because no rule matches.` : "");
+  if (routed === 0) return { success: `No issues were routed.${skipped}` };
+  return done(`Routed ${plural(routed, "issue", "issues")}.${skipped}`);
 }

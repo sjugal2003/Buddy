@@ -1,5 +1,13 @@
 import { describe, expect, it } from "vitest";
-import { conditionMatches, findMatchingRule, ruleMatches, type RoutableMessage } from "@/lib/routing";
+import {
+  canApplyRule,
+  conditionMatches,
+  describeReasons,
+  findMatchingRule,
+  routeIssue,
+  ruleMatches,
+  type RoutableMessage,
+} from "@/lib/routing";
 import { fakeAnswer } from "@/lib/ai/fake";
 import { toSuggestion } from "@/lib/ai/schema";
 import type { RoutingRule } from "@/lib/types";
@@ -100,5 +108,61 @@ describe("routing with AI values", () => {
     const billing = rule({ id: "billing", conditions: [{ field: "category", value: "billing" }] });
     expect(findMatchingRule([critical, billing], analysed)?.id).toBe("critical");
     expect(findMatchingRule([billing, critical], analysed)?.id).toBe("billing");
+  });
+});
+
+describe("routeIssue", () => {
+  const billing = rule({ id: "billing", name: "Billing", teamId: "payments", conditions: [{ field: "category", value: "billing" }] });
+  const refunds = rule({
+    id: "refunds",
+    name: "Refunds",
+    teamId: "payments",
+    match: "any",
+    conditions: [
+      { field: "keyword", value: "refund" },
+      { field: "urgency", value: "critical" },
+    ],
+  });
+  const complaints = rule({ id: "complaints", teamId: "support", conditions: [{ field: "intent", value: "complaint" }] });
+  const off = rule({ id: "off", enabled: false, teamId: "support", conditions: [{ field: "category", value: "billing" }] });
+
+  it("says when nothing matches", () => {
+    expect(routeIssue([], message)).toEqual({ kind: "none" });
+    expect(routeIssue([off], message)).toEqual({ kind: "none" });
+  });
+
+  it("suggests the first rule and only the conditions that matched", () => {
+    const outcome = routeIssue([refunds, billing, off], message);
+    expect(outcome).toEqual({ kind: "match", rule: refunds, teamId: "payments", reasons: [{ field: "keyword", value: "refund" }] });
+  });
+
+  it("is a conflict when matching rules name different teams", () => {
+    const outcome = routeIssue([billing, complaints], message);
+    expect(outcome.kind).toBe("conflict");
+    expect(outcome.kind === "conflict" && outcome.rules.map((r) => r.id)).toEqual(["billing", "complaints"]);
+  });
+
+  it("lets a person apply only the suggestion, or a rule from the conflict", () => {
+    expect(canApplyRule(routeIssue([refunds, billing], message), "refunds")).toBe(true);
+    expect(canApplyRule(routeIssue([refunds, billing], message), "billing")).toBe(false);
+    expect(canApplyRule(routeIssue([billing, complaints], message), "complaints")).toBe(true);
+    expect(canApplyRule(routeIssue([billing, complaints], message), "off")).toBe(false);
+    expect(canApplyRule(routeIssue([], message), "billing")).toBe(false);
+  });
+
+  it("explains a match in words", () => {
+    const names = new Map([["billing", "Billing"]]);
+    expect(describeReasons([{ field: "category", value: "billing" }], names)).toBe("category is Billing");
+    expect(
+      describeReasons(
+        [
+          { field: "category", value: "billing" },
+          { field: "urgency", value: "high" },
+          { field: "keyword", value: " refund " },
+        ],
+        names,
+      ),
+    ).toBe("category is Billing, urgency is High and message mentions “refund”");
+    expect(describeReasons([{ field: "category", value: "gone" }], names)).toBe("category is a deleted category");
   });
 });
