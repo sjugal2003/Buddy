@@ -1,6 +1,6 @@
 # Buddy: project context
 
-Last updated: 2026-10-23 (Phase 2 complete; Phase 3 stage 11 in progress).
+Last updated: 2026-10-24 (Phase 3: stages 11 and 12).
 Keep this file accurate. Update it at the end of every stage.
 
 ## 1. Product vision
@@ -96,7 +96,7 @@ Demo details:
 | `/w/[workspace]/issues/new` | `components/issues/issue-forms.tsx` | Add an issue by hand: customer, channel, subject, message, urgency, sentiment, type, team, category (`createIssue`) | Classification is manual until Phase 3 |
 | `/w/[workspace]/issues/[issueId]` | `app/w/[workspace]/issues/[issueId]/page.tsx` | Issue detail, change status, assignee, team and category (any member of the workspace, `updateIssue`), history from `issue_activity` | |
 | `/w/[workspace]/routing` | `components/routing/routing-forms.tsx` | Routing rules from the database: add, edit (conditions on category, urgency, sentiment, type, channel, message text; match all or any), reorder, switch off, delete. Owners and admins edit (`app/actions/routing.ts`); members see them read-only. "Route open issues that have no team" gives each open issue without a team the team its first matching rule suggests (`routeUnassignedIssues`, up to 500 at a time). The issue page shows the matching rule and an "Apply suggestion" button (`applySuggestedTeam`, any member). Both recompute the match on the server and never overwrite a team someone already chose | Suggest only: no automatic routing when an issue arrives (Phase 3) |
-| `/w/[workspace]/settings` | `components/settings/settings-forms.tsx` | Company name, industry, time zone, first-response targets; add/rename/delete teams (name, lead, email, colour) and categories. Owners and admins edit (`app/actions/settings.ts`); members see it read-only | Team email is display only |
+| `/w/[workspace]/settings` | `components/settings/settings-forms.tsx` | Company name, industry, time zone, first-response targets; add/rename/delete teams (name, lead, email, colour) and categories; "AI analysis" card (on/off, monthly limit, analyses used this month and approximate cost, whether this server has an AI key). Owners and admins edit (`app/actions/settings.ts`); members see it read-only | Team email is display only. AI switch does nothing yet (stage 13 runs analyses) |
 
 Every `/w/[workspace]` page has a "Something went wrong, try again" screen
 (`error.tsx`). Forms show "Saving…" while they work; while a page loads, the
@@ -176,12 +176,13 @@ Files (`supabase/`):
 | `migrations/20261023120000_core_schema.sql` | The 10 tables, checks, indexes, triggers (updated_at, resolved_at, issue history, profile on sign-up) |
 | `migrations/20261023120100_security.sql` | Table privileges allowlist, Row Level Security policies, membership functions |
 | `migrations/20261023160000_issue_category_update.sql` | Stage 8a: members may change an issue's category |
-| `tests/security_test.sql` | 118 checks of tenant isolation, roles, invitations, teams, categories, settings and routing rules; runs in one transaction and rolls back |
+| `migrations/20261024090000_ai_analysis.sql` | Stage 12: `organizations.ai_enabled` (default off) and `ai_monthly_limit` (default 500, 0 to 2,000); `issue_analyses` table; `start_issue_analysis` / `finish_issue_analysis`; history kinds `ai_analysed`, `ai_accepted` |
+| `tests/security_test.sql` | 144 checks of tenant isolation, roles, invitations, teams, categories, settings, routing rules and AI analysis; runs in one transaction and rolls back |
 | `tests/local-supabase-stub.sql` | Minimal stand-in for Supabase's `auth` schema and roles, for plain PostgreSQL only. Never run on Supabase |
 
 Tables: `profiles`, `organizations`, `organization_members`,
 `organization_invitations`, `teams`, `categories`, `issues`, `issue_activity`,
-`routing_rules`, `automation_settings`. Deferred: `data_sources` (Phase 5),
+`routing_rules`, `automation_settings`, `issue_analyses` (Phase 3). Deferred: `data_sources` (Phase 5),
 `notification_records` (Phase 6). Full design and reasons: Phase 2 plan doc
 (https://claude.ai/artifact/7nwyfG2deY29tg9rpVLsBs).
 
@@ -201,6 +202,15 @@ How access works:
 - `issue_activity` is written only by a trigger. Team and category links use
   composite foreign keys so they cannot point at another organisation.
 - Organisation `slug` cannot be changed after creation.
+- AI analysis (Phase 3): owners and admins switch it on and set the monthly
+  limit. `issue_analyses` is read-only for users; rows are added only by
+  `start_issue_analysis` (member of the issue's company, AI on, under the
+  monthly limit counted since the 1st in UTC including failed attempts, not
+  the same issue within 30 seconds; locks the company row so two requests
+  cannot both take the last one) and finished once by
+  `finish_issue_analysis` (only by the person who started it, within 5
+  minutes). Finished rows never change; deleting an issue keeps its
+  analyses (issue_id cleared) so the count cannot be reset.
 
 ## 8. Authentication status
 
@@ -268,7 +278,7 @@ npx.cmd supabase db push
 | Command | What it checks | Needs |
 |---|---|---|
 | `npm.cmd test` | Unit tests (`tests/unit/`): routing rule matching, analytics, input rules | Nothing |
-| `npm.cmd run test:db` | `supabase/tests/security_test.sql` (118 checks); rolls itself back | Local Supabase |
+| `npm.cmd run test:db` | `supabase/tests/security_test.sql` (144 checks); rolls itself back | Local Supabase |
 | `npm.cmd run test:e2e` | Browser tests (`tests/e2e/`, Playwright): sign-up, invitations, roles, issues, settings, routing, cross-company access | Local Supabase, test browser |
 
 Local Supabase needs Docker Desktop. One-time setup, then each time:
@@ -347,6 +357,11 @@ run keeps the Playwright report for 7 days (Actions > the run > Artifacts).
 - Browser tests cover the main flows, not every error message; the demo
   pages have no automated tests beyond "all 8 load".
 - Running the database and browser tests on Windows needs Docker Desktop.
+- AI results are recorded with the user's own session (no secret key), so a
+  member could call `finish_issue_analysis` themselves and record a made-up
+  "AI" answer for an issue in their own company. It can't touch another
+  company, raise the limit, or change anything a member couldn't already
+  edit by hand. Closing this needs a server-only key (Phase 7).
 - Code lives in the private GitHub repo `sjugal2003/Buddy` (from 2026-10-23).
   Each stage arrives as a pull request.
 
@@ -430,4 +445,10 @@ routing use AI values, 15 docs.
   `claude.ts` (Haiku 5.5, 600-token cap, no thinking, low effort, no tools,
   structured output; plain error messages), `fake.ts` (keyword test
   analyser), `index.ts` (`getAnalyser`). Unit tests in `tests/unit/ai.test.ts`
-  use a stand-in client, so no test calls the paid API.
+  use a stand-in client, so no test calls the paid API. PR #9, merged
+  2026-10-24.
+- Stage 12: migration `20261024090000_ai_analysis.sql` (switches, the
+  `issue_analyses` record, the monthly limit enforced in the database) and an
+  "AI analysis" card in Settings. 144/144 security checks, 5/5 browser tests
+  (new `tests/e2e/ai-settings.spec.ts`), 45 unit tests, lint, type check and
+  build pass locally (2026-10-24). Jugal must run `npx.cmd supabase db push`.

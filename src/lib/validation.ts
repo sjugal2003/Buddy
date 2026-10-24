@@ -138,6 +138,16 @@ export const updateOrganizationSchema = z.object({
   targetLow: targetHours,
 });
 
+export const updateAiSettingsSchema = z.object({
+  organizationId: z.string().uuid(),
+  enabled: z.enum(["on", "off"]),
+  monthlyLimit: z.coerce
+    .number({ message: "Enter a number." })
+    .int("Use a whole number.")
+    .min(0, "Use 0 or more.")
+    .max(2000, "Use 2,000 or fewer."),
+});
+
 const teamFields = {
   name: z.string().trim().min(1, "Enter a team name.").max(80, "Use 80 characters or fewer."),
   leadName: z.string().trim().max(80, "Use 80 characters or fewer."),

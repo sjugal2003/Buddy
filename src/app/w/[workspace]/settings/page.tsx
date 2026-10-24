@@ -4,12 +4,15 @@ import { PageHeader } from "@/components/ui/page-header";
 import {
   AddCategoryForm,
   AddTeamForm,
+  AiSettingsForm,
   CategoryRow,
   OrganizationForm,
   TeamRow,
 } from "@/components/settings/settings-forms";
 import { requireUser } from "@/lib/auth";
-import { getMembershipBySlug, getOrganizationSettings, listCategories, listTeams } from "@/lib/data/live";
+import { aiServiceStatus } from "@/lib/ai";
+import { estimateCostUsd } from "@/lib/ai/limits";
+import { getAiSettings, getMembershipBySlug, getOrganizationSettings, listCategories, listTeams } from "@/lib/data/live";
 import { urgencyLabels, urgencyOrder } from "@/lib/labels";
 
 export const dynamic = "force-dynamic";
@@ -24,11 +27,14 @@ export default async function SettingsPage({ params }: { params: Promise<{ works
   // These only decide which forms to show. The database makes the real
   // decision and refuses changes from members.
   const canEdit = membership.role === "owner" || membership.role === "admin";
-  const [settings, teams, categories] = await Promise.all([
+  const [settings, ai, teams, categories] = await Promise.all([
     getOrganizationSettings(orgId),
+    getAiSettings(orgId),
     listTeams(orgId),
     listCategories(orgId),
   ]);
+  const aiService = aiServiceStatus();
+  const aiCost = estimateCostUsd({ inputTokens: ai.inputTokens, outputTokens: ai.outputTokens });
   // Listed on the server so the page and the browser show the same options.
   const timeZones = Array.from(new Set(["UTC", settings.timezone, ...Intl.supportedValuesOf("timeZone")]));
 
@@ -38,7 +44,7 @@ export default async function SettingsPage({ params }: { params: Promise<{ works
         title="Settings"
         description={
           canEdit
-            ? "Company profile, response targets, teams and issue categories."
+            ? "Company profile, response targets, AI analysis, teams and issue categories."
             : "Only owners and admins can change these settings."
         }
       />
@@ -63,6 +69,43 @@ export default async function SettingsPage({ params }: { params: Promise<{ works
               ))}
             </dl>
           )}
+        </Card>
+
+        <Card title="AI analysis" description="Claude Haiku 5.5 suggests each issue's sentiment, type, urgency and category.">
+          <div className="space-y-4">
+            <p className="rounded-lg bg-amber-50 px-3 py-2 text-xs text-amber-800">
+              Buddy does not analyse issues yet: that arrives in the next update. Switching this on now only gets the
+              company ready.
+            </p>
+            <dl className="grid grid-cols-[auto_1fr] gap-x-6 gap-y-2 text-sm">
+              <dt className="text-slate-500">Status</dt>
+              <dd className="text-slate-900" data-testid="ai-status">
+                {ai.enabled ? "On" : "Off"}
+              </dd>
+              <dt className="text-slate-500">Analyses this month</dt>
+              <dd className="text-slate-900" data-testid="ai-usage">
+                {ai.usedThisMonth} of {ai.monthlyLimit}
+                {ai.usedThisMonth > 0 && (
+                  <span className="text-slate-500"> (about ${aiCost < 0.01 ? "0.01 or less" : aiCost.toFixed(2)})</span>
+                )}
+              </dd>
+              <dt className="text-slate-500">AI service on this server</dt>
+              <dd className="text-slate-900">
+                {aiService === "claude"
+                  ? "Set up"
+                  : aiService === "fake"
+                    ? "Test analyser (no real AI, free)"
+                    : "Not set up: add ANTHROPIC_API_KEY to .env.local"}
+              </dd>
+            </dl>
+            {canEdit ? (
+              <div className="border-t border-slate-100 pt-4">
+                <AiSettingsForm organizationId={orgId} settings={ai} />
+              </div>
+            ) : (
+              <p className="text-xs text-slate-500">Only owners and admins can change these.</p>
+            )}
+          </div>
         </Card>
 
         <Card title="Teams" description={`${teams.length} ${teams.length === 1 ? "team" : "teams"}. Issues can be given to a team.`}>

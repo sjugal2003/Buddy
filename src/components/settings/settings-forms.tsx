@@ -6,6 +6,7 @@ import {
   createTeam,
   deleteCategory,
   deleteTeam,
+  updateAiSettings,
   updateCategory,
   updateOrganization,
   updateTeam,
@@ -13,7 +14,7 @@ import {
 import type { FormState } from "@/app/actions/types";
 import { Field, inputClass, keepValuesOnSubmit, primaryButton, secondaryButton } from "@/components/ui/form";
 import { FieldError, FormMessage } from "@/components/auth/auth-card";
-import type { LiveCategory, LiveTeam, OrganizationSettings } from "@/lib/data/live";
+import type { AiSettings, LiveCategory, LiveTeam, OrganizationSettings } from "@/lib/data/live";
 import { urgencyLabels, urgencyOrder } from "@/lib/labels";
 import type { Urgency } from "@/lib/types";
 
@@ -83,6 +84,53 @@ export function OrganizationForm({
         </fieldset>
         <button type="submit" disabled={pending} className={primaryButton}>
           {pending ? "Saving…" : "Save settings"}
+        </button>
+      </form>
+      <FormMessage error={state.error} success={state.success} />
+    </div>
+  );
+}
+
+export function AiSettingsForm({ organizationId, settings }: { organizationId: string; settings: AiSettings }) {
+  const [state, action, pending] = useActionState<FormState, FormData>(updateAiSettings, {});
+  return (
+    <div className="space-y-4">
+      <form
+        key={`${settings.enabled}-${settings.monthlyLimit}`}
+        onSubmit={keepValuesOnSubmit(action)}
+        className="space-y-4"
+        noValidate
+      >
+        <input type="hidden" name="organizationId" value={organizationId} />
+        <label className="flex items-start gap-3 text-sm text-slate-700">
+          <input
+            name="enabled"
+            type="checkbox"
+            defaultChecked={settings.enabled}
+            className="mt-0.5 h-4 w-4 rounded border-slate-300"
+          />
+          <span>
+            <span className="font-medium text-slate-900">Analyse new issues with AI</span>
+            <span className="block text-xs text-slate-500">
+              Sends each issue&apos;s subject, message (up to 4,000 characters), channel and your category names to
+              Claude. Never the customer&apos;s name.
+            </span>
+          </span>
+        </label>
+        <Field label="Monthly limit (analyses)" hint="Up to 2,000. Buddy stops asking the AI once this is used.">
+          <input
+            name="monthlyLimit"
+            type="number"
+            min={0}
+            max={2000}
+            step={1}
+            defaultValue={settings.monthlyLimit}
+            className={`${inputClass} sm:w-40`}
+          />
+          <FieldError message={state.fieldErrors?.monthlyLimit} />
+        </Field>
+        <button type="submit" disabled={pending} className={primaryButton}>
+          {pending ? "Saving…" : "Save AI settings"}
         </button>
       </form>
       <FormMessage error={state.error} success={state.success} />

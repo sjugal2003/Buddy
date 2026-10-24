@@ -17,3 +17,9 @@ export function getAnalyser(): Analyser | null {
   if (!apiKey) return null;
   return createClaudeAnalyser(new Anthropic({ apiKey, timeout: 30_000, maxRetries: 1 }).messages);
 }
+
+/** How this server is set up for AI, for the Settings page. Never includes the key. */
+export function aiServiceStatus(): "claude" | "fake" | "not_configured" {
+  if (process.env.BUDDY_AI_MODE === "fake") return "fake";
+  return process.env.ANTHROPIC_API_KEY?.trim() ? "claude" : "not_configured";
+}

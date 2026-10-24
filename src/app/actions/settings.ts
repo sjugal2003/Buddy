@@ -9,6 +9,7 @@ import {
   createTeamSchema,
   fieldErrors,
   idSchema,
+  updateAiSettingsSchema,
   updateCategorySchema,
   updateOrganizationSchema,
   updateTeamSchema,
@@ -59,6 +60,27 @@ export async function updateOrganization(_prev: FormState, formData: FormData): 
   if (error) return { error: friendlyError(error, "We couldn't save the settings. Please try again.", "updateOrganization") };
   if (!data?.length) return NOT_ALLOWED;
   return done("Settings saved.");
+}
+
+export async function updateAiSettings(_prev: FormState, formData: FormData): Promise<FormState> {
+  if (!(await getCurrentUser())) return SIGNED_OUT;
+  const parsed = updateAiSettingsSchema.safeParse({
+    organizationId: formData.get("organizationId"),
+    enabled: formData.get("enabled") === "on" ? "on" : "off",
+    monthlyLimit: formData.get("monthlyLimit"),
+  });
+  if (!parsed.success) return { fieldErrors: fieldErrors(parsed.error) };
+
+  const enabled = parsed.data.enabled === "on";
+  const supabase = await createClient();
+  const { data, error } = await supabase
+    .from("organizations")
+    .update({ ai_enabled: enabled, ai_monthly_limit: parsed.data.monthlyLimit })
+    .eq("id", parsed.data.organizationId)
+    .select("id");
+  if (error) return { error: friendlyError(error, "We couldn't save the AI settings. Please try again.", "updateAiSettings") };
+  if (!data?.length) return NOT_ALLOWED;
+  return done(enabled ? "AI analysis switched on." : "AI analysis switched off.");
 }
 
 const TEAM_NAME_TAKEN: FormState = { fieldErrors: { name: "There is already a team with this name." } };
