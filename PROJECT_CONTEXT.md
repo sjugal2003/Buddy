@@ -92,11 +92,11 @@ Demo details:
 | `/onboarding` | `components/org/create-org-form.tsx` | Create a company (`create_organization`), caller becomes owner | |
 | `/invite?token=` | `components/org/members.tsx` | Accept an invitation (`accept_invitation`) | |
 | `/w/[workspace]` | `app/w/[workspace]/page.tsx` | Real workspace home: open issue count, members, role changes (owners), remove/leave, invite links and open invitations (owners and admins) | |
-| `/w/[workspace]/issues` | `app/w/[workspace]/issues/page.tsx` | Issues from the database, newest first (up to 200), filter by status, urgency, team and deadline (overdue / due soon), sort by "needs attention first", search customer/reference/subject/message. Each open issue shows its next deadline (`DeadlineBadge`). Deadline filters and sorting look at up to 1,000 issues (`DEADLINE_SCAN_LIMIT`). Filters are in the address bar (plain GET form). Issues with AI values show an "AI suggested" badge (`AiBadge`) and the AI summary instead of the message preview | |
+| `/w/[workspace]/issues` | `app/w/[workspace]/issues/page.tsx` | Issues from the database, newest first (up to 200), filter by status, urgency, team and deadline (overdue / due soon), sort by "needs attention first", search customer/reference/subject/message. Each open issue shows its next deadline (`DeadlineBadge`) and an "Escalated · level N" badge while it has an unacknowledged escalation. Deadline filters and sorting look at up to 1,000 issues (`DEADLINE_SCAN_LIMIT`). Filters are in the address bar (plain GET form). Issues with AI values show an "AI suggested" badge (`AiBadge`) and the AI summary instead of the message preview | |
 | `/w/[workspace]/issues/new` | `components/issues/issue-forms.tsx` | Add an issue: customer, channel, subject, message, urgency, sentiment, type, team, category (`createIssue`). When AI is on and set up, urgency, sentiment and type default to "Let AI decide" (saved with the usual defaults, then filled by the AI); an empty category is also filled | |
-| `/w/[workspace]/issues/[issueId]` | `app/w/[workspace]/issues/[issueId]/page.tsx` | Issue detail, change status, assignee, team and category (any member of the workspace, `updateIssue`), history from `issue_activity` (status, resolved, reopened, team, category, assignee, first response, AI). "Deadlines" card: first-response and resolution deadline in the company time zone, worked out on the server (`src/lib/targets.ts`), "Record first response" button (`recordFirstResponse`, any member), reopen count. "AI analysis" panel (`components/issues/ai-panel.tsx`, `app/actions/ai.ts`): right after creation it runs `analyseIssue` in a separate request (`?analyse=<fields>`), shows the summary, next step, themes and each suggestion with an Accept button when it differs (`acceptAiValue`), "Analyse again", and failures with the reason | Checked with real Gemini answers by Jugal (2026-10-24); Claude not yet tried with a real key |
+| `/w/[workspace]/issues/[issueId]` | `app/w/[workspace]/issues/[issueId]/page.tsx` | Issue detail, change status, assignee, team and category (any member of the workspace, `updateIssue`), history from `issue_activity` (status, resolved, reopened, team, category, assignee, first response, AI). "Deadlines" card: first-response and resolution deadline in the company time zone, worked out on the server (`src/lib/targets.ts`), "Record first response" button (`recordFirstResponse`, any member), reopen count. "Escalations" card (when there are any): level, condition, reason, and Acknowledge with an optional note (`acknowledgeEscalation`, any member). "AI analysis" panel (`components/issues/ai-panel.tsx`, `app/actions/ai.ts`): right after creation it runs `analyseIssue` in a separate request (`?analyse=<fields>`), shows the summary, next step, themes and each suggestion with an Accept button when it differs (`acceptAiValue`), "Analyse again", and failures with the reason | Checked with real Gemini answers by Jugal (2026-10-24); Claude not yet tried with a real key |
 | `/w/[workspace]/routing` | `components/routing/routing-forms.tsx` | Routing rules from the database: add, edit (conditions on category, urgency, sentiment, type, channel, message text; match all or any), reorder, switch off, delete. Owners and admins edit (`app/actions/routing.ts`); members see them read-only. "Route open issues that have no team" gives each open issue without a team the team its first matching rule suggests (`routeUnassignedIssues`, up to 500 at a time). The issue page shows the matching rule and an "Apply suggestion" button (`applySuggestedTeam`, any member). Both recompute the match on the server and never overwrite a team someone already chose | Automatic routing only after AI analysis, when an owner switched it on (Phase 3 stage 14) |
-| `/w/[workspace]/settings` | `components/settings/settings-forms.tsx` | Company name, industry, time zone, first-response and resolution targets; add/rename/delete teams (name, lead, email, colour) and categories; "AI analysis" card (on/off, monthly limit, analyses used this month and approximate cost, whether this server has an AI key). Owners and admins edit (`app/actions/settings.ts`); members see it read-only. "Apply routing automatically" (owners only) | Team email is display only |
+| `/w/[workspace]/settings` | `components/settings/settings-forms.tsx` | Company name, industry, time zone, first-response and resolution targets; add/rename/delete teams (name, lead, email, colour) and categories; "AI analysis" card (on/off, monthly limit, analyses used this month and approximate cost, whether this server has an AI key). Owners and admins edit (`app/actions/settings.ts`); members see it read-only. "Apply routing automatically" (owners only). "Escalations" card: switch conditions on and set thresholds, "Check now" (`app/actions/escalations.ts`), last check, and plain notes that automatic checks are not running and notifications are not set up | Team email is display only |
 
 Every `/w/[workspace]` page has a "Something went wrong, try again" screen
 (`error.tsx`). Forms show "Saving…" while they work; while a page loads, the
@@ -181,12 +181,13 @@ Files (`supabase/`):
 | `migrations/20261024120000_ai_accept.sql` | Stage 13: `accept_issue_analysis(analysis, fields)` copies a finished analysis's values onto its issue and writes `ai_accepted` history |
 | `migrations/20261024150000_ai_auto_route.sql` | Stage 14: `organizations.ai_auto_route` (default off) and a trigger that lets only owners change it |
 | `migrations/20261025090000_resolution_tracking.sql` | Phase 4 stage 16: `organizations.resolution_hours_*` (8/24/72/120 by default, 1 to 2,160); `issues.first_response_by`, `reopened_count`, `waiting_seconds`, `waiting_since` (kept by the `issue_track_lifecycle` trigger); `record_first_response(issue)`; history kinds `category_changed`, `first_response`, `resolved`, `reopened` |
-| `tests/security_test.sql` | 181 checks of tenant isolation, roles, invitations, teams, categories, settings, routing rules, AI analysis and resolution tracking; runs in one transaction and rolls back |
+| `migrations/20261025120000_escalations.sql` | Phase 4 stage 17: `escalation_settings` (one row per company, all conditions off), `escalations` (unique per issue, condition and open spell), `escalation_runs` log; `run_escalation_check(company)` (owners and admins; the internal `private.run_escalation_check` does the work), `acknowledge_escalation(id, note)`; history kind `escalation_acknowledged` |
+| `tests/security_test.sql` | 224 checks of tenant isolation, roles, invitations, teams, categories, settings, routing rules, AI analysis, resolution tracking and escalations; runs in one transaction and rolls back |
 | `tests/local-supabase-stub.sql` | Minimal stand-in for Supabase's `auth` schema and roles, for plain PostgreSQL only. Never run on Supabase |
 
 Tables: `profiles`, `organizations`, `organization_members`,
 `organization_invitations`, `teams`, `categories`, `issues`, `issue_activity`,
-`routing_rules`, `automation_settings`, `issue_analyses` (Phase 3). Deferred: `data_sources` (Phase 5),
+`routing_rules`, `automation_settings`, `issue_analyses` (Phase 3), `escalation_settings`, `escalations`, `escalation_runs` (Phase 4). Deferred: `data_sources` (Phase 5),
 `notification_records` (Phase 6). Full design and reasons: Phase 2 plan doc
 (https://claude.ai/artifact/7nwyfG2deY29tg9rpVLsBs).
 
@@ -221,6 +222,12 @@ How access works:
 - Members still cannot set sentiment, type, urgency or summary directly;
   `accept_issue_analysis` is the only way, and only with the values of a
   finished analysis of the same issue.
+- Escalations (Phase 4): members read their company's escalation settings,
+  escalations and check log. Owners and admins change the settings and run
+  `run_escalation_check` for their own company. Escalations and log rows are
+  written only by the check, which looks at one company's open issues and
+  never changes an issue. Any member can acknowledge an escalation once
+  (`acknowledge_escalation`); nobody can add, edit or delete them directly.
 
 ## 8. Authentication status
 
@@ -288,9 +295,9 @@ npx.cmd supabase db push
 
 | Command | What it checks | Needs |
 |---|---|---|
-| `npm.cmd test` | Unit tests (`tests/unit/`): routing rule matching, analytics, input rules, deadlines, AI engine with stand-in clients | Nothing |
-| `npm.cmd run test:db` | `supabase/tests/security_test.sql` (181 checks); rolls itself back | Local Supabase |
-| `npm.cmd run test:e2e` | Browser tests (`tests/e2e/`, Playwright): sign-up, invitations, roles, issues, settings, routing, AI analysis and automatic routing (free test analyser), deadlines and first response, cross-company access | Local Supabase, test browser |
+| `npm.cmd test` | Unit tests (`tests/unit/`): routing rule matching, analytics, input rules, deadlines, escalations, AI engine with stand-in clients | Nothing |
+| `npm.cmd run test:db` | `supabase/tests/security_test.sql` (224 checks); rolls itself back | Local Supabase |
+| `npm.cmd run test:e2e` | Browser tests (`tests/e2e/`, Playwright): sign-up, invitations, roles, issues, settings, routing, AI analysis and automatic routing (free test analyser), deadlines and first response, escalations, cross-company access | Local Supabase, test browser |
 
 Local Supabase needs Docker Desktop. One-time setup, then each time:
 
@@ -526,4 +533,17 @@ explanations and conflicts, 19 dashboard, 20 scheduled checks (pg_cron),
   the Issues list. Migration `20261025090000_resolution_tracking.sql`.
   181/181 security checks, 8/8 browser tests (new
   `tests/e2e/deadlines.spec.ts`), 65 unit tests, lint, type check, build
-  (2026-10-24).
+  (2026-10-24). PR #16, merged 2026-10-24.
+- Stage 17: escalation engine. Settings card with five conditions (all off
+  by default): first-response breach (level 1), resolution breach (level
+  2, paused while waiting on the customer), Critical/High with no team after
+  N hours (level 2 if Critical), open with no team after N hours, no update
+  for N hours. "Check now" for owners and admins; each condition escalates
+  an issue once per open spell (reopening starts a new one); a failed check
+  is logged with its reason and saves nothing. Escalations are separate
+  records that never change the issue; badge on the issue and the Issues
+  list; Acknowledge with a note; history entries. No scheduled checks yet
+  (stage 20) and no notifications (Phase 6). Migration
+  `20261025120000_escalations.sql`. 224/224 security checks, 9/9 browser
+  tests (new `tests/e2e/escalations.spec.ts`), 70 unit tests, lint, type
+  check, build (2026-10-24).

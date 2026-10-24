@@ -1,5 +1,6 @@
 import { describe, expect, it } from "vitest";
 import {
+  acknowledgeEscalationSchema,
   analyseIssueSchema,
   createIssueSchema,
   createRuleSchema,
@@ -9,6 +10,7 @@ import {
   slugSchema,
   timezoneSchema,
   updateAiSettingsSchema,
+  updateEscalationSettingsSchema,
   updateOrganizationSchema,
 } from "@/lib/validation";
 
@@ -98,6 +100,34 @@ describe("settings", () => {
     expect(updateOrganizationSchema.safeParse({ ...base, targetHigh: "0" }).success).toBe(false);
     expect(updateOrganizationSchema.safeParse({ ...base, targetHigh: "1.5" }).success).toBe(false);
     expect(updateOrganizationSchema.safeParse({ ...base, targetLow: "721" }).success).toBe(false);
+  });
+});
+
+describe("escalation settings", () => {
+  const base = {
+    organizationId: uuid,
+    firstResponse: "on",
+    resolution: "off",
+    urgentNoTeam: "on",
+    urgentNoTeamHours: "0",
+    noTeam: "off",
+    noTeamHours: "24",
+    noUpdate: "off",
+    noUpdateHours: "72",
+  };
+
+  it("needs whole hours up to 720, and at least 1 for No update", () => {
+    expect(updateEscalationSettingsSchema.parse(base).urgentNoTeamHours).toBe(0);
+    expect(updateEscalationSettingsSchema.safeParse({ ...base, noTeamHours: "721" }).success).toBe(false);
+    expect(updateEscalationSettingsSchema.safeParse({ ...base, noTeamHours: "1.5" }).success).toBe(false);
+    expect(updateEscalationSettingsSchema.safeParse({ ...base, noUpdateHours: "0" }).success).toBe(false);
+    expect(updateEscalationSettingsSchema.safeParse({ ...base, resolution: "yes" }).success).toBe(false);
+  });
+
+  it("trims acknowledgement notes and limits them to 500 characters", () => {
+    expect(acknowledgeEscalationSchema.parse({ escalationId: uuid, note: "  on it  " }).note).toBe("on it");
+    expect(acknowledgeEscalationSchema.safeParse({ escalationId: uuid, note: "x".repeat(501) }).success).toBe(false);
+    expect(acknowledgeEscalationSchema.safeParse({ escalationId: "nope", note: "" }).success).toBe(false);
   });
 });
 

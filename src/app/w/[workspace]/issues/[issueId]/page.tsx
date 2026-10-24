@@ -8,7 +8,10 @@ import { UpdateIssueForm } from "@/components/issues/issue-forms";
 import { AiPanel } from "@/components/issues/ai-panel";
 import { DeadlineBadge } from "@/components/issues/deadline-badge";
 import { RecordFirstResponseButton } from "@/components/issues/record-response-button";
+import { AcknowledgeForm } from "@/components/escalations/escalation-forms";
+import { EscalationBadge } from "@/components/escalations/escalation-badge";
 import { deadlines } from "@/lib/targets";
+import { escalationConditionLabels, isEscalationCondition, openEscalationLevel } from "@/lib/escalations";
 import { aiServiceStatus } from "@/lib/ai";
 import { requireUser } from "@/lib/auth";
 import {
@@ -19,6 +22,7 @@ import {
   getOrganizationSettings,
   listCategories,
   listIssueActivity,
+  listIssueEscalations,
   listMembers,
   listRoutingRules,
   listTeams,
@@ -62,7 +66,12 @@ function describe(event: IssueActivity) {
     case "team_changed":
       return event.toValue ? `Moved to team ${event.toValue}` : `Removed from team ${event.fromValue ?? ""}`.trim();
     case "escalated":
-      return "Escalated";
+      // Written by the escalation check: from_value is the level, to_value the reason.
+      return event.fromValue ? `Escalated (level ${event.fromValue}): ${event.toValue ?? ""}`.trim() : "Escalated";
+    case "escalation_acknowledged": {
+      const what = isEscalationCondition(event.fromValue) ? ` (${escalationConditionLabels[event.fromValue]})` : "";
+      return `Escalation acknowledged${what}${event.toValue ? `: “${event.toValue}”` : ""}`;
+    }
     case "category_changed":
       return `Category changed from ${event.fromValue ?? "No category"} to ${event.toValue ?? "No category"}`;
     case "first_response":
@@ -96,7 +105,7 @@ export default async function IssuePage({
   const orgId = membership.organization.id;
   const issue = await getIssue(orgId, issueId);
   if (!issue) notFound();
-  const [activity, members, teams, categories, analysis, aiEnabled, settings] = await Promise.all([
+  const [activity, members, teams, categories, analysis, aiEnabled, settings, escalations] = await Promise.all([
     listIssueActivity(orgId, issueId),
     listMembers(orgId),
     listTeams(orgId),
@@ -104,7 +113,9 @@ export default async function IssuePage({
     getLatestAnalysis(orgId, issueId),
     getAiEnabled(orgId),
     getOrganizationSettings(orgId),
+    listIssueEscalations(orgId, issueId),
   ]);
+  const escalationLevel = openEscalationLevel(escalations);
   // Worked out on the server with the server's clock, never the browser's.
   const due = deadlines(issue, { firstResponse: settings.targetHours, resolution: settings.resolutionHours }, new Date());
   const rules = await listRoutingRules(orgId);
@@ -128,6 +139,7 @@ export default async function IssuePage({
         </p>
         <h1 className="mt-0.5 text-xl font-semibold tracking-tight text-slate-900 sm:text-2xl">{issue.subject}</h1>
         <div className="mt-2 flex flex-wrap gap-1.5">
+          <EscalationBadge level={escalationLevel} />
           <StatusBadge status={issue.status} />
           <UrgencyBadge urgency={issue.urgency} />
           <SentimentBadge sentiment={issue.sentiment} />
@@ -223,6 +235,31 @@ export default async function IssuePage({
               </div>
             )}
           </Card>
+
+          {escalations.length > 0 && (
+            <Card title="Escalations" description="Raised by the escalation check. Acknowledging keeps the record.">
+              <ul className="space-y-4 text-sm" data-testid="escalations">
+                {escalations.map((e) => (
+                  <li key={e.id} className="space-y-1">
+                    <p className="font-medium text-slate-900">
+                      Level {e.level} · {escalationConditionLabels[e.condition]}
+                    </p>
+                    <p className="text-slate-700">{e.reason}</p>
+                    <p className="text-xs text-slate-500">Raised {formatDateTimeIn(e.createdAt, settings.timezone)}</p>
+                    {e.acknowledgedAt ? (
+                      <p className="text-xs text-slate-500">
+                        Acknowledged {formatDateTimeIn(e.acknowledgedAt, settings.timezone)}
+                        {e.acknowledgedByName && <> by {e.acknowledgedByName}</>}
+                        {e.acknowledgeNote && <>: &ldquo;{e.acknowledgeNote}&rdquo;</>}
+                      </p>
+                    ) : (
+                      <AcknowledgeForm escalationId={e.id} />
+                    )}
+                  </li>
+                ))}
+              </ul>
+            </Card>
+          )}
 
           <Card title="AI analysis">
             <AiPanel

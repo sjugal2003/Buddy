@@ -9,9 +9,19 @@ import {
   OrganizationForm,
   TeamRow,
 } from "@/components/settings/settings-forms";
+import { CheckNowButton, EscalationSettingsForm } from "@/components/escalations/escalation-forms";
 import { requireUser } from "@/lib/auth";
 import { aiServiceStatus, providerNames } from "@/lib/ai";
-import { getAiSettings, getMembershipBySlug, getOrganizationSettings, listCategories, listTeams } from "@/lib/data/live";
+import {
+  getAiSettings,
+  getEscalationSettings,
+  getMembershipBySlug,
+  getOrganizationSettings,
+  listCategories,
+  listTeams,
+} from "@/lib/data/live";
+import { describeRun, escalationConditionLabels } from "@/lib/escalations";
+import { formatDateTimeIn } from "@/lib/format";
 import { urgencyLabels, urgencyOrder } from "@/lib/labels";
 
 export const dynamic = "force-dynamic";
@@ -26,9 +36,10 @@ export default async function SettingsPage({ params }: { params: Promise<{ works
   // These only decide which forms to show. The database makes the real
   // decision and refuses changes from members.
   const canEdit = membership.role === "owner" || membership.role === "admin";
-  const [settings, ai, teams, categories] = await Promise.all([
+  const [settings, ai, escalation, teams, categories] = await Promise.all([
     getOrganizationSettings(orgId),
     getAiSettings(orgId),
+    getEscalationSettings(orgId),
     listTeams(orgId),
     listCategories(orgId),
   ]);
@@ -43,7 +54,7 @@ export default async function SettingsPage({ params }: { params: Promise<{ works
         title="Settings"
         description={
           canEdit
-            ? "Company profile, response targets, AI analysis, teams and issue categories."
+            ? "Company profile, response targets, AI analysis, escalations, teams and issue categories."
             : "Only owners and admins can change these settings."
         }
       />
@@ -116,6 +127,59 @@ export default async function SettingsPage({ params }: { params: Promise<{ works
               </div>
             ) : (
               <p className="text-xs text-slate-500">Only owners and admins can change these.</p>
+            )}
+          </div>
+        </Card>
+
+        <Card
+          title="Escalations"
+          description="Flags open issues that need attention. An escalation never changes the issue's status, team or urgency."
+        >
+          <div className="space-y-4">
+            <dl className="grid grid-cols-[auto_1fr] gap-x-6 gap-y-2 text-sm">
+              <dt className="text-slate-500">Last check</dt>
+              <dd className="text-slate-900" data-testid="escalation-last-run">
+                {escalation.lastRun
+                  ? `${formatDateTimeIn(escalation.lastRun.startedAt, settings.timezone)} (${
+                      escalation.lastRun.source === "manual" ? "Check now" : "scheduled"
+                    }). ${describeRun(escalation.lastRun)}`
+                  : "Never run"}
+              </dd>
+              <dt className="text-slate-500">Automatic checks</dt>
+              <dd className="text-slate-900">Not running. Use Check now.</dd>
+              <dt className="text-slate-500">Email and chat notifications</dt>
+              <dd className="text-slate-900">Not set up (Phase 6)</dd>
+            </dl>
+            {canEdit ? (
+              <>
+                <div className="border-t border-slate-100 pt-4">
+                  <EscalationSettingsForm organizationId={orgId} settings={escalation.settings} />
+                </div>
+                <div className="border-t border-slate-100 pt-4">
+                  <p className="mb-2 text-xs text-slate-500">
+                    Checks open issues against the conditions switched on above. Each condition escalates an issue once
+                    until it is resolved and reopened, so checking again never repeats an escalation.
+                  </p>
+                  <CheckNowButton organizationId={orgId} />
+                </div>
+              </>
+            ) : (
+              <div className="space-y-2 text-sm">
+                <p className="text-slate-700">
+                  Switched on:{" "}
+                  {[
+                    escalation.settings.firstResponse && escalationConditionLabels.first_response_breached,
+                    escalation.settings.resolution && escalationConditionLabels.resolution_breached,
+                    escalation.settings.urgentNoTeam &&
+                      `${escalationConditionLabels.urgent_no_team} (after ${escalation.settings.urgentNoTeamHours} h)`,
+                    escalation.settings.noTeam && `${escalationConditionLabels.no_team} (after ${escalation.settings.noTeamHours} h)`,
+                    escalation.settings.noUpdate && `${escalationConditionLabels.no_update} (for ${escalation.settings.noUpdateHours} h)`,
+                  ]
+                    .filter(Boolean)
+                    .join(", ") || "nothing"}
+                </p>
+                <p className="text-xs text-slate-500">Only owners and admins can change these or run a check.</p>
+              </div>
             )}
           </div>
         </Card>

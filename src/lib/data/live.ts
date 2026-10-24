@@ -3,6 +3,7 @@ import { cache } from "react";
 import { estimateCostUsd, monthStart } from "@/lib/ai/limits";
 import { createClient } from "@/lib/supabase/server";
 import type { RoutableMessage } from "@/lib/routing";
+import type { EscalationCondition } from "@/lib/escalations";
 import type { Channel, Intent, IssueStatus, RoutingRule, RuleCondition, Sentiment, Urgency } from "@/lib/types";
 
 // Reads for real (signed-in) workspaces. Every query runs as the signed-in
@@ -141,7 +142,8 @@ export interface IssueActivity {
     | "category_changed"
     | "first_response"
     | "resolved"
-    | "reopened";
+    | "reopened"
+    | "escalation_acknowledged";
   fromValue: string | null;
   toValue: string | null;
   actorName: string | null;
@@ -547,4 +549,136 @@ export async function listUnroutedIssues(organizationId: string, limit: number):
     throw new Error("Could not load the issues without a team.");
   }
   return (data ?? []).map(toIssue);
+}
+
+export interface EscalationSettings {
+  firstResponse: boolean;
+  resolution: boolean;
+  urgentNoTeam: boolean;
+  urgentNoTeamHours: number;
+  noTeam: boolean;
+  noTeamHours: number;
+  noUpdate: boolean;
+  noUpdateHours: number;
+}
+
+export interface EscalationRun {
+  source: "manual" | "scheduled";
+  startedAt: string;
+  issuesChecked: number;
+  escalationsCreated: number;
+  error: string | null;
+}
+
+export async function getEscalationSettings(
+  organizationId: string,
+): Promise<{ settings: EscalationSettings; lastRun: EscalationRun | null }> {
+  const supabase = await createClient();
+  const [settings, runs] = await Promise.all([
+    supabase
+      .from("escalation_settings")
+      .select(
+        "first_response_enabled, resolution_enabled, urgent_no_team_enabled, urgent_no_team_hours, no_team_enabled, no_team_hours, no_update_enabled, no_update_hours",
+      )
+      .eq("organization_id", organizationId)
+      .single(),
+    supabase
+      .from("escalation_runs")
+      .select("source, started_at, issues_checked, escalations_created, error")
+      .eq("organization_id", organizationId)
+      .order("started_at", { ascending: false })
+      .limit(1),
+  ]);
+  const error = settings.error ?? runs.error;
+  if (error || !settings.data) {
+    console.error("[getEscalationSettings]", error?.code, error?.message);
+    throw new Error("Could not load the escalation settings.");
+  }
+  const s = settings.data;
+  const run = runs.data?.[0];
+  return {
+    settings: {
+      firstResponse: s.first_response_enabled,
+      resolution: s.resolution_enabled,
+      urgentNoTeam: s.urgent_no_team_enabled,
+      urgentNoTeamHours: s.urgent_no_team_hours,
+      noTeam: s.no_team_enabled,
+      noTeamHours: s.no_team_hours,
+      noUpdate: s.no_update_enabled,
+      noUpdateHours: s.no_update_hours,
+    },
+    lastRun: run
+      ? {
+          source: run.source as EscalationRun["source"],
+          startedAt: run.started_at,
+          issuesChecked: run.issues_checked,
+          escalationsCreated: run.escalations_created,
+          error: run.error,
+        }
+      : null,
+  };
+}
+
+export interface LiveEscalation {
+  id: string;
+  condition: EscalationCondition;
+  level: number;
+  reason: string;
+  createdAt: string;
+  acknowledgedAt: string | null;
+  acknowledgedByName: string | null;
+  acknowledgeNote: string | null;
+}
+
+/** One issue's escalations, newest first. */
+export async function listIssueEscalations(organizationId: string, issueId: string): Promise<LiveEscalation[]> {
+  const supabase = await createClient();
+  const { data, error } = await supabase
+    .from("escalations")
+    .select("id, condition, level, reason, created_at, acknowledged_at, acknowledge_note, acknowledger:profiles (full_name)")
+    .eq("organization_id", organizationId)
+    .eq("issue_id", issueId)
+    .order("created_at", { ascending: false });
+  if (error) {
+    console.error("[listIssueEscalations]", error.code, error.message);
+    throw new Error("Could not load the escalations of this issue.");
+  }
+  return (data ?? []).map((row) => ({
+    id: row.id,
+    condition: row.condition as EscalationCondition,
+    level: row.level,
+    reason: row.reason,
+    createdAt: row.created_at,
+    acknowledgedAt: row.acknowledged_at,
+    acknowledgedByName: (row.acknowledger as unknown as { full_name: string } | null)?.full_name || null,
+    acknowledgeNote: row.acknowledge_note,
+  }));
+}
+
+/** The highest unacknowledged escalation level per issue, for the given issues. */
+export async function openEscalationLevels(organizationId: string, issueIds: string[]): Promise<Map<string, number>> {
+  const levels = new Map<string, number>();
+  if (issueIds.length === 0) return levels;
+  const supabase = await createClient();
+  // In batches, so the list of IDs stays well inside the request's address.
+  const batches = [];
+  for (let i = 0; i < issueIds.length; i += 100) batches.push(issueIds.slice(i, i + 100));
+  const results = await Promise.all(
+    batches.map((ids) =>
+      supabase
+        .from("escalations")
+        .select("issue_id, level")
+        .eq("organization_id", organizationId)
+        .is("acknowledged_at", null)
+        .in("issue_id", ids),
+    ),
+  );
+  for (const { data, error } of results) {
+    if (error) {
+      console.error("[openEscalationLevels]", error.code, error.message);
+      throw new Error("Could not load escalations.");
+    }
+    for (const row of data ?? []) levels.set(row.issue_id, Math.max(levels.get(row.issue_id) ?? 0, row.level));
+  }
+  return levels;
 }

@@ -698,6 +698,147 @@ select tests.expect_error(format('update public.organizations set resolution_hou
 select tests.expect_affected(format('update public.organizations set resolution_hours_critical = 10 where id = %L',
   current_setting('t.org_a')), 1, 'owner A changes a resolution target');
 
+-- ---------------------------------------------------------------------------
+-- Escalations (Phase 4 stage 17)
+-- ---------------------------------------------------------------------------
+
+reset role;
+select tests.expect_rows(format('select 1 from public.escalation_settings where organization_id in (%L, %L)',
+  current_setting('t.org_a'), current_setting('t.org_b')), 2, 'every company has escalation settings');
+select tests.expect_rows(format($q$select 1 from public.escalation_settings where organization_id = %L
+  and not (first_response_enabled or resolution_enabled or urgent_no_team_enabled or no_team_enabled or no_update_enabled)$q$,
+  current_setting('t.org_a')), 1, 'all escalation conditions start off');
+set local role authenticated;
+
+select tests.act_as(current_setting('t.a_owner')::uuid);
+select tests.expect_error(format('select * from public.run_escalation_check(%L)', current_setting('t.org_a')),
+  'a check needs at least one condition switched on');
+
+select tests.act_as(current_setting('t.invitee')::uuid);
+select tests.expect_affected(format('update public.escalation_settings set no_team_enabled = true where organization_id = %L',
+  current_setting('t.org_a')), 0, 'a member cannot change escalation settings');
+select tests.act_as(current_setting('t.b_owner')::uuid);
+select tests.expect_affected(format('update public.escalation_settings set no_team_enabled = true where organization_id = %L',
+  current_setting('t.org_a')), 0, 'owner B cannot change company A escalation settings');
+select tests.expect_rows(format('select 1 from public.escalation_settings where organization_id = %L', current_setting('t.org_a')), 0,
+  'owner B cannot read company A escalation settings');
+
+select tests.act_as(current_setting('t.a_owner')::uuid);
+select tests.expect_error(format('update public.escalation_settings set no_update_hours = 0 where organization_id = %L',
+  current_setting('t.org_a')), 'escalation thresholds are checked');
+select tests.expect_affected(format($q$update public.escalation_settings set first_response_enabled = true,
+  resolution_enabled = true, urgent_no_team_enabled = true, urgent_no_team_hours = 0, no_team_enabled = true,
+  no_team_hours = 0, no_update_enabled = true, no_update_hours = 1 where organization_id = %L$q$,
+  current_setting('t.org_a')), 1, 'owner A switches on every condition');
+
+-- A critical issue with no team that arrived 30 days ago and hasn't changed for 10.
+select tests.expect_affected(format(
+  $q$insert into public.issues (organization_id, reference, customer_name, channel, subject, message, urgency)
+     values (%L, 'A-ESC', 'Customer Esc', 'email', 'Still broken', 'Nothing works.', 'critical')$q$,
+  current_setting('t.org_a')), 1, 'owner A creates a critical issue with no team');
+reset role;
+select set_config('t.issue_esc', (select id::text from public.issues where reference = 'A-ESC'), true);
+set local session_replication_role = replica;
+update public.issues set received_at = now() - interval '30 days', updated_at = now() - interval '10 days'
+  where id = current_setting('t.issue_esc')::uuid;
+set local session_replication_role = origin;
+set local role authenticated;
+
+select tests.act_as(current_setting('t.invitee')::uuid);
+select tests.expect_error(format('select * from public.run_escalation_check(%L)', current_setting('t.org_a')),
+  'a member cannot run an escalation check');
+select tests.act_as(current_setting('t.b_owner')::uuid);
+select tests.expect_error(format('select * from public.run_escalation_check(%L)', current_setting('t.org_a')),
+  'owner B cannot run a check for company A');
+select tests.expect_error(format($q$select private.run_escalation_check(%L, 'manual', null)$q$, current_setting('t.org_a')),
+  'nobody can call the internal check directly');
+
+select tests.act_as(current_setting('t.a_member')::uuid);
+select tests.expect_rows(format('select 1 from public.run_escalation_check(%L) where error is null and escalations_created >= 5',
+  current_setting('t.org_a')), 1, 'an admin runs the check');
+select tests.expect_rows(format('select 1 from public.escalations where issue_id = %L', current_setting('t.issue_esc')), 5,
+  'the issue is escalated once for each condition it meets');
+select tests.expect_rows(format($q$select 1 from public.escalations where issue_id = %L and condition = 'urgent_no_team'
+  and level = 2 and reason = 'Critical issue still has no team after 30 d.'$q$, current_setting('t.issue_esc')), 1,
+  'a critical issue with no team is level 2, with a plain reason');
+select tests.expect_rows(format($q$select 1 from public.escalations where issue_id = %L and condition = 'first_response_breached'
+  and level = 1 and reason like 'First response was due %% (UTC). None recorded yet: %% late.'$q$, current_setting('t.issue_esc')), 1,
+  'a first-response breach says when it was due');
+select tests.expect_rows(format($q$select 1 from public.issues where id = %L and status = 'new' and urgency = 'critical'
+  and team_id is null$q$, current_setting('t.issue_esc')), 1, 'escalating does not change the issue status, urgency or team');
+select tests.expect_rows(format($q$select 1 from public.issue_activity where issue_id = %L and kind = 'escalated'$q$,
+  current_setting('t.issue_esc')), 5, 'each escalation is in the history');
+select tests.expect_rows(format('select 1 from public.run_escalation_check(%L) where escalations_created = 0',
+  current_setting('t.org_a')), 1, 'running the check again creates nothing new');
+select tests.expect_rows(format($q$select 1 from public.escalation_runs where organization_id = %L and source = 'manual'
+  and error is null and finished_at is not null and started_by = %L$q$, current_setting('t.org_a'), current_setting('t.a_member')), 2,
+  'both checks are in the run log');
+
+select tests.act_as(current_setting('t.invitee')::uuid);
+select tests.expect_rows(format('select 1 from public.escalations where issue_id = %L', current_setting('t.issue_esc')), 5,
+  'a member sees the escalations');
+select tests.expect_error(format($q$insert into public.escalations (organization_id, issue_id, condition, level, reason, spell)
+  values (%L, %L, 'no_team', 1, 'fake', 9)$q$, current_setting('t.org_a'), current_setting('t.issue_esc')),
+  'nobody can add escalations directly');
+select tests.expect_error(format('update public.escalations set acknowledged_at = now() where issue_id = %L',
+  current_setting('t.issue_esc')), 'nobody can edit escalations directly');
+select tests.expect_error(format('delete from public.escalations where issue_id = %L', current_setting('t.issue_esc')),
+  'nobody can delete escalations');
+select tests.expect_error(format($q$insert into public.escalation_runs (organization_id, source) values (%L, 'manual')$q$,
+  current_setting('t.org_a')), 'nobody can add to the run log directly');
+
+select set_config('t.esc1', (select id::text from public.escalations where issue_id = current_setting('t.issue_esc')::uuid
+  and condition = 'no_team'), true);
+select set_config('t.esc2', (select id::text from public.escalations where issue_id = current_setting('t.issue_esc')::uuid
+  and condition = 'no_update'), true);
+
+select tests.act_as(current_setting('t.b_owner')::uuid);
+select tests.expect_rows('select 1 from public.escalations', 0, 'owner B sees none of company A escalations');
+select tests.expect_rows('select 1 from public.escalation_runs', 0, 'owner B sees none of company A checks');
+select tests.expect_error(format('select public.acknowledge_escalation(%L)', current_setting('t.esc1')),
+  'owner B cannot acknowledge a company A escalation');
+
+select tests.act_as(current_setting('t.invitee')::uuid);
+select tests.expect_error(format('select public.acknowledge_escalation(%L, %L)', current_setting('t.esc1'), repeat('x', 501)),
+  'an acknowledgement note is limited to 500 characters');
+select tests.expect_rows(format($q$select 1 where public.acknowledge_escalation(%L, '  Calling them now  ') is not null$q$,
+  current_setting('t.esc1')), 1, 'a member acknowledges an escalation');
+select tests.expect_rows(format($q$select 1 from public.escalations where id = %L and acknowledged_by = %L
+  and acknowledged_at is not null and acknowledge_note = 'Calling them now'$q$, current_setting('t.esc1'), current_setting('t.invitee')), 1,
+  'it records who, when and the note');
+select tests.expect_rows(format($q$select 1 from public.issue_activity where issue_id = %L and kind = 'escalation_acknowledged'
+  and actor_id = %L and from_value = 'no_team'$q$, current_setting('t.issue_esc'), current_setting('t.invitee')), 1,
+  'the acknowledgement is in the history');
+select tests.expect_error(format('select public.acknowledge_escalation(%L)', current_setting('t.esc1')),
+  'an escalation cannot be acknowledged twice');
+select tests.expect_rows(format('select 1 where public.acknowledge_escalation(%L, null) is not null', current_setting('t.esc2')), 1,
+  'the note is optional');
+
+-- Resolved issues are not checked; reopening starts a new spell.
+select tests.expect_affected(format($q$update public.issues set status = 'resolved' where id = %L$q$,
+  current_setting('t.issue_esc')), 1, 'a member resolves the escalated issue');
+select tests.act_as(current_setting('t.a_owner')::uuid);
+select tests.expect_rows(format('select 1 from public.run_escalation_check(%L) where escalations_created = 0',
+  current_setting('t.org_a')), 1, 'a resolved issue is not escalated');
+select tests.act_as(current_setting('t.invitee')::uuid);
+select tests.expect_affected(format($q$update public.issues set status = 'open' where id = %L$q$,
+  current_setting('t.issue_esc')), 1, 'a member reopens it');
+
+-- A check that fails is logged with the reason and saves nothing.
+select tests.act_as(current_setting('t.a_owner')::uuid);
+select tests.expect_affected(format($q$update public.organizations set timezone = 'Not/AZone' where id = %L$q$,
+  current_setting('t.org_a')), 1, 'owner A sets a time zone the database does not know');
+select tests.expect_rows(format('select 1 from public.run_escalation_check(%L) where error is not null and escalations_created = 0',
+  current_setting('t.org_a')), 1, 'a failed check reports its error');
+select tests.expect_rows(format('select 1 from public.escalations where issue_id = %L and spell > 0', current_setting('t.issue_esc')), 0,
+  'a failed check saves no escalations');
+select tests.expect_affected(format($q$update public.organizations set timezone = 'UTC' where id = %L$q$,
+  current_setting('t.org_a')), 1, 'owner A puts the time zone back');
+select tests.expect_rows(format('select 1 from public.run_escalation_check(%L) where error is null and escalations_created > 0',
+  current_setting('t.org_a')), 1, 'after a reopen the check escalates again');
+select tests.expect_rows(format($q$select 1 from public.escalations where issue_id = %L and spell = 1
+  and condition = 'first_response_breached'$q$, current_setting('t.issue_esc')), 1, 'the new escalation belongs to the new spell');
+
 -- Deleting the issue keeps its analyses, so the monthly count cannot be reset.
 select tests.act_as(current_setting('t.a_owner')::uuid);
 select tests.expect_affected(format('delete from public.issues where id = %L', current_setting('t.issue_a')), 1,

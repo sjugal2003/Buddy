@@ -4,6 +4,7 @@ import { Plus, Search } from "lucide-react";
 import { PageHeader } from "@/components/ui/page-header";
 import { AiBadge, StatusBadge, UrgencyBadge, SentimentBadge } from "@/components/ui/badges";
 import { DeadlineBadge } from "@/components/issues/deadline-badge";
+import { EscalationBadge } from "@/components/escalations/escalation-badge";
 import { compareAttention, deadlines, isOverdue, nextDeadline } from "@/lib/targets";
 import { inputClass, primaryButton, secondaryButton } from "@/components/ui/form";
 import { requireUser } from "@/lib/auth";
@@ -14,6 +15,7 @@ import {
   ISSUE_LIST_LIMIT,
   listIssues,
   listTeams,
+  openEscalationLevels,
   type LiveTeam,
 } from "@/lib/data/live";
 import { channelLabels, statusLabels, statusOrder, urgencyLabels, urgencyOrder } from "@/lib/labels";
@@ -79,6 +81,10 @@ export default async function IssuesPage({
   if (filters.sort === "attention") withDeadlines = [...withDeadlines].sort(compareAttention);
   const scanFull = (filters.due || filters.sort) && rows.length === DEADLINE_SCAN_LIMIT;
   const issues = withDeadlines.slice(0, ISSUE_LIST_LIMIT);
+  const escalationLevels = await openEscalationLevels(
+    membership.organization.id,
+    issues.map((x) => x.issue.id),
+  );
 
   return (
     <>
@@ -189,6 +195,7 @@ export default async function IssuesPage({
                     </p>
                   </div>
                   <div className="flex shrink-0 flex-wrap items-center gap-1.5 md:w-80 md:justify-end">
+                    <EscalationBadge level={escalationLevels.get(issue.id) ?? 0} />
                     {issue.status !== "resolved" && <DeadlineBadge {...deadlineToShow(d)} />}
                     <UrgencyBadge urgency={issue.urgency} />
                     <SentimentBadge sentiment={issue.sentiment} />

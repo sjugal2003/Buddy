@@ -234,3 +234,29 @@ export const createRuleSchema = z.object({ organizationId: z.string().uuid(), ..
 export const updateRuleSchema = z.object({ ruleId: z.string().uuid(), ...ruleFields });
 export const toggleRuleSchema = z.object({ ruleId: z.string().uuid(), enabled: z.enum(["true", "false"]) });
 export const moveRuleSchema = z.object({ ruleId: z.string().uuid(), direction: z.enum(["up", "down"]) });
+
+// Escalation settings. The database checks the same limits.
+const escalationHours = (min: number) =>
+  z.coerce
+    .number({ message: "Enter a number of hours." })
+    .int("Use whole hours.")
+    .min(min, `Use ${min} or more.`)
+    .max(720, "Use 720 hours (30 days) or fewer.");
+const onOff = z.enum(["on", "off"]);
+
+export const updateEscalationSettingsSchema = z.object({
+  organizationId: z.string().uuid(),
+  firstResponse: onOff,
+  resolution: onOff,
+  urgentNoTeam: onOff,
+  urgentNoTeamHours: escalationHours(0),
+  noTeam: onOff,
+  noTeamHours: escalationHours(0),
+  noUpdate: onOff,
+  noUpdateHours: escalationHours(1),
+});
+
+export const acknowledgeEscalationSchema = z.object({
+  escalationId: z.string().uuid(),
+  note: z.string().trim().max(500, "Keep the note to 500 characters or fewer."),
+});
