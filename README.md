@@ -196,6 +196,69 @@ Supabase project before trying the new features:
 npx.cmd supabase db push
 ```
 
+## Gmail inbox (optional)
+
+An owner can connect one Gmail inbox per company, **read-only**: Buddy asks
+Google only for `gmail.readonly`, so it can read messages but can never send,
+delete or change email. This version only connects and disconnects; "Fetch
+new email" comes next. Google's setup is free. Use a **test Gmail account with
+made-up emails** until Phase 7.
+
+**1. Create a Google Cloud project** (about 15 minutes, once)
+
+1. Open https://console.cloud.google.com and sign in with your Google account.
+2. At the top, click the project picker, then **New project**. Name it
+   `Buddy dev` and click **Create**. Make sure it is selected at the top.
+3. Menu (three lines, top left) > **APIs & Services** > **Library**. Search
+   for **Gmail API**, open it and click **Enable**.
+4. Menu > **Google Auth platform** > **Branding**. If it says "not configured
+   yet", click **Get started**:
+   - App name `Buddy dev`, user support email: your email. **Next**.
+   - Audience: **External**. **Next**.
+   - Contact information: your email. **Next**.
+   - Tick the agreement, **Continue**, **Create**.
+5. **Audience** (left menu): leave the publishing status as **Testing**. Under
+   **Test users**, click **Add users**, type the Gmail address you will
+   connect, and **Save**. Only test users can connect while it is in Testing.
+6. **Data Access** > **Add or remove scopes**. Search `gmail.readonly`, tick
+   `.../auth/gmail.readonly`, click **Update**, then **Save**.
+7. **Clients** > **Create client**. Application type **Web application**,
+   name `Buddy local`. Under **Authorized redirect URIs** click **Add URI**
+   and paste exactly `http://localhost:3000/api/gmail/callback`. Click
+   **Create**.
+8. A box shows the **Client ID** and **Client secret**. Keep it open for the
+   next step (you can see them again under Clients).
+
+**2. Add three lines to `.env.local`** (in `D:\Buddy`, with Notepad)
+
+```
+GOOGLE_CLIENT_ID=paste-the-client-id
+GOOGLE_CLIENT_SECRET=paste-the-client-secret
+GMAIL_TOKEN_KEY=paste-the-key-from-the-command-below
+```
+
+Make the `GMAIL_TOKEN_KEY` value on your own PC with this PowerShell command
+and paste what it prints (it encrypts the Gmail sign-in before it is saved):
+
+```powershell
+[Convert]::ToBase64String((1..32 | ForEach-Object { Get-Random -Maximum 256 }))
+```
+
+Never put these in a `NEXT_PUBLIC_` variable, a chat or Git. If you change
+`GMAIL_TOKEN_KEY` later, connect Gmail again. Restart `npm.cmd run dev`.
+
+**3. Connect**
+
+In Buddy, **Data sources** > **Gmail inbox** > **Connect Gmail**. Google
+shows a warning that the app is not verified (normal in Testing mode): click
+**Continue**, tick the box to allow reading email, and continue. You come back
+to Buddy with "Gmail connected: your-address". **Disconnect Gmail** asks
+Google to cancel Buddy's access and removes the connection; issues already in
+Buddy stay.
+
+In Testing mode Google ends the sign-in after **7 days**; then connect again.
+You can also remove Buddy any time at https://myaccount.google.com/permissions.
+
 ## Checks
 
 ```powershell
@@ -271,7 +334,7 @@ which step failed, with a screenshot.
 | `/w/<company>` | Your real workspace: dashboard cards (urgent, due within 2 hours, targets missed, escalations, no team, waiting, this week), recent activity, members, roles, invitations |
 | `/w/<company>/issues` | Customer issues: search, filters (including deadlines and escalations), add, status, assignee, team, category, history, deadlines, "Record first response", escalations with Acknowledge; AI analysis panel and "AI suggested" marks when AI is on |
 | `/w/<company>/routing` | Routing rules: add, edit, reorder, switch off, delete (owners and admins); route open issues that have no team |
-| `/w/<company>/data-sources` | Import a CSV file (owners and admins: match columns, preview, open or past conversations), "Analyse with AI" for an import's issues (asks first, shows the month's remaining analyses), and every import with its counts and rejected-row reasons. Gmail is not connected yet |
+| `/w/<company>/data-sources` | Import a CSV file (owners and admins: match columns, preview, open or past conversations), "Analyse with AI" for an import's issues (asks first, shows the month's remaining analyses), connect or disconnect one Gmail inbox read-only (owners), and every import with its counts and rejected-row reasons |
 | `/w/<company>/settings` | Company profile, first-response and resolution targets, AI analysis (on/off, monthly limit, automatic routing), escalation conditions with "Check now" and the automatic-check status, teams, categories (owners and admins edit; automatic routing owners only) |
 | `/demo/<company>/...` | The Phase 1 demo with fictional data (dashboard, inbox, intelligence, routing, data sources, reports, automation, settings) |
 

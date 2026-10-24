@@ -65,6 +65,11 @@ export default defineConfig({
       BUDDY_AI_MODE: "fake",
       ANTHROPIC_API_KEY: "",
       GEMINI_API_KEY: "",
+      // A stand-in for Google: tests never contact Gmail, even when .env.local has real Google settings.
+      BUDDY_GMAIL_MODE: "fake",
+      GOOGLE_CLIENT_ID: "",
+      GOOGLE_CLIENT_SECRET: "",
+      GMAIL_TOKEN_KEY: "",
     },
   },
 });

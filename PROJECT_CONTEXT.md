@@ -1,6 +1,6 @@
 # Buddy: project context
 
-Last updated: 2026-10-24 (Phase 5 stage 24: AI for imported issues, waiting for review).
+Last updated: 2026-10-24 (Phase 5 stage 25: connect a Gmail inbox, waiting for review).
 Keep this file accurate. Update it at the end of every stage.
 
 ## 1. Product vision
@@ -96,7 +96,7 @@ Demo details:
 | `/w/[workspace]/issues/new` | `components/issues/issue-forms.tsx` | Add an issue: customer, optional customer email (stage 22, stored in lower case), channel, subject, message, urgency, sentiment, type, team, category (`createIssue`). When AI is on and set up, urgency, sentiment and type default to "Let AI decide" (saved with the usual defaults, then filled by the AI); an empty category is also filled | |
 | `/w/[workspace]/issues/[issueId]` | `app/w/[workspace]/issues/[issueId]/page.tsx` | Issue detail (with the customer's email and, for imported issues, the source and its ID), change status, assignee, team and category (any member of the workspace, `updateIssue`), history from `issue_activity` (status, resolved, reopened, team, category, assignee, first response, AI). "Deadlines" card: first-response and resolution deadline in the company time zone, worked out on the server (`src/lib/targets.ts`), "Record first response" button (`recordFirstResponse`, any member), reopen count. "Escalations" card (when there are any): level, condition, reason, and Acknowledge with an optional note (`acknowledgeEscalation`, any member). "AI analysis" panel (`components/issues/ai-panel.tsx`, `app/actions/ai.ts`): right after creation it runs `analyseIssue` in a separate request (`?analyse=<fields>`), shows the summary, next step, themes and each suggestion with an Accept button when it differs (`acceptAiValue`), "Analyse again", and failures with the reason | Checked with real Gemini answers by Jugal (2026-10-24); Claude not yet tried with a real key |
 | `/w/[workspace]/routing` | `components/routing/routing-forms.tsx` | Routing rules from the database: add, edit (conditions on category, urgency, sentiment, type, channel, message text; match all or any), reorder, switch off, delete. Owners and admins edit (`app/actions/routing.ts`); members see them read-only. Every rule is checked (`routeIssue` in `src/lib/routing.ts`); when matching rules name different teams the issue shows a conflict instead of "top rule wins". "Route open issues that have no team" gives each open issue without a team the team its matching rules agree on (`routeUnassignedIssues`, up to 500 at a time) and reports how many were skipped because of a conflict. The issue page explains the suggestion ("Suggested team: Payments, because rule "Billing to Payments" matched: category is Billing"), with "Apply suggestion" (`applySuggestedTeam`, any member), "Dismiss suggestion" (`dismissRoutingSuggestion`), and one button per rule in a conflict. Applying goes through `apply_routing_rule`, which records the rule in History. Everything recomputes the match on the server and never overwrites a team someone already chose; dismissed and conflicting issues are skipped by bulk and automatic routing | Automatic routing only after AI analysis, when an owner switched it on (Phase 3 stage 14) |
-| `/w/[workspace]/data-sources` | `app/w/[workspace]/data-sources/page.tsx` | Phase 5 stage 22. Lists the sources honestly (typed in: available; CSV import: available to owners and admins; Gmail: not connected). "Import a CSV file" (stage 23, `components/data-sources/csv-import.tsx`, `app/actions/imports.ts`, pure logic in `src/lib/csv-import.ts`): the browser reads the file (up to 5 MB and 5,000 rows; comma, semicolon or tab; quoted cells), guesses each column from the headings (dropdowns to change), reads dates as year-month-day, day/month/year or month/day/year (guessed, changeable; times without a zone are the company's time zone), uses the message's first words when there is no subject column and a chosen channel when there is none, previews the first 10 rows and every row that will be rejected with the database's own reason, then asks "Open issues" or "Past conversations, already resolved" before Import. Rows go to `import_issues` in pieces of at most 500 rows and about 700 KB (the server action limit is 1 MB); the result (imported, already in Buddy, rejected with reasons) comes only from what the database reports, and a piece that fails marks the import "Stopped with an error" with the counts so far. Members see "Only owners and admins can import files." The file itself is never uploaded or stored. "Analyse with AI" (stage 24, `components/data-sources/import-ai-button.tsx`, `planImportAnalysis` in `app/actions/imports.ts`, pure logic in `src/lib/import-ai.ts`), after an import and on each history row for owners and admins: first shows how many of the import's issues have no finished analysis and the month's AI usage ("N of L used, X left"), and offers at most what is left; nothing is sent to the AI until Confirm. It then runs the same `analyseIssue` as the issue page one issue at a time, oldest first, filling sentiment, type, urgency, category and summary (nobody chose those on an imported issue), with a pause between requests (4.5 s for Gemini's free tier, 1 s for Claude, none for the test analyser). It stops at the first failure so a failing service does not use up the month, never analyses an issue that already has a finished analysis, and says when the month is used up or AI is off. Automatic routing applies as for any analysed issue when the owner switched it on. Also and the company's import history from `import_runs`: when, source and file name, who, status, rows examined, imported, already in Buddy, rejected, and the reasons rows were rejected (row number and reason only). Any member can see it | |
+| `/w/[workspace]/data-sources` | `app/w/[workspace]/data-sources/page.tsx` | Phase 5 stage 22. Lists the sources honestly (typed in: available; CSV import: available to owners and admins; Gmail: "Connected: address (read-only)" or "Not connected."). "Gmail inbox" card (stage 25, `app/api/gmail/connect` and `app/api/gmail/callback` route handlers, `app/actions/gmail.ts`, `components/data-sources/gmail-disconnect.tsx`, server-only `src/lib/gmail/`): owners see Connect Gmail, which sends them to Google asking for read-only Gmail access (`gmail.readonly`, with PKCE and a one-time state cookie); on return the server checks the state, that the person is still an owner, that read-only access and a refresh token were granted, reads the inbox address, encrypts the token with `GMAIL_TOKEN_KEY` and saves it through `save_mailbox_connection`. The card shows the address, when and by whom it was connected, and "Fetching email: Not available yet" (stage 26). "Connected" is shown only when the connection row really exists. Disconnect (owners, asks first) cancels Buddy's access at Google, then removes the connection and token; if Google cannot be reached it still disconnects in Buddy and says so. Admins and members see the connection but not the buttons. Without the Google settings the card says Gmail is not set up. "Import a CSV file" (stage 23, `components/data-sources/csv-import.tsx`, `app/actions/imports.ts`, pure logic in `src/lib/csv-import.ts`): the browser reads the file (up to 5 MB and 5,000 rows; comma, semicolon or tab; quoted cells), guesses each column from the headings (dropdowns to change), reads dates as year-month-day, day/month/year or month/day/year (guessed, changeable; times without a zone are the company's time zone), uses the message's first words when there is no subject column and a chosen channel when there is none, previews the first 10 rows and every row that will be rejected with the database's own reason, then asks "Open issues" or "Past conversations, already resolved" before Import. Rows go to `import_issues` in pieces of at most 500 rows and about 700 KB (the server action limit is 1 MB); the result (imported, already in Buddy, rejected with reasons) comes only from what the database reports, and a piece that fails marks the import "Stopped with an error" with the counts so far. Members see "Only owners and admins can import files." The file itself is never uploaded or stored. "Analyse with AI" (stage 24, `components/data-sources/import-ai-button.tsx`, `planImportAnalysis` in `app/actions/imports.ts`, pure logic in `src/lib/import-ai.ts`), after an import and on each history row for owners and admins: first shows how many of the import's issues have no finished analysis and the month's AI usage ("N of L used, X left"), and offers at most what is left; nothing is sent to the AI until Confirm. It then runs the same `analyseIssue` as the issue page one issue at a time, oldest first, filling sentiment, type, urgency, category and summary (nobody chose those on an imported issue), with a pause between requests (4.5 s for Gemini's free tier, 1 s for Claude, none for the test analyser). It stops at the first failure so a failing service does not use up the month, never analyses an issue that already has a finished analysis, and says when the month is used up or AI is off. Automatic routing applies as for any analysed issue when the owner switched it on. Also and the company's import history from `import_runs`: when, source and file name, who, status, rows examined, imported, already in Buddy, rejected, and the reasons rows were rejected (row number and reason only). Any member can see it | |
 | `/w/[workspace]/settings` | `components/settings/settings-forms.tsx` | Company name, industry, time zone, first-response and resolution targets; add/rename/delete teams (name, lead, email, colour) and categories; "AI analysis" card (on/off, monthly limit, analyses used this month and approximate cost, whether this server has an AI key). Owners and admins edit (`app/actions/settings.ts`); members see it read-only. "Apply routing automatically" (owners only). "Escalations" card: switch conditions on and set thresholds, "Check now" (`app/actions/escalations.ts`), last check, "Automatic checks" (judged only from the latest scheduled check actually logged: "Not running. Use Check now." until one is seen, "Running every 15 minutes." while they arrive, a warning after 45 minutes without one) and a note that notifications are not set up | Team email is display only |
 
 Every `/w/[workspace]` page has a "Something went wrong, try again" screen
@@ -186,12 +186,13 @@ Files (`supabase/`):
 | `migrations/20261025150000_routing_explanations.sql` | Phase 4 stage 18: `issues.routing_dismissed_at` (cleared when category, urgency, type or channel changes); `apply_routing_rule(issue, rule, expected team)` and `dismiss_routing_suggestion(issue)`; history kinds `routing_applied`, `routing_dismissed` |
 | `migrations/20261025180000_scheduled_escalation_checks.sql` | Phase 4 stage 20: enables `pg_cron`; `private.run_scheduled_escalation_checks()` (database owner only) runs the escalation check, source `scheduled`, for every company with a condition on; cron job `buddy-escalation-check` every 15 minutes |
 | `migrations/20261026090000_import_foundation.sql` | Phase 5 stage 22: `import_runs` log (read-only for members); `issues.source` (`manual`/`csv`/`gmail`, existing issues become `manual`), `source_record_id`, `import_run_id`, `customer_email`; unique index on (company, source, source record) so a record becomes one issue per company; `start_import`, `import_issues` (up to 500 rows a call, checks every row again, skips duplicates, can save past conversations as resolved at their received time), `finish_import`. Owners and admins only; CSV only until Gmail arrives |
-| `tests/security_test.sql` | 294 checks of tenant isolation, roles, invitations, teams, categories, settings, routing rules, AI analysis, resolution tracking, escalations, routing history, scheduled checks and imports; runs in one transaction and rolls back |
+| `migrations/20261026120000_gmail_connection.sql` | Phase 5 stage 25: `mailbox_connections` (one inbox per company; address, who connected it and when, where fetching got to; members can read it) and `mailbox_tokens` (the encrypted Google refresh token; no rights and no policies, so nobody reads it directly). `save_mailbox_connection` (owners; a different address resets the fetch position), `mailbox_token` (owners and admins; returns only the encrypted value), `disconnect_mailbox` (owners) |
+| `tests/security_test.sql` | 321 checks of tenant isolation, roles, invitations, teams, categories, settings, routing rules, AI analysis, resolution tracking, escalations, routing history, scheduled checks, imports and the Gmail connection; runs in one transaction and rolls back |
 | `tests/local-supabase-stub.sql` | Minimal stand-in for Supabase's `auth` schema and roles, for plain PostgreSQL only. Never run on Supabase |
 
 Tables: `profiles`, `organizations`, `organization_members`,
 `organization_invitations`, `teams`, `categories`, `issues`, `issue_activity`,
-`routing_rules`, `automation_settings`, `issue_analyses` (Phase 3), `escalation_settings`, `escalations`, `escalation_runs` (Phase 4), `import_runs` (Phase 5). Deferred: a Gmail connection table (Phase 5 stage 25),
+`routing_rules`, `automation_settings`, `issue_analyses` (Phase 3), `escalation_settings`, `escalations`, `escalation_runs` (Phase 4), `import_runs`, `mailbox_connections`, `mailbox_tokens` (Phase 5). Deferred:
 `notification_records` (Phase 6). Full design and reasons: Phase 2 plan doc
 (https://claude.ai/artifact/7nwyfG2deY29tg9rpVLsBs).
 
@@ -251,6 +252,13 @@ How access works:
   message) becomes at most one issue per company, enforced by a unique
   index, so two imports at the same time cannot both add it. The import log
   keeps row numbers and reasons only, never the customer's text.
+- Gmail connection (Phase 5 stage 25): only an owner can connect or
+  disconnect the company's inbox; every member can see which inbox it is.
+  The Google token sits in `mailbox_tokens`, which has no grants and no
+  policies, so it is reachable only through `mailbox_token` (owners and
+  admins of that company). It is stored encrypted (AES-256-GCM) with
+  `GMAIL_TOKEN_KEY`, which exists only on the server, so the database value
+  alone cannot be used. The token is never sent to the browser or logged.
 
 ## 8. Authentication status
 
@@ -291,6 +299,10 @@ never commit values. Without them the app runs in demo-only mode.
 | `ANTHROPIC_API_KEY` | **Never** (server only, no `NEXT_PUBLIC_`) | Turns on Claude analysis (Phase 3). Read only in `src/lib/ai/index.ts`. Wins if both AI keys are set |
 | `GEMINI_API_KEY` | **Never** (server only, no `NEXT_PUBLIC_`) | Turns on Gemini analysis when there is no Anthropic key. Read only in `src/lib/ai/index.ts`. Neither key means AI is shown as not set up |
 | `BUDDY_AI_MODE` | No | `fake` swaps in the free keyword test analyser (automated tests and CI). Leave unset otherwise |
+| `GOOGLE_CLIENT_ID` | **Never** (server only) | Google OAuth client for connecting Gmail (stage 25). Read only in `src/lib/gmail/index.ts` |
+| `GOOGLE_CLIENT_SECRET` | **Never** (server only) | Secret of that OAuth client |
+| `GMAIL_TOKEN_KEY` | **Never** (server only) | 32 random bytes in base64 that encrypt the stored Gmail token. Changing it means reconnecting Gmail. All three must be set for Connect Gmail to appear |
+| `BUDDY_GMAIL_MODE` | No | `fake` swaps in a pretend Google for automated tests and CI. Leave unset otherwise |
 
 ## 10. Development commands (Windows PowerShell)
 
@@ -318,9 +330,9 @@ npx.cmd supabase db push
 
 | Command | What it checks | Needs |
 |---|---|---|
-| `npm.cmd test` | Unit tests (`tests/unit/`): routing rule matching, conflicts and explanations, analytics, input rules, deadlines, escalations, CSV reading and checks, AI engine with stand-in clients | Nothing |
-| `npm.cmd run test:db` | `supabase/tests/security_test.sql` (294 checks); rolls itself back | Local Supabase |
-| `npm.cmd run test:e2e` | Browser tests (`tests/e2e/`, Playwright): sign-up, invitations, roles, issues, settings, routing, AI analysis and automatic routing (free test analyser), deadlines and first response, escalations, dashboard counts, data sources and CSV import, cross-company access | Local Supabase, test browser |
+| `npm.cmd test` | Unit tests (`tests/unit/`): routing rule matching, conflicts and explanations, analytics, input rules, deadlines, escalations, CSV reading and checks, AI batches, token encryption and Google sign-in links, AI engine with stand-in clients | Nothing |
+| `npm.cmd run test:db` | `supabase/tests/security_test.sql` (321 checks); rolls itself back | Local Supabase |
+| `npm.cmd run test:e2e` | Browser tests (`tests/e2e/`, Playwright): sign-up, invitations, roles, issues, settings, routing, AI analysis and automatic routing (free test analyser), deadlines and first response, escalations, dashboard counts, data sources, CSV import, AI for imports, Gmail connect and disconnect (pretend Google), cross-company access | Local Supabase, test browser |
 
 Local Supabase needs Docker Desktop. One-time setup, then each time:
 
@@ -441,6 +453,13 @@ run keeps the Playwright report for 7 days (Actions > the run > Artifacts).
   a failed attempt still counts toward the month, as on the issue page. With
   Gemini's free tier a batch of 100 takes about 11 minutes because of the
   pause between requests.
+
+- **Gmail connect (stage 25):** the Google project stays in Testing mode
+  (free, no Google review), so only listed test users can connect, Google
+  shows an "unverified app" warning, and the sign-in expires after 7 days;
+  the owner then disconnects and connects again. Connecting only stores the
+  sign-in: fetching email is stage 26. One inbox per company. Use a test
+  Gmail account with made-up emails until Phase 7's security review.
 
 ## 13. Security requirements (apply from Phase 2 on)
 
@@ -667,4 +686,12 @@ Phase 5 (data sources). Jugal approved the plan and its six decisions on
   of 2 offering 2 of 3, Cancel uses nothing, used-up month, no issue analysed
   twice, members and other companies kept out), 107 unit tests (new
   `tests/unit/import-ai.test.ts`), lint, type check, build, `npm audit` 0
-  (2026-10-24). Waiting for Jugal's review.
+  (2026-10-24). PR #24, merged 2026-10-24; checked on Jugal's PC (Gemini
+  analysed the imports and automatic routing moved them).
+- Stage 25: connect a Gmail inbox (see section 5). Migration
+  `20261026120000_gmail_connection.sql`. 321/321 security checks, 15/15
+  browser tests (new `tests/e2e/gmail.spec.ts` with a pretend Google: a
+  forged return connects nothing, owner connects and disconnects, member
+  cannot, another company sees nothing), 114 unit tests (new
+  `tests/unit/gmail.test.ts`), lint, type check, build, `npm audit` 0
+  (2026-10-24). Not yet tried against real Google. Waiting for Jugal's review.
