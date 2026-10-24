@@ -1149,6 +1149,77 @@ select tests.expect_error(format($q$select public.disconnect_mailbox(%L)$q$, cur
 select tests.expect_rows(format($q$select 1 where public.mailbox_token(%L) is null$q$, current_setting('t.org_b')), 1,
   'company B has no inbox connected');
 
+-- Fetching email (Phase 5 stage 26)
+select tests.act_as(current_setting('t.invitee')::uuid);
+select tests.expect_error(format($q$select * from public.start_gmail_fetch(%L)$q$, current_setting('t.org_a')),
+  'a member cannot fetch email');
+select tests.act_as(current_setting('t.b_owner')::uuid);
+select tests.expect_error(format($q$select * from public.start_gmail_fetch(%L)$q$, current_setting('t.org_a')),
+  'owner B cannot fetch company A''s email');
+select tests.expect_error(format($q$select * from public.start_gmail_fetch(%L)$q$, current_setting('t.org_b')),
+  'a company with no inbox cannot fetch');
+select tests.act_as(current_setting('t.a_member')::uuid);
+select set_config('t.fetch_1', (select run_id::text from public.start_gmail_fetch(current_setting('t.org_a')::uuid)), true);
+select tests.expect_rows(format($q$select 1 from public.import_runs where id = %L and source = 'gmail'
+  and file_name = 'inbox@example.com' and status = 'running'$q$, current_setting('t.fetch_1')), 1,
+  'an admin starts a fetch, logged as a Gmail import');
+select tests.expect_error(format($q$select * from public.start_gmail_fetch(%L)$q$, current_setting('t.org_a')),
+  'a second fetch cannot start while one is running');
+select tests.expect_rows(format($q$select 1 from jsonb_array_elements(public.import_issues(%L,
+  '[{"row":1,"customer_name":"Mail Customer","customer_email":"Mail@Example.com","channel":"email","subject":"Help",
+     "message":"Fetched message","received_at":"2026-10-20T10:00:00Z","record_id":"gmail-msg-1"},
+    {"row":2,"customer_name":"Mail Customer","channel":"email","subject":"Help again",
+     "message":"Same email again","received_at":"2026-10-20T10:00:00Z","record_id":"gmail-msg-1"}]'::jsonb))
+  as o(v) where v ->> 'outcome' = 'imported'$q$, current_setting('t.fetch_1')), 1,
+  'a fetched email is saved once, even when it comes twice');
+select tests.expect_rows(format($q$select 1 from public.issues where organization_id = %L and source = 'gmail'
+  and source_record_id = 'gmail-msg-1' and customer_email = 'mail@example.com' and import_run_id = %L$q$,
+  current_setting('t.org_a'), current_setting('t.fetch_1')), 1, 'it is an issue from Gmail with the sender''s email');
+select tests.expect_error(format($q$select public.finish_gmail_fetch(%L, now() + interval '1 day')$q$,
+  current_setting('t.fetch_1')), 'a fetch time in the future is refused');
+select tests.act_as(current_setting('t.a_owner')::uuid);
+select tests.expect_error(format($q$select public.finish_gmail_fetch(%L, '2026-10-20T10:00:00Z')$q$,
+  current_setting('t.fetch_1')), 'only the person who started a fetch can finish it');
+select tests.act_as(current_setting('t.b_owner')::uuid);
+select tests.expect_error(format($q$select public.finish_gmail_fetch(%L, '2026-10-20T10:00:00Z')$q$,
+  current_setting('t.fetch_1')), 'owner B cannot finish company A''s fetch');
+select tests.act_as(current_setting('t.a_member')::uuid);
+select public.finish_gmail_fetch(current_setting('t.fetch_1')::uuid, '2026-10-20T10:00:00Z');
+select tests.expect_rows(format($q$select 1 from public.mailbox_connections where organization_id = %L
+  and fetched_until = '2026-10-20T10:00:00Z' and last_fetched_at is not null$q$, current_setting('t.org_a')), 1,
+  'finishing records where the next fetch starts and when it ran');
+select tests.expect_rows(format($q$select 1 from public.import_runs where id = %L and status = 'finished'$q$,
+  current_setting('t.fetch_1')), 1, 'the fetch shows as finished');
+select tests.expect_error(format($q$select public.finish_gmail_fetch(%L, '2026-10-21T10:00:00Z')$q$,
+  current_setting('t.fetch_1')), 'a fetch cannot be finished twice');
+
+-- The starting point never moves back, and a stopped fetch still keeps its progress.
+select set_config('t.fetch_2', (select run_id::text from public.start_gmail_fetch(current_setting('t.org_a')::uuid)), true);
+select public.finish_gmail_fetch(current_setting('t.fetch_2')::uuid, '2026-10-19T10:00:00Z', 'Google stopped answering.');
+select tests.expect_rows(format($q$select 1 from public.mailbox_connections where organization_id = %L
+  and fetched_until = '2026-10-20T10:00:00Z'$q$, current_setting('t.org_a')), 1,
+  'an older time does not move the starting point back');
+select tests.expect_rows(format($q$select 1 from public.import_runs where id = %L and status = 'failed'
+  and error = 'Google stopped answering.'$q$, current_setting('t.fetch_2')), 1, 'a fetch with a problem shows as stopped');
+select tests.expect_error(format($q$select public.finish_import(%L)$q$, current_setting('t.fetch_2')),
+  'a finished fetch cannot be reopened through finish_import');
+select tests.expect_error(format($q$select public.start_import(%L, 'gmail')$q$, current_setting('t.org_a')),
+  'Gmail imports only start through the fetch');
+
+select tests.act_as(current_setting('t.a_owner')::uuid);
+select tests.expect_error(format($q$update public.mailbox_connections set fetched_until = null where organization_id = %L$q$,
+  current_setting('t.org_a')), 'nobody moves the starting point directly');
+select tests.expect_rows(format($q$select 1 from public.start_gmail_fetch(%L) where encrypted_token = 'v1:dddd:eeee:ffff'$q$,
+  current_setting('t.org_a')), 1, 'the owner can fetch too (the server gets the encrypted token)');
+-- Reconnecting the same inbox keeps the starting point; another inbox starts afresh.
+select public.save_mailbox_connection(current_setting('t.org_a')::uuid, 'inbox@example.com', 'v1:dddd:eeee:ffff');
+select tests.expect_rows(format($q$select 1 from public.mailbox_connections where organization_id = %L
+  and fetched_until is not null$q$, current_setting('t.org_a')), 1, 'reconnecting the same inbox keeps where fetching got to');
+select public.save_mailbox_connection(current_setting('t.org_a')::uuid, 'other@example.com', 'v1:dddd:eeee:ffff');
+select tests.expect_rows(format($q$select 1 from public.mailbox_connections where organization_id = %L
+  and fetched_until is null and last_fetched_at is null$q$, current_setting('t.org_a')), 1,
+  'connecting a different inbox starts afresh');
+
 select tests.act_as(current_setting('t.a_member')::uuid);
 select tests.expect_error(format($q$select public.disconnect_mailbox(%L)$q$, current_setting('t.org_a')),
   'an admin cannot disconnect the inbox');
