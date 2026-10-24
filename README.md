@@ -165,7 +165,7 @@ copy of the app on port 3100):
 
 ```powershell
 npx.cmd supabase start     # first time downloads a few GB; later about 30 seconds
-npm.cmd run test:db        # should end with "118 security checks passed"
+npm.cmd run test:db        # should end with "144 security checks passed"
 npm.cmd run test:e2e       # should end with "4 passed"
 npx.cmd supabase stop
 ```

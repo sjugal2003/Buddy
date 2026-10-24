@@ -71,7 +71,7 @@ export function toSuggestion(raw: unknown, categories: AnalysisInput["categories
   if (!parsed.success) return null;
   const answer = parsed.data;
 
-  const summary = tidy(answer.summary, 400);
+  const summary = tidy(answer.summary, 200);
   if (!summary || !Number.isFinite(answer.sentiment_score) || !Number.isFinite(answer.confidence)) return null;
 
   const wanted = answer.category.trim().toLowerCase();

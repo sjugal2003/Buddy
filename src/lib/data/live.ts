@@ -1,5 +1,6 @@
 import "server-only";
 import { cache } from "react";
+import { monthStart } from "@/lib/ai/limits";
 import { createClient } from "@/lib/supabase/server";
 import type { RoutableMessage } from "@/lib/routing";
 import type { Channel, Intent, IssueStatus, RoutingRule, RuleCondition, Sentiment, Urgency } from "@/lib/types";
@@ -264,6 +265,15 @@ export interface OrganizationSettings {
   targetHours: Record<Urgency, number>;
 }
 
+export interface AiSettings {
+  enabled: boolean;
+  monthlyLimit: number;
+  /** Analyses started since the 1st of this month (UTC), including failed ones. */
+  usedThisMonth: number;
+  inputTokens: number;
+  outputTokens: number;
+}
+
 export interface LiveTeam {
   id: string;
   name: string;
@@ -298,6 +308,33 @@ export async function getOrganizationSettings(organizationId: string): Promise<O
       medium: data.target_hours_medium,
       low: data.target_hours_low,
     },
+  };
+}
+
+export async function getAiSettings(organizationId: string): Promise<AiSettings> {
+  const supabase = await createClient();
+  const [org, usage] = await Promise.all([
+    supabase.from("organizations").select("ai_enabled, ai_monthly_limit").eq("id", organizationId).single(),
+    // At most 2,000 a month per company, so reading the token counts is cheap.
+    supabase
+      .from("issue_analyses")
+      .select("input_tokens, output_tokens")
+      .eq("organization_id", organizationId)
+      .gte("created_at", monthStart(new Date()).toISOString())
+      .limit(2500),
+  ]);
+  const error = org.error ?? usage.error;
+  if (error || !org.data) {
+    console.error("[getAiSettings]", error?.code, error?.message);
+    throw new Error("Could not load the AI settings.");
+  }
+  const rows = usage.data ?? [];
+  return {
+    enabled: org.data.ai_enabled,
+    monthlyLimit: org.data.ai_monthly_limit,
+    usedThisMonth: rows.length,
+    inputTokens: rows.reduce((sum, r) => sum + r.input_tokens, 0),
+    outputTokens: rows.reduce((sum, r) => sum + r.output_tokens, 0),
   };
 }
 

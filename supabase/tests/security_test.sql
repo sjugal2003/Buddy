@@ -498,6 +498,103 @@ select tests.expect_rows(format('select 1 from public.organization_invitations w
 select tests.expect_affected(format('delete from public.issues where organization_id = %L', current_setting('t.org_a')), 0,
   'owner B cannot delete company A issues');
 
+-- ---------------------------------------------------------------------------
+-- AI analysis (Phase 3): switches, the monthly limit and the analysis record
+-- (the invitee is a plain member of company A; Arjun was made an admin above)
+-- ---------------------------------------------------------------------------
+
+select tests.act_as(current_setting('t.invitee')::uuid);
+select tests.expect_affected(format('update public.organizations set ai_enabled = true where id = %L',
+  current_setting('t.org_a')), 0, 'a member cannot switch AI on');
+select tests.expect_error(format('select public.start_issue_analysis(%L)', current_setting('t.issue_a')),
+  'no analysis while AI is off');
+
+select tests.act_as(current_setting('t.a_owner')::uuid);
+select tests.expect_error(format('update public.organizations set ai_monthly_limit = 2001 where id = %L',
+  current_setting('t.org_a')), 'the monthly limit cannot go above 2,000');
+select tests.expect_affected(format('update public.organizations set ai_enabled = true, ai_monthly_limit = 2 where id = %L',
+  current_setting('t.org_a')), 1, 'owner A switches AI on with a limit of 2');
+select tests.expect_affected(format($q$insert into public.categories (organization_id, name) values (%L, 'A Billing')$q$,
+  current_setting('t.org_a')), 1, 'owner A adds a category for the AI to use');
+select set_config('t.cat_a2', (select id::text from public.categories where name = 'A Billing'), true);
+
+select tests.act_as(current_setting('t.b_owner')::uuid);
+select tests.expect_error(format('select public.start_issue_analysis(%L)', current_setting('t.issue_a')),
+  'owner B cannot start an analysis of a company A issue');
+select tests.act_as(current_setting('t.outsider')::uuid);
+select tests.expect_error(format('select public.start_issue_analysis(%L)', current_setting('t.issue_a')),
+  'an outsider cannot start an analysis');
+
+select tests.act_as(current_setting('t.invitee')::uuid);
+select set_config('t.an1', public.start_issue_analysis(current_setting('t.issue_a')::uuid)::text, true);
+select tests.expect_rows(format($q$select 1 from public.issue_analyses where id = %L and status = 'pending'$q$,
+  current_setting('t.an1')), 1, 'a member starts an analysis');
+select tests.expect_error(format('select public.start_issue_analysis(%L)', current_setting('t.issue_a')),
+  'the same issue cannot be analysed again within 30 seconds');
+select tests.expect_error(format(
+  $q$insert into public.issue_analyses (organization_id, issue_id, status, summary) values (%L, %L, 'done', 'x')$q$,
+  current_setting('t.org_a'), current_setting('t.issue_a')), 'nobody can add analyses directly');
+
+select tests.act_as(current_setting('t.b_owner')::uuid);
+select tests.expect_error(format($q$select public.finish_issue_analysis(%L, '{"ok": false, "reason": "x"}')$q$,
+  current_setting('t.an1')), 'owner B cannot finish a company A analysis');
+select tests.act_as(current_setting('t.a_owner')::uuid);
+select tests.expect_error(format($q$select public.finish_issue_analysis(%L, '{"ok": false, "reason": "x"}')$q$,
+  current_setting('t.an1')), 'only the person who started an analysis can finish it');
+
+select tests.act_as(current_setting('t.invitee')::uuid);
+select tests.expect_error(format(
+  $q$select public.finish_issue_analysis(%L, jsonb_build_object('ok', true, 'sentiment', 'negative',
+     'sentiment_score', -0.5, 'intent', 'complaint', 'urgency', 'high', 'category_id', %L, 'summary', 'x'))$q$,
+  current_setting('t.an1'), current_setting('t.cat_b')), 'an analysis cannot use another company''s category');
+select tests.expect_error(format(
+  $q$select public.finish_issue_analysis(%L, jsonb_build_object('ok', true, 'sentiment', 'negative',
+     'sentiment_score', -0.5, 'intent', 'complaint', 'urgency', 'extreme', 'summary', 'x'))$q$,
+  current_setting('t.an1')), 'an analysis cannot use an unknown urgency');
+select tests.expect_rows(format(
+  $q$select public.finish_issue_analysis(%L, jsonb_build_object('ok', true, 'sentiment', 'negative',
+     'sentiment_score', -0.5, 'intent', 'complaint', 'urgency', 'high', 'category_id', %L,
+     'themes', jsonb_build_array('refund'), 'summary', 'Charged twice.', 'suggested_action', 'Refund it.',
+     'confidence', 0.9, 'model', 'fake', 'input_tokens', 0, 'output_tokens', 0))$q$,
+  current_setting('t.an1'), current_setting('t.cat_a2')), 1, 'the member records the answer');
+select tests.expect_rows(format($q$select 1 from public.issue_analyses where id = %L and status = 'done' and urgency = 'high'$q$,
+  current_setting('t.an1')), 1, 'the analysis is saved as done');
+select tests.expect_rows(format($q$select 1 from public.issue_activity where issue_id = %L and kind = 'ai_analysed'$q$,
+  current_setting('t.issue_a')), 1, 'the issue history records the analysis');
+select tests.expect_error(format($q$select public.finish_issue_analysis(%L, '{"ok": false, "reason": "x"}')$q$,
+  current_setting('t.an1')), 'a finished analysis cannot be changed');
+select tests.expect_error(format($q$update public.issue_analyses set urgency = 'low' where id = %L$q$,
+  current_setting('t.an1')), 'nobody can edit analyses directly');
+select tests.expect_error(format('delete from public.issue_analyses where id = %L', current_setting('t.an1')),
+  'nobody can delete analyses');
+
+select tests.act_as(current_setting('t.b_owner')::uuid);
+select tests.expect_rows('select 1 from public.issue_analyses', 0, 'owner B sees none of company A analyses');
+
+-- Move the first analysis out of the 30-second window to test the monthly limit.
+reset role;
+update public.issue_analyses set created_at = now() - interval '1 minute' where id = current_setting('t.an1')::uuid;
+set local role authenticated;
+select tests.act_as(current_setting('t.invitee')::uuid);
+select set_config('t.an2', public.start_issue_analysis(current_setting('t.issue_a')::uuid)::text, true);
+select tests.expect_rows(format($q$select public.finish_issue_analysis(%L, '{"ok": false, "reason": "unavailable"}')$q$,
+  current_setting('t.an2')), 1, 'a failed analysis is recorded');
+select tests.expect_rows(format($q$select 1 from public.issue_analyses where id = %L and status = 'failed'$q$,
+  current_setting('t.an2')), 1, 'it is saved as failed');
+reset role;
+update public.issue_analyses set created_at = now() - interval '1 minute' where id = current_setting('t.an2')::uuid;
+set local role authenticated;
+select tests.act_as(current_setting('t.invitee')::uuid);
+select tests.expect_error(format('select public.start_issue_analysis(%L)', current_setting('t.issue_a')),
+  'no more analyses once the monthly limit is used (failed ones count too)');
+
+-- Deleting the issue keeps its analyses, so the monthly count cannot be reset.
+select tests.act_as(current_setting('t.a_owner')::uuid);
+select tests.expect_affected(format('delete from public.issues where id = %L', current_setting('t.issue_a')), 1,
+  'owner A deletes the analysed issue');
+select tests.expect_rows(format('select 1 from public.issue_analyses where organization_id = %L and issue_id is null',
+  current_setting('t.org_a')), 2, 'its analyses still count towards the month');
+
 reset role;
 select current_setting('tests.passed') || ' security checks passed' as result;
 
