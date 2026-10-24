@@ -167,6 +167,13 @@ If both keys are set, Claude is used.
    After saving, the **AI analysis** panel fills in within a few seconds.
    Anything you chose yourself is kept; the panel offers **Accept** for the
    AI's view instead. **Analyse again** can be used once every 30 seconds.
+6. The **Issues** list marks analysed issues "AI suggested" and shows the
+   AI's one-line summary. Routing rules use the AI's urgency, type and
+   category like any other value.
+7. Optional, owners only: tick **Apply routing automatically** in the same
+   card. Then a newly analysed issue that has no team goes straight to the
+   team its first matching routing rule names (the history shows the move).
+   Left off, rules only suggest a team and a person presses the button.
 
 What is sent to the AI service: the subject, the message (first 4,000
 characters), the channel and your category names. Never the customer's name.

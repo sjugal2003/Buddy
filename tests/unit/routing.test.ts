@@ -1,5 +1,7 @@
 import { describe, expect, it } from "vitest";
 import { conditionMatches, findMatchingRule, ruleMatches, type RoutableMessage } from "@/lib/routing";
+import { fakeAnswer } from "@/lib/ai/fake";
+import { toSuggestion } from "@/lib/ai/schema";
 import type { RoutingRule } from "@/lib/types";
 
 const message: RoutableMessage = {
@@ -77,5 +79,26 @@ describe("findMatchingRule", () => {
   it("returns null when nothing matches", () => {
     expect(findMatchingRule([rule({ conditions: [{ field: "intent", value: "praise" }] })], message)).toBeNull();
     expect(findMatchingRule([], message)).toBeNull();
+  });
+});
+
+describe("routing with AI values", () => {
+  it("matches a rule on the urgency and category the AI chose", () => {
+    const categories = [{ id: "billing", name: "Billing" }];
+    const input = { subject: "Down", message: "Billing portal is down, urgent.", channel: "email" as const, categories };
+    const suggestion = toSuggestion(fakeAnswer(input), categories)!;
+    const analysed: RoutableMessage = {
+      ...input,
+      analysis: {
+        categoryId: suggestion.categoryId ?? "",
+        urgency: suggestion.urgency,
+        sentiment: suggestion.sentiment,
+        intent: suggestion.intent,
+      },
+    };
+    const critical = rule({ id: "critical", conditions: [{ field: "urgency", value: "critical" }] });
+    const billing = rule({ id: "billing", conditions: [{ field: "category", value: "billing" }] });
+    expect(findMatchingRule([critical, billing], analysed)?.id).toBe("critical");
+    expect(findMatchingRule([billing, critical], analysed)?.id).toBe("billing");
   });
 });

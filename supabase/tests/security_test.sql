@@ -609,6 +609,22 @@ select tests.expect_rows(format($q$select 1 from public.issue_activity where iss
 select tests.expect_rows(format($q$select 1 where public.accept_issue_analysis(%L, array['urgency']) = 0$q$,
   current_setting('t.an1')), 1, 'accepting the same value again changes nothing');
 
+-- Automatic routing switch (stage 14): owners only
+select tests.act_as(current_setting('t.invitee')::uuid);
+select tests.expect_affected(format('update public.organizations set ai_auto_route = true where id = %L',
+  current_setting('t.org_a')), 0, 'a member cannot switch automatic routing on');
+select tests.act_as(current_setting('t.a_member')::uuid);
+select tests.expect_error(format('update public.organizations set ai_auto_route = true where id = %L',
+  current_setting('t.org_a')), 'an admin cannot switch automatic routing on');
+select tests.expect_affected(format('update public.organizations set ai_auto_route = false, ai_monthly_limit = 2 where id = %L',
+  current_setting('t.org_a')), 1, 'an admin can still save the other AI settings without changing it');
+select tests.act_as(current_setting('t.b_owner')::uuid);
+select tests.expect_affected(format('update public.organizations set ai_auto_route = true where id = %L',
+  current_setting('t.org_a')), 0, 'owner B cannot switch it on for company A');
+select tests.act_as(current_setting('t.a_owner')::uuid);
+select tests.expect_affected(format('update public.organizations set ai_auto_route = true where id = %L',
+  current_setting('t.org_a')), 1, 'owner A switches automatic routing on');
+
 -- Deleting the issue keeps its analyses, so the monthly count cannot be reset.
 select tests.act_as(current_setting('t.a_owner')::uuid);
 select tests.expect_affected(format('delete from public.issues where id = %L', current_setting('t.issue_a')), 1,

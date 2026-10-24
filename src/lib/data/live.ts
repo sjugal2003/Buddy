@@ -116,6 +116,10 @@ export interface LiveIssue {
   assigneeName: string | null;
   teamId: string | null;
   categoryId: string | null;
+  /** "ai" once an AI value was used on the issue. */
+  analysisSource: "manual" | "demo" | "ai";
+  /** The AI's one-line summary, or "" if there is none. */
+  summary: string;
   updatedAt: string;
 }
 
@@ -140,7 +144,7 @@ export interface IssueFilters {
 export const ISSUE_LIST_LIMIT = 200;
 
 const ISSUE_COLUMNS =
-  "id, reference, customer_name, channel, subject, message, received_at, sentiment, intent, urgency, status, assignee_name, team_id, category_id, updated_at";
+  "id, reference, customer_name, channel, subject, message, received_at, sentiment, intent, urgency, status, assignee_name, team_id, category_id, analysis_source, summary, updated_at";
 
 type IssueRow = {
   id: string;
@@ -157,6 +161,8 @@ type IssueRow = {
   assignee_name: string | null;
   team_id: string | null;
   category_id: string | null;
+  analysis_source: string;
+  summary: string;
   updated_at: string;
 };
 
@@ -176,6 +182,8 @@ function toIssue(row: IssueRow): LiveIssue {
     assigneeName: row.assignee_name,
     teamId: row.team_id,
     categoryId: row.category_id,
+    analysisSource: row.analysis_source as LiveIssue["analysisSource"],
+    summary: row.summary,
     updatedAt: row.updated_at,
   };
 }
@@ -330,6 +338,8 @@ export interface OrganizationSettings {
 export interface AiSettings {
   enabled: boolean;
   monthlyLimit: number;
+  /** Give a newly analysed issue without a team the team its routing rule suggests. */
+  autoRoute: boolean;
   /** Analyses started since the 1st of this month (UTC), including failed ones. */
   usedThisMonth: number;
   /** At paid prices; a free tier may make it lower. */
@@ -376,7 +386,7 @@ export async function getOrganizationSettings(organizationId: string): Promise<O
 export async function getAiSettings(organizationId: string): Promise<AiSettings> {
   const supabase = await createClient();
   const [org, usage] = await Promise.all([
-    supabase.from("organizations").select("ai_enabled, ai_monthly_limit").eq("id", organizationId).single(),
+    supabase.from("organizations").select("ai_enabled, ai_monthly_limit, ai_auto_route").eq("id", organizationId).single(),
     // At most 2,000 a month per company, so reading the token counts is cheap.
     supabase
       .from("issue_analyses")
@@ -394,6 +404,7 @@ export async function getAiSettings(organizationId: string): Promise<AiSettings>
   return {
     enabled: org.data.ai_enabled,
     monthlyLimit: org.data.ai_monthly_limit,
+    autoRoute: org.data.ai_auto_route,
     usedThisMonth: rows.length,
     estimatedCostUsd: rows.reduce(
       (sum, r) => sum + estimateCostUsd({ inputTokens: r.input_tokens, outputTokens: r.output_tokens }, r.model),

@@ -72,7 +72,7 @@ export function AiPanel({
     setMessage({});
     startTransition(async () => {
       const result = await analyseIssue(issueId, fill);
-      setMessage(result.error ? { error: result.error } : {});
+      setMessage(result);
       router.refresh();
     });
   };
@@ -177,7 +177,7 @@ export function AiPanel({
         </>
       )}
 
-      <FormMessage error={message.error} />
+      <FormMessage error={message.error} success={message.success} />
       {!busy && (
         <button type="button" onClick={() => run([])} className={`${secondaryButton} w-full`}>
           {analysis ? "Analyse again" : "Analyse with AI"}

@@ -67,6 +67,7 @@ export async function updateAiSettings(_prev: FormState, formData: FormData): Pr
   const parsed = updateAiSettingsSchema.safeParse({
     organizationId: formData.get("organizationId"),
     enabled: formData.get("enabled") === "on" ? "on" : "off",
+    autoRoute: formData.get("autoRoute") === "on" ? "on" : "off",
     monthlyLimit: formData.get("monthlyLimit"),
   });
   if (!parsed.success) return { fieldErrors: fieldErrors(parsed.error) };
@@ -75,7 +76,12 @@ export async function updateAiSettings(_prev: FormState, formData: FormData): Pr
   const supabase = await createClient();
   const { data, error } = await supabase
     .from("organizations")
-    .update({ ai_enabled: enabled, ai_monthly_limit: parsed.data.monthlyLimit })
+    .update({
+      ai_enabled: enabled,
+      ai_monthly_limit: parsed.data.monthlyLimit,
+      // The database refuses a change here from anyone but an owner.
+      ai_auto_route: parsed.data.autoRoute === "on",
+    })
     .eq("id", parsed.data.organizationId)
     .select("id");
   if (error) return { error: friendlyError(error, "We couldn't save the AI settings. Please try again.", "updateAiSettings") };

@@ -8,6 +8,7 @@ import {
   signUpSchema,
   slugSchema,
   timezoneSchema,
+  updateAiSettingsSchema,
   updateOrganizationSchema,
 } from "@/lib/validation";
 
@@ -137,5 +138,12 @@ describe("AI inputs", () => {
     const issueId = "00000000-0000-4000-8000-000000000001";
     expect(analyseIssueSchema.safeParse({ issueId, fill: ["urgency", "category"] }).success).toBe(true);
     expect(analyseIssueSchema.safeParse({ issueId, fill: ["status"] }).success).toBe(false);
+  });
+
+  it("AI settings take on/off switches and a limit of 0 to 2,000", () => {
+    const base = { organizationId: uuid, enabled: "on", autoRoute: "off", monthlyLimit: "500" };
+    expect(updateAiSettingsSchema.safeParse(base).success).toBe(true);
+    expect(updateAiSettingsSchema.safeParse({ ...base, autoRoute: "yes" }).success).toBe(false);
+    expect(updateAiSettingsSchema.safeParse({ ...base, monthlyLimit: "2001" }).success).toBe(false);
   });
 });
