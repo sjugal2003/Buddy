@@ -44,3 +44,20 @@ export function describeRun(run: EscalationRunSummary) {
       : `${run.escalationsCreated} new ${run.escalationsCreated === 1 ? "escalation" : "escalations"}`;
   return `Checked ${issues}: ${created}.`;
 }
+
+/** How often the database scheduler checks (pg_cron job "buddy-escalation-check"). */
+export const SCHEDULED_CHECK_MINUTES = 15;
+
+/**
+ * What Settings says about automatic checks, judged only from the latest
+ * scheduled check actually logged, never assumed. Three missed checks in a
+ * row count as stopped.
+ */
+export function automaticCheckStatus(lastScheduledAt: string | null, now: Date): { running: boolean; text: string } {
+  if (!lastScheduledAt) return { running: false, text: "Not running. Use Check now." };
+  const minutes = (now.getTime() - new Date(lastScheduledAt).getTime()) / 60_000;
+  if (minutes > SCHEDULED_CHECK_MINUTES * 3) {
+    return { running: false, text: "No scheduled check in the last 45 minutes, so they may have stopped. Use Check now." };
+  }
+  return { running: true, text: `Running every ${SCHEDULED_CHECK_MINUTES} minutes.` };
+}

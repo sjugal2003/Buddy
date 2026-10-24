@@ -663,9 +663,9 @@ export interface EscalationRun {
 
 export async function getEscalationSettings(
   organizationId: string,
-): Promise<{ settings: EscalationSettings; lastRun: EscalationRun | null }> {
+): Promise<{ settings: EscalationSettings; lastRun: EscalationRun | null; lastScheduledAt: string | null }> {
   const supabase = await createClient();
-  const [settings, runs] = await Promise.all([
+  const [settings, runs, scheduled] = await Promise.all([
     supabase
       .from("escalation_settings")
       .select(
@@ -679,8 +679,16 @@ export async function getEscalationSettings(
       .eq("organization_id", organizationId)
       .order("started_at", { ascending: false })
       .limit(1),
+    // The latest check started by the database scheduler (stage 20), if any ever ran.
+    supabase
+      .from("escalation_runs")
+      .select("started_at")
+      .eq("organization_id", organizationId)
+      .eq("source", "scheduled")
+      .order("started_at", { ascending: false })
+      .limit(1),
   ]);
-  const error = settings.error ?? runs.error;
+  const error = settings.error ?? runs.error ?? scheduled.error;
   if (error || !settings.data) {
     console.error("[getEscalationSettings]", error?.code, error?.message);
     throw new Error("Could not load the escalation settings.");
@@ -707,6 +715,7 @@ export async function getEscalationSettings(
           error: run.error,
         }
       : null,
+    lastScheduledAt: scheduled.data?.[0]?.started_at ?? null,
   };
 }
 

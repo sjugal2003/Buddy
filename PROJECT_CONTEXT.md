@@ -96,7 +96,7 @@ Demo details:
 | `/w/[workspace]/issues/new` | `components/issues/issue-forms.tsx` | Add an issue: customer, channel, subject, message, urgency, sentiment, type, team, category (`createIssue`). When AI is on and set up, urgency, sentiment and type default to "Let AI decide" (saved with the usual defaults, then filled by the AI); an empty category is also filled | |
 | `/w/[workspace]/issues/[issueId]` | `app/w/[workspace]/issues/[issueId]/page.tsx` | Issue detail, change status, assignee, team and category (any member of the workspace, `updateIssue`), history from `issue_activity` (status, resolved, reopened, team, category, assignee, first response, AI). "Deadlines" card: first-response and resolution deadline in the company time zone, worked out on the server (`src/lib/targets.ts`), "Record first response" button (`recordFirstResponse`, any member), reopen count. "Escalations" card (when there are any): level, condition, reason, and Acknowledge with an optional note (`acknowledgeEscalation`, any member). "AI analysis" panel (`components/issues/ai-panel.tsx`, `app/actions/ai.ts`): right after creation it runs `analyseIssue` in a separate request (`?analyse=<fields>`), shows the summary, next step, themes and each suggestion with an Accept button when it differs (`acceptAiValue`), "Analyse again", and failures with the reason | Checked with real Gemini answers by Jugal (2026-10-24); Claude not yet tried with a real key |
 | `/w/[workspace]/routing` | `components/routing/routing-forms.tsx` | Routing rules from the database: add, edit (conditions on category, urgency, sentiment, type, channel, message text; match all or any), reorder, switch off, delete. Owners and admins edit (`app/actions/routing.ts`); members see them read-only. Every rule is checked (`routeIssue` in `src/lib/routing.ts`); when matching rules name different teams the issue shows a conflict instead of "top rule wins". "Route open issues that have no team" gives each open issue without a team the team its matching rules agree on (`routeUnassignedIssues`, up to 500 at a time) and reports how many were skipped because of a conflict. The issue page explains the suggestion ("Suggested team: Payments, because rule "Billing to Payments" matched: category is Billing"), with "Apply suggestion" (`applySuggestedTeam`, any member), "Dismiss suggestion" (`dismissRoutingSuggestion`), and one button per rule in a conflict. Applying goes through `apply_routing_rule`, which records the rule in History. Everything recomputes the match on the server and never overwrites a team someone already chose; dismissed and conflicting issues are skipped by bulk and automatic routing | Automatic routing only after AI analysis, when an owner switched it on (Phase 3 stage 14) |
-| `/w/[workspace]/settings` | `components/settings/settings-forms.tsx` | Company name, industry, time zone, first-response and resolution targets; add/rename/delete teams (name, lead, email, colour) and categories; "AI analysis" card (on/off, monthly limit, analyses used this month and approximate cost, whether this server has an AI key). Owners and admins edit (`app/actions/settings.ts`); members see it read-only. "Apply routing automatically" (owners only). "Escalations" card: switch conditions on and set thresholds, "Check now" (`app/actions/escalations.ts`), last check, and plain notes that automatic checks are not running and notifications are not set up | Team email is display only |
+| `/w/[workspace]/settings` | `components/settings/settings-forms.tsx` | Company name, industry, time zone, first-response and resolution targets; add/rename/delete teams (name, lead, email, colour) and categories; "AI analysis" card (on/off, monthly limit, analyses used this month and approximate cost, whether this server has an AI key). Owners and admins edit (`app/actions/settings.ts`); members see it read-only. "Apply routing automatically" (owners only). "Escalations" card: switch conditions on and set thresholds, "Check now" (`app/actions/escalations.ts`), last check, "Automatic checks" (judged only from the latest scheduled check actually logged: "Not running. Use Check now." until one is seen, "Running every 15 minutes." while they arrive, a warning after 45 minutes without one) and a note that notifications are not set up | Team email is display only |
 
 Every `/w/[workspace]` page has a "Something went wrong, try again" screen
 (`error.tsx`). Forms show "Saving…" while they work; while a page loads, the
@@ -183,7 +183,8 @@ Files (`supabase/`):
 | `migrations/20261025090000_resolution_tracking.sql` | Phase 4 stage 16: `organizations.resolution_hours_*` (8/24/72/120 by default, 1 to 2,160); `issues.first_response_by`, `reopened_count`, `waiting_seconds`, `waiting_since` (kept by the `issue_track_lifecycle` trigger); `record_first_response(issue)`; history kinds `category_changed`, `first_response`, `resolved`, `reopened` |
 | `migrations/20261025120000_escalations.sql` | Phase 4 stage 17: `escalation_settings` (one row per company, all conditions off), `escalations` (unique per issue, condition and open spell), `escalation_runs` log; `run_escalation_check(company)` (owners and admins; the internal `private.run_escalation_check` does the work), `acknowledge_escalation(id, note)`; history kind `escalation_acknowledged` |
 | `migrations/20261025150000_routing_explanations.sql` | Phase 4 stage 18: `issues.routing_dismissed_at` (cleared when category, urgency, type or channel changes); `apply_routing_rule(issue, rule, expected team)` and `dismiss_routing_suggestion(issue)`; history kinds `routing_applied`, `routing_dismissed` |
-| `tests/security_test.sql` | 246 checks of tenant isolation, roles, invitations, teams, categories, settings, routing rules, AI analysis, resolution tracking, escalations and routing history; runs in one transaction and rolls back |
+| `migrations/20261025180000_scheduled_escalation_checks.sql` | Phase 4 stage 20: enables `pg_cron`; `private.run_scheduled_escalation_checks()` (database owner only) runs the escalation check, source `scheduled`, for every company with a condition on; cron job `buddy-escalation-check` every 15 minutes |
+| `tests/security_test.sql` | 256 checks of tenant isolation, roles, invitations, teams, categories, settings, routing rules, AI analysis, resolution tracking, escalations, routing history and scheduled checks; runs in one transaction and rolls back |
 | `tests/local-supabase-stub.sql` | Minimal stand-in for Supabase's `auth` schema and roles, for plain PostgreSQL only. Never run on Supabase |
 
 Tables: `profiles`, `organizations`, `organization_members`,
@@ -302,7 +303,7 @@ npx.cmd supabase db push
 | Command | What it checks | Needs |
 |---|---|---|
 | `npm.cmd test` | Unit tests (`tests/unit/`): routing rule matching, conflicts and explanations, analytics, input rules, deadlines, escalations, AI engine with stand-in clients | Nothing |
-| `npm.cmd run test:db` | `supabase/tests/security_test.sql` (246 checks); rolls itself back | Local Supabase |
+| `npm.cmd run test:db` | `supabase/tests/security_test.sql` (256 checks); rolls itself back | Local Supabase |
 | `npm.cmd run test:e2e` | Browser tests (`tests/e2e/`, Playwright): sign-up, invitations, roles, issues, settings, routing, AI analysis and automatic routing (free test analyser), deadlines and first response, escalations, dashboard counts, cross-company access | Local Supabase, test browser |
 
 Local Supabase needs Docker Desktop. One-time setup, then each time:
@@ -573,4 +574,14 @@ explanations and conflicts, 19 dashboard, 20 scheduled checks (pg_cron),
   `src/lib/activity.ts` (shared by the issue page and the home page). No
   database change. 246/246 security checks, 10/10 browser tests (new
   `tests/e2e/dashboard.spec.ts`), 84 unit tests, lint, type check, build
-  (2026-10-24).
+  (2026-10-24) PR #19, merged 2026-10-24.
+- Stage 20: automatic escalation checks. Migration
+  `20261025180000_scheduled_escalation_checks.sql` enables pg_cron and
+  schedules `buddy-escalation-check` every 15 minutes; it checks every
+  company with a condition on, logged as `scheduled` runs (no person as
+  starter). Settings says "Automatic checks: Running every 15 minutes." only
+  once a scheduled run is logged for that company, and warns after 45
+  minutes without one. Still no email or chat notifications (Phase 6).
+  256/256 security checks, 10/10 browser tests (escalations test runs the
+  scheduled check once), 87 unit tests, lint, type check, build
+  (2026-10-24). Not yet seen running on the hosted project.

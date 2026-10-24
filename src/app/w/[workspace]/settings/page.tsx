@@ -20,7 +20,7 @@ import {
   listCategories,
   listTeams,
 } from "@/lib/data/live";
-import { describeRun, escalationConditionLabels } from "@/lib/escalations";
+import { automaticCheckStatus, describeRun, escalationConditionLabels } from "@/lib/escalations";
 import { formatDateTimeIn } from "@/lib/format";
 import { urgencyLabels, urgencyOrder } from "@/lib/labels";
 
@@ -44,6 +44,8 @@ export default async function SettingsPage({ params }: { params: Promise<{ works
     listCategories(orgId),
   ]);
   const aiService = aiServiceStatus();
+  // Judged from the scheduled checks actually logged, with the server's clock.
+  const automatic = automaticCheckStatus(escalation.lastScheduledAt, new Date());
   const aiCost = ai.estimatedCostUsd;
   // Listed on the server so the page and the browser show the same options.
   const timeZones = Array.from(new Set(["UTC", settings.timezone, ...Intl.supportedValuesOf("timeZone")]));
@@ -146,7 +148,14 @@ export default async function SettingsPage({ params }: { params: Promise<{ works
                   : "Never run"}
               </dd>
               <dt className="text-slate-500">Automatic checks</dt>
-              <dd className="text-slate-900">Not running. Use Check now.</dd>
+              <dd className="text-slate-900" data-testid="automatic-checks">
+                {automatic.text}
+                {escalation.lastScheduledAt && (
+                  <span className="block text-xs text-slate-500">
+                    Last scheduled check: {formatDateTimeIn(escalation.lastScheduledAt, settings.timezone)}
+                  </span>
+                )}
+              </dd>
               <dt className="text-slate-500">Email and chat notifications</dt>
               <dd className="text-slate-900">Not set up (Phase 6)</dd>
             </dl>
