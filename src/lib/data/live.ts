@@ -4,6 +4,7 @@ import { estimateCostUsd, monthStart } from "@/lib/ai/limits";
 import { createClient } from "@/lib/supabase/server";
 import type { RoutableMessage } from "@/lib/routing";
 import type { EscalationCondition } from "@/lib/escalations";
+import type { DashboardIssue } from "@/lib/dashboard";
 import type { Channel, Intent, IssueStatus, RoutingRule, RuleCondition, Sentiment, Urgency } from "@/lib/types";
 
 // Reads for real (signed-in) workspaces. Every query runs as the signed-in
@@ -156,10 +157,12 @@ export interface IssueActivity {
 
 export interface IssueFilters {
   status: IssueStatus | "active" | "all";
-  urgency: Urgency | "";
+  /** "urgent" is Critical or High. */
+  urgency: Urgency | "urgent" | "";
   /** A team ID, "unassigned", or "" for any team. */
   team: string;
-  due: "" | "overdue" | "soon";
+  due: "" | "overdue" | "soon" | "2h";
+  escalated: "" | "open";
   sort: "" | "attention";
   q: string;
 }
@@ -239,10 +242,11 @@ export async function listIssues(organizationId: string, filters: IssueFilters):
     .select(ISSUE_COLUMNS)
     .eq("organization_id", organizationId)
     .order("received_at", { ascending: false })
-    .limit(filters.due || filters.sort ? DEADLINE_SCAN_LIMIT : ISSUE_LIST_LIMIT);
+    .limit(filters.due || filters.sort || filters.escalated ? DEADLINE_SCAN_LIMIT : ISSUE_LIST_LIMIT);
   if (filters.status === "active") query = query.neq("status", "resolved");
   else if (filters.status !== "all") query = query.eq("status", filters.status);
-  if (filters.urgency) query = query.eq("urgency", filters.urgency);
+  if (filters.urgency === "urgent") query = query.in("urgency", ["critical", "high"]);
+  else if (filters.urgency) query = query.eq("urgency", filters.urgency);
   if (filters.team === "unassigned") query = query.is("team_id", null);
   else if (filters.team) query = query.eq("team_id", filters.team);
   if (filters.q) {
@@ -257,16 +261,96 @@ export async function listIssues(organizationId: string, filters: IssueFilters):
   return (data ?? []).map(toIssue);
 }
 
-/** Counts for the workspace overview. */
-export async function countOpenIssues(organizationId: string): Promise<number> {
+/**
+ * Open issues for the workspace home's counts (src/lib/dashboard.ts), newest
+ * first, up to DEADLINE_SCAN_LIMIT like the Issues list's deadline filters.
+ */
+export async function listOpenIssuesForDashboard(organizationId: string): Promise<DashboardIssue[]> {
   const supabase = await createClient();
-  const { count, error } = await supabase
+  const { data, error } = await supabase
     .from("issues")
-    .select("id", { count: "exact", head: true })
+    .select("id, received_at, urgency, status, team_id, first_response_at, resolved_at, waiting_seconds, waiting_since")
     .eq("organization_id", organizationId)
-    .neq("status", "resolved");
-  if (error) throw new Error("Could not count issues.");
-  return count ?? 0;
+    .neq("status", "resolved")
+    .order("received_at", { ascending: false })
+    .limit(DEADLINE_SCAN_LIMIT);
+  if (error) {
+    console.error("[listOpenIssuesForDashboard]", error.code, error.message);
+    throw new Error("Could not load issues.");
+  }
+  return (data ?? []).map((row) => ({
+    id: row.id,
+    receivedAt: row.received_at,
+    urgency: row.urgency as Urgency,
+    status: row.status as IssueStatus,
+    teamId: row.team_id,
+    firstResponseAt: row.first_response_at,
+    resolvedAt: row.resolved_at,
+    waitingSeconds: row.waiting_seconds,
+    waitingSince: row.waiting_since,
+  }));
+}
+
+/** How many issues arrived, and how many were resolved, since `since`. */
+export async function countIssuesSince(organizationId: string, since: Date): Promise<{ opened: number; resolved: number }> {
+  const supabase = await createClient();
+  const [opened, resolved] = await Promise.all([
+    supabase
+      .from("issues")
+      .select("id", { count: "exact", head: true })
+      .eq("organization_id", organizationId)
+      .gte("received_at", since.toISOString()),
+    // A reopened issue is resolved again later, so it is counted once, by its latest resolution.
+    supabase
+      .from("issues")
+      .select("id", { count: "exact", head: true })
+      .eq("organization_id", organizationId)
+      .eq("status", "resolved")
+      .gte("resolved_at", since.toISOString()),
+  ]);
+  for (const { error } of [opened, resolved]) {
+    if (error) {
+      console.error("[countIssuesSince]", error.code, error.message);
+      throw new Error("Could not count issues.");
+    }
+  }
+  return { opened: opened.count ?? 0, resolved: resolved.count ?? 0 };
+}
+
+export interface RecentActivity extends IssueActivity {
+  issueId: string;
+  issueReference: string;
+  issueSubject: string;
+}
+
+/** The latest history entries across the company's issues, newest first. */
+export async function listRecentActivity(organizationId: string, limit: number): Promise<RecentActivity[]> {
+  const supabase = await createClient();
+  const { data, error } = await supabase
+    .from("issue_activity")
+    .select("id, issue_id, kind, from_value, to_value, created_at, actor:profiles (full_name), issue:issues (reference, subject)")
+    .eq("organization_id", organizationId)
+    .order("created_at", { ascending: false })
+    .order("id", { ascending: false })
+    .limit(limit);
+  if (error) {
+    console.error("[listRecentActivity]", error.code, error.message);
+    throw new Error("Could not load recent activity.");
+  }
+  return (data ?? []).map((row) => {
+    const issue = row.issue as unknown as { reference: string; subject: string } | null;
+    return {
+      id: row.id,
+      issueId: row.issue_id,
+      issueReference: issue?.reference ?? "",
+      issueSubject: issue?.subject ?? "",
+      kind: row.kind as IssueActivity["kind"],
+      fromValue: row.from_value,
+      toValue: row.to_value,
+      at: row.created_at,
+      actorName: (row.actor as unknown as { full_name: string } | null)?.full_name || null,
+    };
+  });
 }
 
 /** One issue, only if it belongs to this organisation (and the user can see it). */
@@ -660,6 +744,21 @@ export async function listIssueEscalations(organizationId: string, issueId: stri
     acknowledgedByName: (row.acknowledger as unknown as { full_name: string } | null)?.full_name || null,
     acknowledgeNote: row.acknowledge_note,
   }));
+}
+
+/** Issues with at least one escalation nobody has acknowledged. */
+export async function listUnacknowledgedEscalationIssueIds(organizationId: string): Promise<Set<string>> {
+  const supabase = await createClient();
+  const { data, error } = await supabase
+    .from("escalations")
+    .select("issue_id")
+    .eq("organization_id", organizationId)
+    .is("acknowledged_at", null);
+  if (error) {
+    console.error("[listUnacknowledgedEscalationIssueIds]", error.code, error.message);
+    throw new Error("Could not load escalations.");
+  }
+  return new Set((data ?? []).map((row) => row.issue_id as string));
 }
 
 /** The highest unacknowledged escalation level per issue, for the given issues. */

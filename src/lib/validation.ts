@@ -123,10 +123,14 @@ export const updateIssueSchema = z.object({
 /** Inbox filters from the address bar. Anything unexpected is ignored. */
 export const issueFiltersSchema = z.object({
   status: z.union([statusSchema, z.enum(["active", "all"])]).catch("active"),
-  urgency: z.union([urgencySchema, z.literal("")]).catch(""),
+  // "urgent" is Critical or High.
+  urgency: z.union([urgencySchema, z.enum(["", "urgent"])]).catch(""),
   team: z.union([z.string().uuid(), z.literal("unassigned"), z.literal("")]).catch(""),
-  // Deadlines: "overdue" (a target missed) or "soon" (due within the last quarter of its time).
-  due: z.enum(["", "overdue", "soon"]).catch(""),
+  // Deadlines: "overdue" (a target missed), "soon" (due within the last quarter
+  // of its time) or "2h" (due within 2 hours).
+  due: z.enum(["", "overdue", "soon", "2h"]).catch(""),
+  // "open": has an escalation nobody has acknowledged.
+  escalated: z.enum(["", "open"]).catch(""),
   sort: z.enum(["", "attention"]).catch(""),
   // Only plain characters, so the search can't change the database query.
   q: z

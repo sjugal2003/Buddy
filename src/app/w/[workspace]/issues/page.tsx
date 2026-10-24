@@ -6,6 +6,7 @@ import { AiBadge, StatusBadge, UrgencyBadge, SentimentBadge } from "@/components
 import { DeadlineBadge } from "@/components/issues/deadline-badge";
 import { EscalationBadge } from "@/components/escalations/escalation-badge";
 import { compareAttention, deadlines, isOverdue, nextDeadline } from "@/lib/targets";
+import { DUE_WITHIN_MS, isDueWithin } from "@/lib/dashboard";
 import { inputClass, primaryButton, secondaryButton } from "@/components/ui/form";
 import { requireUser } from "@/lib/auth";
 import {
@@ -15,6 +16,7 @@ import {
   ISSUE_LIST_LIMIT,
   listIssues,
   listTeams,
+  listUnacknowledgedEscalationIssueIds,
   openEscalationLevels,
   type LiveTeam,
 } from "@/lib/data/live";
@@ -57,17 +59,24 @@ export default async function IssuesPage({
     urgency: raw.urgency,
     team: raw.team,
     due: raw.due,
+    escalated: raw.escalated,
     sort: raw.sort,
     q: raw.q,
   });
-  const [rows, teams, settings] = await Promise.all([
+  const [rows, teams, settings, escalatedIds] = await Promise.all([
     listIssues(membership.organization.id, filters),
     listTeams(membership.organization.id),
     getOrganizationSettings(membership.organization.id),
+    filters.escalated ? listUnacknowledgedEscalationIssueIds(membership.organization.id) : Promise.resolve(new Set<string>()),
   ]);
   const teamById = new Map(teams.map((t) => [t.id, t]));
   const filtered =
-    filters.status !== "active" || filters.urgency !== "" || filters.team !== "" || filters.due !== "" || filters.q !== "";
+    filters.status !== "active" ||
+    filters.urgency !== "" ||
+    filters.team !== "" ||
+    filters.due !== "" ||
+    filters.escalated !== "" ||
+    filters.q !== "";
 
   // Deadlines use the server's clock and the company's targets (src/lib/targets.ts).
   const now = new Date();
@@ -78,8 +87,12 @@ export default async function IssuesPage({
     withDeadlines = withDeadlines.filter(
       (x) => x.issue.status !== "resolved" && [x.d.firstResponse, x.d.resolution].some((d) => d.state === "due_soon"),
     );
+  // Same rule as the "Due within 2 hours" card on the workspace home (src/lib/dashboard.ts).
+  if (filters.due === "2h")
+    withDeadlines = withDeadlines.filter((x) => x.issue.status !== "resolved" && isDueWithin(x.d, DUE_WITHIN_MS));
+  if (filters.escalated === "open") withDeadlines = withDeadlines.filter((x) => escalatedIds.has(x.issue.id));
   if (filters.sort === "attention") withDeadlines = [...withDeadlines].sort(compareAttention);
-  const scanFull = (filters.due || filters.sort) && rows.length === DEADLINE_SCAN_LIMIT;
+  const scanFull = (filters.due || filters.sort || filters.escalated) && rows.length === DEADLINE_SCAN_LIMIT;
   const issues = withDeadlines.slice(0, ISSUE_LIST_LIMIT);
   const escalationLevels = await openEscalationLevels(
     membership.organization.id,
@@ -100,7 +113,7 @@ export default async function IssuesPage({
 
       <div className="rounded-xl border border-slate-200 bg-white shadow-sm">
         {/* A plain form: filters go in the address bar, so a filtered list can be bookmarked. */}
-        <form method="get" className="grid gap-2 border-b border-slate-200 p-4 sm:grid-cols-2 lg:grid-cols-[1fr_auto_auto_auto_auto_auto_auto]">
+        <form method="get" className="grid gap-2 border-b border-slate-200 p-4 sm:grid-cols-2 lg:grid-cols-[1fr_auto_auto_auto_auto_auto_auto_auto]">
           <div className="relative">
             <Search className="pointer-events-none absolute left-3 top-1/2 h-4 w-4 -translate-y-1/2 text-slate-400" aria-hidden />
             <input
@@ -123,6 +136,7 @@ export default async function IssuesPage({
           </select>
           <select name="urgency" defaultValue={filters.urgency} aria-label="Urgency" className={inputClass}>
             <option value="">Any urgency</option>
+            <option value="urgent">Critical or High</option>
             {urgencyOrder.map((u) => (
               <option key={u} value={u}>
                 {urgencyLabels[u]}
@@ -133,6 +147,11 @@ export default async function IssuesPage({
             <option value="">Any deadline</option>
             <option value="overdue">Overdue</option>
             <option value="soon">Due soon</option>
+            <option value="2h">Due within 2 hours</option>
+          </select>
+          <select name="escalated" defaultValue={filters.escalated} aria-label="Escalations" className={inputClass}>
+            <option value="">Any escalation</option>
+            <option value="open">Not acknowledged</option>
           </select>
           <select name="sort" defaultValue={filters.sort} aria-label="Sort" className={inputClass}>
             <option value="">Newest first</option>
@@ -176,7 +195,7 @@ export default async function IssuesPage({
         ) : (
           <ul className="divide-y divide-slate-100">
             {issues.map(({ issue, d }) => (
-              <li key={issue.id}>
+              <li key={issue.id} data-testid="issue-row">
                 <Link
                   href={`/w/${slug}/issues/${issue.id}`}
                   className="flex flex-col gap-2 px-4 py-3 hover:bg-slate-50 md:flex-row md:items-center md:gap-4"

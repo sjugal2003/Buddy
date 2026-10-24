@@ -5,12 +5,55 @@ import { PageHeader } from "@/components/ui/page-header";
 import { InviteForm, MemberRow } from "@/components/org/members";
 import { cancelInvitation } from "@/app/actions/organizations";
 import { requireUser } from "@/lib/auth";
-import { countOpenIssues, getMembershipBySlug, listMembers, listOpenInvitations } from "@/lib/data/live";
-import { formatDate } from "@/lib/format";
+import {
+  countIssuesSince,
+  DEADLINE_SCAN_LIMIT,
+  getMembershipBySlug,
+  getOrganizationSettings,
+  listMembers,
+  listOpenInvitations,
+  listOpenIssuesForDashboard,
+  listRecentActivity,
+  listUnacknowledgedEscalationIssueIds,
+} from "@/lib/data/live";
+import { describeActivity } from "@/lib/activity";
+import { startOfWeek, summariseOpenIssues } from "@/lib/dashboard";
+import { formatDate, formatDateTimeIn } from "@/lib/format";
 
 export const dynamic = "force-dynamic";
 
 const roleLabels = { owner: "Owner", admin: "Admin", member: "Member" } as const;
+
+const RECENT_ACTIVITY = 10;
+
+/** One number on the home page, linking to the Issues list filtered the same way. */
+function CountCard({
+  label,
+  value,
+  href,
+  hint,
+  alert = false,
+  testId,
+}: {
+  label: string;
+  value: number;
+  href: string;
+  hint: string;
+  alert?: boolean;
+  testId: string;
+}) {
+  return (
+    <Link
+      href={href}
+      data-testid={testId}
+      className="block rounded-xl border border-slate-200 bg-white p-4 shadow-sm hover:border-brand-300 hover:bg-brand-50/40"
+    >
+      <p className="text-xs font-medium text-slate-500">{label}</p>
+      <p className={`mt-1 text-2xl font-semibold tabular-nums ${alert && value > 0 ? "text-red-600" : "text-slate-900"}`}>{value}</p>
+      <p className="mt-1 text-xs text-slate-500">{hint}</p>
+    </Link>
+  );
+}
 
 export default async function LiveWorkspaceHome({ params }: { params: Promise<{ workspace: string }> }) {
   const { workspace: slug } = await params;
@@ -20,11 +63,22 @@ export default async function LiveWorkspaceHome({ params }: { params: Promise<{ 
 
   const { organization, role } = membership;
   const isAdmin = role === "owner" || role === "admin";
-  const [members, invitations, openIssues] = await Promise.all([
-    listMembers(organization.id),
-    isAdmin ? listOpenInvitations(organization.id) : Promise.resolve([]),
-    countOpenIssues(organization.id),
+  const orgId = organization.id;
+  // Counted on the server, from this company's own issues only.
+  const now = new Date();
+  const settings = await getOrganizationSettings(orgId);
+  const weekStart = startOfWeek(now, settings.timezone);
+  const [members, invitations, openIssues, escalatedIds, week, recent] = await Promise.all([
+    listMembers(orgId),
+    isAdmin ? listOpenInvitations(orgId) : Promise.resolve([]),
+    listOpenIssuesForDashboard(orgId),
+    listUnacknowledgedEscalationIssueIds(orgId),
+    countIssuesSince(orgId, weekStart),
+    listRecentActivity(orgId, RECENT_ACTIVITY),
   ]);
+  const targets = { firstResponse: settings.targetHours, resolution: settings.resolutionHours };
+  const counts = summariseOpenIssues(openIssues, targets, escalatedIds, now);
+  const issuesHref = `/w/${slug}/issues`;
 
   return (
     <>
@@ -33,21 +87,114 @@ export default async function LiveWorkspaceHome({ params }: { params: Promise<{ 
         description={`You are ${role === "member" ? "a" : "an"} ${roleLabels[role].toLowerCase()} of this workspace.`}
       />
 
-      <div className="mb-6 rounded-lg border border-brand-200 bg-brand-50 px-4 py-3 text-sm text-slate-700">
-        <p className="font-medium text-slate-900">
-          <Link href={`/w/${slug}/issues`} className="text-brand-700 hover:underline">
-            {openIssues === 0 ? "No open issues" : `${openIssues} open ${openIssues === 1 ? "issue" : "issues"}`}
+      <section aria-labelledby="overview-heading" className="mb-6">
+        <div className="mb-3 flex flex-wrap items-baseline justify-between gap-2">
+          <h2 id="overview-heading" className="text-sm font-semibold text-slate-900">
+            <Link href={issuesHref} className="hover:underline" data-testid="open-issue-count">
+              {openIssues.length === 0
+                ? "No open issues"
+                : `${openIssues.length}${openIssues.length === DEADLINE_SCAN_LIMIT ? "+" : ""} open ${openIssues.length === 1 ? "issue" : "issues"}`}
+            </Link>
+          </h2>
+          <p className="text-xs text-slate-500">Counted just now from this workspace&apos;s own issues.</p>
+        </div>
+        {/* No history at all means the company has never had an issue. */}
+        {openIssues.length === 0 && recent.length === 0 && (
+          <p className="mb-3 rounded-lg border border-slate-200 bg-slate-50 px-4 py-3 text-sm text-slate-600" data-testid="dashboard-empty">
+            Nothing yet. These numbers fill in as issues arrive.{" "}
+            <Link href={`${issuesHref}/new`} className="font-medium text-brand-700 hover:underline">
+              Add the first issue
+            </Link>
+            .
+          </p>
+        )}
+        <div className="grid gap-3 sm:grid-cols-2 lg:grid-cols-4">
+          <CountCard
+            testId="card-urgent"
+            label="Urgent open issues"
+            value={counts.urgent}
+            href={`${issuesHref}?urgency=urgent`}
+            hint="Critical or High urgency"
+          />
+          <CountCard
+            testId="card-due-soon"
+            label="Due within 2 hours"
+            value={counts.dueSoon}
+            href={`${issuesHref}?due=2h`}
+            hint="A first response or resolution"
+          />
+          <CountCard
+            testId="card-breached"
+            label="Targets missed"
+            value={counts.breached}
+            href={`${issuesHref}?due=overdue`}
+            hint="Open issues past a target"
+            alert
+          />
+          <CountCard
+            testId="card-escalated"
+            label="Escalations not acknowledged"
+            value={counts.escalated}
+            href={`${issuesHref}?escalated=open`}
+            hint="Open issues with one or more"
+            alert
+          />
+          <CountCard
+            testId="card-no-team"
+            label="Open with no team"
+            value={counts.noTeam}
+            href={`${issuesHref}?team=unassigned`}
+            hint="Nobody's queue yet"
+          />
+          <CountCard
+            testId="card-waiting"
+            label="Waiting on customer"
+            value={counts.waiting}
+            href={`${issuesHref}?status=waiting_on_customer`}
+            hint="Resolution timer paused"
+          />
+          <Link
+            href={`${issuesHref}?status=all`}
+            data-testid="card-week"
+            className="block rounded-xl border border-slate-200 bg-white p-4 shadow-sm hover:border-brand-300 hover:bg-brand-50/40 sm:col-span-2"
+          >
+            <p className="text-xs font-medium text-slate-500">This week</p>
+            <p className="mt-1 text-2xl font-semibold tabular-nums text-slate-900">
+              <span data-testid="week-resolved">{week.resolved}</span> resolved{" "}
+              <span className="text-base font-normal text-slate-500">
+                · <span data-testid="week-opened">{week.opened}</span> opened
+              </span>
+            </p>
+            <p className="mt-1 text-xs text-slate-500">Since Monday {formatDateTimeIn(weekStart, settings.timezone)}</p>
           </Link>
-        </p>
-        <p className="mt-1">
-          The dashboard and reports arrive here in a later phase. Until then, you
-          can{" "}
-          <Link href="/demo/brightline" className="font-medium text-brand-700 hover:underline">
-            explore them in the demo
-          </Link>
-          .
-        </p>
-      </div>
+        </div>
+        {openIssues.length === DEADLINE_SCAN_LIMIT && (
+          <p className="mt-2 text-xs text-slate-500">Counted over the newest {DEADLINE_SCAN_LIMIT} open issues.</p>
+        )}
+      </section>
+
+      <Card title="Recent activity" description={`The latest ${RECENT_ACTIVITY} changes across this workspace's issues`} className="mb-6">
+        {recent.length === 0 ? (
+          <p className="text-sm text-slate-500" data-testid="recent-activity-empty">
+            Nothing yet. Changes to issues show up here.
+          </p>
+        ) : (
+          <ul className="-my-2 divide-y divide-slate-100" data-testid="recent-activity">
+            {recent.map((event) => (
+              <li key={event.id} className="py-2 text-sm">
+                <Link href={`${issuesHref}/${event.issueId}`} className="font-medium text-slate-900 hover:underline">
+                  {event.issueSubject || event.issueReference}
+                </Link>
+                <span className="text-slate-700">: {describeActivity(event)}</span>
+                <p className="text-xs text-slate-500">
+                  {event.issueReference} · {formatDateTimeIn(event.at, settings.timezone)}
+                  {event.actorName && <> · {event.actorName}</>}
+                </p>
+              </li>
+            ))}
+          </ul>
+        )}
+      </Card>
 
       <div className="grid gap-6 lg:grid-cols-2">
         <Card title="Members" description={`${members.length} ${members.length === 1 ? "person" : "people"}`}>
