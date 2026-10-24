@@ -77,7 +77,7 @@ test("issues: add, update, filter, and keep other companies out", async ({ brows
     await p.goto(issueUrl);
     await p.selectOption("select[name=status]", "resolved");
     await p.click('button:has-text("Save changes")');
-    await shows(p, "text=Status changed from In progress to Resolved");
+    await shows(p, "text=Resolved (was In progress)");
     await p.goto(`/w/${slugA}/issues`);
     await shows(p, "text=No open issues yet");
     await hidden(p, "text=Router keeps dropping");

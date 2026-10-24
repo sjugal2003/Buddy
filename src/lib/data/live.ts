@@ -118,6 +118,11 @@ export interface LiveIssue {
   categoryId: string | null;
   /** "ai" once an AI value was used on the issue. */
   analysisSource: "manual" | "demo" | "ai";
+  firstResponseAt: string | null;
+  resolvedAt: string | null;
+  waitingSeconds: number;
+  waitingSince: string | null;
+  reopenedCount: number;
   /** The AI's one-line summary, or "" if there is none. */
   summary: string;
   updatedAt: string;
@@ -125,7 +130,18 @@ export interface LiveIssue {
 
 export interface IssueActivity {
   id: number;
-  kind: "created" | "status_changed" | "team_changed" | "assignee_changed" | "escalated" | "ai_analysed" | "ai_accepted";
+  kind:
+    | "created"
+    | "status_changed"
+    | "team_changed"
+    | "assignee_changed"
+    | "escalated"
+    | "ai_analysed"
+    | "ai_accepted"
+    | "category_changed"
+    | "first_response"
+    | "resolved"
+    | "reopened";
   fromValue: string | null;
   toValue: string | null;
   actorName: string | null;
@@ -137,6 +153,8 @@ export interface IssueFilters {
   urgency: Urgency | "";
   /** A team ID, "unassigned", or "" for any team. */
   team: string;
+  due: "" | "overdue" | "soon";
+  sort: "" | "attention";
   q: string;
 }
 
@@ -144,7 +162,7 @@ export interface IssueFilters {
 export const ISSUE_LIST_LIMIT = 200;
 
 const ISSUE_COLUMNS =
-  "id, reference, customer_name, channel, subject, message, received_at, sentiment, intent, urgency, status, assignee_name, team_id, category_id, analysis_source, summary, updated_at";
+  "id, reference, customer_name, channel, subject, message, received_at, sentiment, intent, urgency, status, assignee_name, team_id, category_id, analysis_source, summary, first_response_at, resolved_at, waiting_seconds, waiting_since, reopened_count, updated_at";
 
 type IssueRow = {
   id: string;
@@ -163,6 +181,11 @@ type IssueRow = {
   category_id: string | null;
   analysis_source: string;
   summary: string;
+  first_response_at: string | null;
+  resolved_at: string | null;
+  waiting_seconds: number;
+  waiting_since: string | null;
+  reopened_count: number;
   updated_at: string;
 };
 
@@ -184,11 +207,23 @@ function toIssue(row: IssueRow): LiveIssue {
     categoryId: row.category_id,
     analysisSource: row.analysis_source as LiveIssue["analysisSource"],
     summary: row.summary,
+    firstResponseAt: row.first_response_at,
+    resolvedAt: row.resolved_at,
+    waitingSeconds: row.waiting_seconds,
+    waitingSince: row.waiting_since,
+    reopenedCount: row.reopened_count,
     updatedAt: row.updated_at,
   };
 }
 
-/** Issues in one organisation, newest first. `q` must already be cleaned (see issueFiltersSchema). */
+/** How many open issues are read when the list is filtered or sorted by deadline. */
+export const DEADLINE_SCAN_LIMIT = 1000;
+
+/**
+ * Issues in one organisation, newest first. `q` must already be cleaned (see
+ * issueFiltersSchema). Deadline filters and sorting are applied by the page
+ * (src/lib/targets.ts); for those it reads up to DEADLINE_SCAN_LIMIT issues.
+ */
 export async function listIssues(organizationId: string, filters: IssueFilters): Promise<LiveIssue[]> {
   const supabase = await createClient();
   let query = supabase
@@ -196,7 +231,7 @@ export async function listIssues(organizationId: string, filters: IssueFilters):
     .select(ISSUE_COLUMNS)
     .eq("organization_id", organizationId)
     .order("received_at", { ascending: false })
-    .limit(ISSUE_LIST_LIMIT);
+    .limit(filters.due || filters.sort ? DEADLINE_SCAN_LIMIT : ISSUE_LIST_LIMIT);
   if (filters.status === "active") query = query.neq("status", "resolved");
   else if (filters.status !== "all") query = query.eq("status", filters.status);
   if (filters.urgency) query = query.eq("urgency", filters.urgency);
@@ -332,7 +367,9 @@ export interface OrganizationSettings {
   name: string;
   industry: string;
   timezone: string;
+  /** First-response targets. */
   targetHours: Record<Urgency, number>;
+  resolutionHours: Record<Urgency, number>;
 }
 
 export interface AiSettings {
@@ -363,7 +400,9 @@ export async function getOrganizationSettings(organizationId: string): Promise<O
   const supabase = await createClient();
   const { data, error } = await supabase
     .from("organizations")
-    .select("name, industry, timezone, target_hours_critical, target_hours_high, target_hours_medium, target_hours_low")
+    .select(
+      "name, industry, timezone, target_hours_critical, target_hours_high, target_hours_medium, target_hours_low, resolution_hours_critical, resolution_hours_high, resolution_hours_medium, resolution_hours_low",
+    )
     .eq("id", organizationId)
     .single();
   if (error) {
@@ -379,6 +418,12 @@ export async function getOrganizationSettings(organizationId: string): Promise<O
       high: data.target_hours_high,
       medium: data.target_hours_medium,
       low: data.target_hours_low,
+    },
+    resolutionHours: {
+      critical: data.resolution_hours_critical,
+      high: data.resolution_hours_high,
+      medium: data.resolution_hours_medium,
+      low: data.resolution_hours_low,
     },
   };
 }

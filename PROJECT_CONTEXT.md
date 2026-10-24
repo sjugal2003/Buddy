@@ -92,11 +92,11 @@ Demo details:
 | `/onboarding` | `components/org/create-org-form.tsx` | Create a company (`create_organization`), caller becomes owner | |
 | `/invite?token=` | `components/org/members.tsx` | Accept an invitation (`accept_invitation`) | |
 | `/w/[workspace]` | `app/w/[workspace]/page.tsx` | Real workspace home: open issue count, members, role changes (owners), remove/leave, invite links and open invitations (owners and admins) | |
-| `/w/[workspace]/issues` | `app/w/[workspace]/issues/page.tsx` | Issues from the database, newest first (up to 200), filter by status, urgency and team, search customer/reference/subject/message. Filters are in the address bar (plain GET form). Issues with AI values show an "AI suggested" badge (`AiBadge`) and the AI summary instead of the message preview | |
+| `/w/[workspace]/issues` | `app/w/[workspace]/issues/page.tsx` | Issues from the database, newest first (up to 200), filter by status, urgency, team and deadline (overdue / due soon), sort by "needs attention first", search customer/reference/subject/message. Each open issue shows its next deadline (`DeadlineBadge`). Deadline filters and sorting look at up to 1,000 issues (`DEADLINE_SCAN_LIMIT`). Filters are in the address bar (plain GET form). Issues with AI values show an "AI suggested" badge (`AiBadge`) and the AI summary instead of the message preview | |
 | `/w/[workspace]/issues/new` | `components/issues/issue-forms.tsx` | Add an issue: customer, channel, subject, message, urgency, sentiment, type, team, category (`createIssue`). When AI is on and set up, urgency, sentiment and type default to "Let AI decide" (saved with the usual defaults, then filled by the AI); an empty category is also filled | |
-| `/w/[workspace]/issues/[issueId]` | `app/w/[workspace]/issues/[issueId]/page.tsx` | Issue detail, change status, assignee, team and category (any member of the workspace, `updateIssue`), history from `issue_activity`. "AI analysis" panel (`components/issues/ai-panel.tsx`, `app/actions/ai.ts`): right after creation it runs `analyseIssue` in a separate request (`?analyse=<fields>`), shows the summary, next step, themes and each suggestion with an Accept button when it differs (`acceptAiValue`), "Analyse again", and failures with the reason | Checked with real Gemini answers by Jugal (2026-10-24); Claude not yet tried with a real key |
+| `/w/[workspace]/issues/[issueId]` | `app/w/[workspace]/issues/[issueId]/page.tsx` | Issue detail, change status, assignee, team and category (any member of the workspace, `updateIssue`), history from `issue_activity` (status, resolved, reopened, team, category, assignee, first response, AI). "Deadlines" card: first-response and resolution deadline in the company time zone, worked out on the server (`src/lib/targets.ts`), "Record first response" button (`recordFirstResponse`, any member), reopen count. "AI analysis" panel (`components/issues/ai-panel.tsx`, `app/actions/ai.ts`): right after creation it runs `analyseIssue` in a separate request (`?analyse=<fields>`), shows the summary, next step, themes and each suggestion with an Accept button when it differs (`acceptAiValue`), "Analyse again", and failures with the reason | Checked with real Gemini answers by Jugal (2026-10-24); Claude not yet tried with a real key |
 | `/w/[workspace]/routing` | `components/routing/routing-forms.tsx` | Routing rules from the database: add, edit (conditions on category, urgency, sentiment, type, channel, message text; match all or any), reorder, switch off, delete. Owners and admins edit (`app/actions/routing.ts`); members see them read-only. "Route open issues that have no team" gives each open issue without a team the team its first matching rule suggests (`routeUnassignedIssues`, up to 500 at a time). The issue page shows the matching rule and an "Apply suggestion" button (`applySuggestedTeam`, any member). Both recompute the match on the server and never overwrite a team someone already chose | Automatic routing only after AI analysis, when an owner switched it on (Phase 3 stage 14) |
-| `/w/[workspace]/settings` | `components/settings/settings-forms.tsx` | Company name, industry, time zone, first-response targets; add/rename/delete teams (name, lead, email, colour) and categories; "AI analysis" card (on/off, monthly limit, analyses used this month and approximate cost, whether this server has an AI key). Owners and admins edit (`app/actions/settings.ts`); members see it read-only. "Apply routing automatically" (owners only) | Team email is display only |
+| `/w/[workspace]/settings` | `components/settings/settings-forms.tsx` | Company name, industry, time zone, first-response and resolution targets; add/rename/delete teams (name, lead, email, colour) and categories; "AI analysis" card (on/off, monthly limit, analyses used this month and approximate cost, whether this server has an AI key). Owners and admins edit (`app/actions/settings.ts`); members see it read-only. "Apply routing automatically" (owners only) | Team email is display only |
 
 Every `/w/[workspace]` page has a "Something went wrong, try again" screen
 (`error.tsx`). Forms show "Saving…" while they work; while a page loads, the
@@ -166,6 +166,7 @@ React state and localStorage. Nothing is sent to a server.
 
 Applied to Jugal's hosted development project with `supabase db push`, up
 to the stage 14 migration (2026-10-24, checked by using automatic routing).
+The stage 16 migration is applied after its PR is merged.
 No production database exists.
 
 Files (`supabase/`):
@@ -179,7 +180,8 @@ Files (`supabase/`):
 | `migrations/20261024090000_ai_analysis.sql` | Stage 12: `organizations.ai_enabled` (default off) and `ai_monthly_limit` (default 500, 0 to 2,000); `issue_analyses` table; `start_issue_analysis` / `finish_issue_analysis`; history kinds `ai_analysed`, `ai_accepted` |
 | `migrations/20261024120000_ai_accept.sql` | Stage 13: `accept_issue_analysis(analysis, fields)` copies a finished analysis's values onto its issue and writes `ai_accepted` history |
 | `migrations/20261024150000_ai_auto_route.sql` | Stage 14: `organizations.ai_auto_route` (default off) and a trigger that lets only owners change it |
-| `tests/security_test.sql` | 157 checks of tenant isolation, roles, invitations, teams, categories, settings, routing rules and AI analysis; runs in one transaction and rolls back |
+| `migrations/20261025090000_resolution_tracking.sql` | Phase 4 stage 16: `organizations.resolution_hours_*` (8/24/72/120 by default, 1 to 2,160); `issues.first_response_by`, `reopened_count`, `waiting_seconds`, `waiting_since` (kept by the `issue_track_lifecycle` trigger); `record_first_response(issue)`; history kinds `category_changed`, `first_response`, `resolved`, `reopened` |
+| `tests/security_test.sql` | 181 checks of tenant isolation, roles, invitations, teams, categories, settings, routing rules, AI analysis and resolution tracking; runs in one transaction and rolls back |
 | `tests/local-supabase-stub.sql` | Minimal stand-in for Supabase's `auth` schema and roles, for plain PostgreSQL only. Never run on Supabase |
 
 Tables: `profiles`, `organizations`, `organization_members`,
@@ -195,7 +197,9 @@ How access works:
   Security then limits rows to organisations they are a member of
   (`private.is_member`, `private.has_role`).
 - Members: read everything in their organisation, create issues, update only
-  `status`, `team_id`, `category_id`, `assignee_name`, `first_response_at`.
+  `status`, `team_id`, `category_id`, `assignee_name`. The first response is
+  recorded only through `record_first_response` (time set by the database,
+  once per issue); reopen count and waiting time are set only by a trigger.
 - Owners/admins: also manage teams, categories, routing rules, automation
   settings, company profile, invitations, and delete issues.
 - Memberships change only through `create_organization`, `accept_invitation`
@@ -284,9 +288,9 @@ npx.cmd supabase db push
 
 | Command | What it checks | Needs |
 |---|---|---|
-| `npm.cmd test` | Unit tests (`tests/unit/`): routing rule matching, analytics, input rules, AI engine with stand-in clients | Nothing |
-| `npm.cmd run test:db` | `supabase/tests/security_test.sql` (157 checks); rolls itself back | Local Supabase |
-| `npm.cmd run test:e2e` | Browser tests (`tests/e2e/`, Playwright): sign-up, invitations, roles, issues, settings, routing, AI analysis and automatic routing (free test analyser), cross-company access | Local Supabase, test browser |
+| `npm.cmd test` | Unit tests (`tests/unit/`): routing rule matching, analytics, input rules, deadlines, AI engine with stand-in clients | Nothing |
+| `npm.cmd run test:db` | `supabase/tests/security_test.sql` (181 checks); rolls itself back | Local Supabase |
+| `npm.cmd run test:e2e` | Browser tests (`tests/e2e/`, Playwright): sign-up, invitations, roles, issues, settings, routing, AI analysis and automatic routing (free test analyser), deadlines and first response, cross-company access | Local Supabase, test browser |
 
 Local Supabase needs Docker Desktop. One-time setup, then each time:
 
@@ -406,7 +410,7 @@ run keeps the Playwright report for 7 days (Actions > the run > Artifacts).
 2. Database, authentication, tenant isolation. **Done (2026-10-23).** Also
    brought forward from phase 4: issue tracking and suggest-only routing.
 3. AI analysis of customer messages. **Done (2026-10-24).**
-4. Routing, issue tracking, escalation.
+4. Routing, issue tracking, escalation. **In progress.**
 5. Supported data-source integrations.
 6. Notifications, schedules, reports.
 7. Security, reliability and deployment readiness.
@@ -505,5 +509,21 @@ routing use AI values, 15 docs.
 - Stage 15: README, this file and CLAUDE.md brought up to date (this PR).
   PR #13 (same day) switched the update steps to `npm.cmd ci`.
 
-Phase 3 is complete. Next: the Phase 4 plan (routing, issue tracking,
-escalation), to be approved before any work starts.
+Phase 3 is complete.
+
+Phase 4 (routing, issue tracking, escalation). Plan approved by Jugal on
+2026-10-24 with all recommended decisions
+(https://claude.ai/artifact/V181LkvSKRvS81NYB9MCtm). Stages: 16 resolution
+tracking and deadlines, 17 escalation engine ("Check now"), 18 routing
+explanations and conflicts, 19 dashboard, 20 scheduled checks (pg_cron),
+21 docs.
+- Stage 16: resolution targets in Settings; deadlines for first response
+  and resolution (counted around the clock; time in "Waiting on customer"
+  pauses the resolution deadline; a reopened issue keeps its original
+  arrival time); "Record first response" button (never inferred from a
+  status change); reopen count; history for category, resolved, reopened
+  and first response; deadline filter and "needs attention first" sort on
+  the Issues list. Migration `20261025090000_resolution_tracking.sql`.
+  181/181 security checks, 8/8 browser tests (new
+  `tests/e2e/deadlines.spec.ts`), 65 unit tests, lint, type check, build
+  (2026-10-24).

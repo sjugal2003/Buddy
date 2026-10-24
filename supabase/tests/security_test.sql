@@ -625,6 +625,79 @@ select tests.act_as(current_setting('t.a_owner')::uuid);
 select tests.expect_affected(format('update public.organizations set ai_auto_route = true where id = %L',
   current_setting('t.org_a')), 1, 'owner A switches automatic routing on');
 
+-- ---------------------------------------------------------------------------
+-- Resolution tracking (Phase 4 stage 16)
+-- ---------------------------------------------------------------------------
+
+select tests.expect_rows(format($q$select 1 from public.issue_activity where issue_id = %L and kind = 'category_changed'
+  and to_value = 'A Billing'$q$, current_setting('t.issue_a')), 0, 'accepting an AI category is recorded once (as ai_accepted), not twice');
+
+select tests.act_as(current_setting('t.invitee')::uuid);
+select tests.expect_error(format($q$update public.issues set first_response_at = now() - interval '1 day' where id = %L$q$,
+  current_setting('t.issue_a')), 'a member cannot set or backdate the first response directly');
+select tests.expect_error(format($q$update public.issues set reopened_count = 0, waiting_seconds = 0 where id = %L$q$,
+  current_setting('t.issue_a')), 'a member cannot change the reopen count or waiting time');
+select tests.expect_affected(format('update public.organizations set resolution_hours_critical = 1 where id = %L',
+  current_setting('t.org_a')), 0, 'a member cannot change resolution targets');
+
+select tests.act_as(current_setting('t.b_owner')::uuid);
+select tests.expect_error(format('select public.record_first_response(%L)', current_setting('t.issue_a')),
+  'owner B cannot record a first response on a company A issue');
+
+select tests.act_as(current_setting('t.invitee')::uuid);
+select tests.expect_rows(format('select 1 where public.record_first_response(%L) is not null', current_setting('t.issue_a')), 1,
+  'a member records the first response');
+select tests.expect_rows(format('select 1 from public.issues where id = %L and first_response_at is not null and first_response_by = %L',
+  current_setting('t.issue_a'), current_setting('t.invitee')), 1, 'it stores when and who');
+select tests.expect_error(format('select public.record_first_response(%L)', current_setting('t.issue_a')),
+  'the first response cannot be recorded twice');
+select tests.expect_rows(format($q$select 1 from public.issue_activity where issue_id = %L and kind = 'first_response'
+  and actor_id = %L$q$, current_setting('t.issue_a'), current_setting('t.invitee')), 1, 'the first response is in the history');
+
+select tests.expect_affected(format($q$update public.issues set status = 'waiting_on_customer' where id = %L$q$,
+  current_setting('t.issue_a')), 1, 'a member sets Waiting on customer');
+select tests.expect_rows(format('select 1 from public.issues where id = %L and waiting_since is not null',
+  current_setting('t.issue_a')), 1, 'the waiting spell starts');
+reset role;
+update public.issues set waiting_since = now() - interval '2 hours' where id = current_setting('t.issue_a')::uuid;
+set local role authenticated;
+select tests.act_as(current_setting('t.invitee')::uuid);
+select tests.expect_affected(format($q$update public.issues set status = 'in_progress' where id = %L$q$,
+  current_setting('t.issue_a')), 1, 'a member moves it back to In progress');
+select tests.expect_rows(format('select 1 from public.issues where id = %L and waiting_since is null and waiting_seconds >= 7200',
+  current_setting('t.issue_a')), 1, 'the waiting time is added up');
+
+select set_config('t.reopens', (select reopened_count::text from public.issues where id = current_setting('t.issue_a')::uuid), true);
+select tests.expect_affected(format($q$update public.issues set status = 'resolved' where id = %L$q$,
+  current_setting('t.issue_a')), 1, 'a member resolves the issue');
+select tests.expect_rows(format($q$select 1 from (select kind from public.issue_activity where issue_id = %L
+  order by id desc limit 1) x where kind = 'resolved'$q$, current_setting('t.issue_a')), 1, 'resolving is in the history');
+select tests.expect_affected(format($q$update public.issues set status = 'open' where id = %L$q$,
+  current_setting('t.issue_a')), 1, 'a member reopens the issue');
+select tests.expect_rows(format($q$select 1 from public.issues where id = %L and reopened_count = %s + 1 and resolved_at is null$q$,
+  current_setting('t.issue_a'), current_setting('t.reopens')), 1, 'reopening counts and clears the resolved time');
+select tests.expect_rows(format($q$select 1 from (select kind, from_value, to_value from public.issue_activity
+  where issue_id = %L order by id desc limit 1) x where kind = 'reopened' and from_value = 'resolved' and to_value = 'open'$q$,
+  current_setting('t.issue_a')), 1, 'reopening is in the history');
+
+select tests.expect_affected(format('update public.issues set category_id = %L where id = %L',
+  current_setting('t.cat_a2'), current_setting('t.issue_a')), 1, 'a member sets the category');
+select tests.expect_affected(format('update public.issues set category_id = null where id = %L',
+  current_setting('t.issue_a')), 1, 'a member clears the category');
+select tests.expect_rows(format($q$select 1 from (select kind, from_value, to_value from public.issue_activity
+  where issue_id = %L order by id desc limit 1) x where kind = 'category_changed' and from_value = 'A Billing' and to_value = 'No category'$q$,
+  current_setting('t.issue_a')), 1, 'category changes are in the history');
+
+select tests.act_as(current_setting('t.b_owner')::uuid);
+select tests.expect_rows(format('select 1 from public.issue_activity where issue_id = %L', current_setting('t.issue_a')), 0,
+  'owner B cannot read company A history');
+
+select tests.act_as(current_setting('t.a_owner')::uuid);
+select tests.expect_error(format('update public.organizations set resolution_hours_low = 2161 where id = %L',
+  current_setting('t.org_a')), 'resolution targets cannot go above 2,160 hours');
+select tests.expect_affected(format('update public.organizations set resolution_hours_critical = 10 where id = %L',
+  current_setting('t.org_a')), 1, 'owner A changes a resolution target');
+
 -- Deleting the issue keeps its analyses, so the monthly count cannot be reset.
 select tests.act_as(current_setting('t.a_owner')::uuid);
 select tests.expect_affected(format('delete from public.issues where id = %L', current_setting('t.issue_a')), 1,

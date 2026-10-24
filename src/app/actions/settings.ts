@@ -40,6 +40,10 @@ export async function updateOrganization(_prev: FormState, formData: FormData): 
     targetHigh: formData.get("targetHigh"),
     targetMedium: formData.get("targetMedium"),
     targetLow: formData.get("targetLow"),
+    resolutionCritical: formData.get("resolutionCritical"),
+    resolutionHigh: formData.get("resolutionHigh"),
+    resolutionMedium: formData.get("resolutionMedium"),
+    resolutionLow: formData.get("resolutionLow"),
   });
   if (!parsed.success) return { fieldErrors: fieldErrors(parsed.error) };
 
@@ -54,6 +58,10 @@ export async function updateOrganization(_prev: FormState, formData: FormData): 
       target_hours_high: parsed.data.targetHigh,
       target_hours_medium: parsed.data.targetMedium,
       target_hours_low: parsed.data.targetLow,
+      resolution_hours_critical: parsed.data.resolutionCritical,
+      resolution_hours_high: parsed.data.resolutionHigh,
+      resolution_hours_medium: parsed.data.resolutionMedium,
+      resolution_hours_low: parsed.data.resolutionLow,
     })
     .eq("id", parsed.data.organizationId)
     .select("id");

@@ -29,6 +29,13 @@ const targetField: Record<Urgency, string> = {
   low: "targetLow",
 };
 
+const resolutionField: Record<Urgency, string> = {
+  critical: "resolutionCritical",
+  high: "resolutionHigh",
+  medium: "resolutionMedium",
+  low: "resolutionLow",
+};
+
 export function OrganizationForm({
   organizationId,
   settings,
@@ -78,6 +85,28 @@ export function OrganizationForm({
                   className={inputClass}
                 />
                 <FieldError message={state.fieldErrors?.[targetField[u]]} />
+              </Field>
+            ))}
+          </div>
+        </fieldset>
+        <fieldset>
+          <legend className="mb-1 text-xs font-medium text-slate-600">Resolution targets (hours)</legend>
+          <p className="mb-2 text-xs text-slate-500">
+            Counted from when the issue arrived, around the clock. Time in &ldquo;Waiting on customer&rdquo; doesn&apos;t count.
+          </p>
+          <div className="grid grid-cols-2 gap-3 sm:grid-cols-4">
+            {urgencyOrder.map((u) => (
+              <Field key={u} label={urgencyLabels[u]}>
+                <input
+                  name={resolutionField[u]}
+                  type="number"
+                  min={1}
+                  max={2160}
+                  step={1}
+                  defaultValue={settings.resolutionHours[u]}
+                  className={inputClass}
+                />
+                <FieldError message={state.fieldErrors?.[resolutionField[u]]} />
               </Field>
             ))}
           </div>

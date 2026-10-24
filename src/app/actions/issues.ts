@@ -6,7 +6,7 @@ import { createClient } from "@/lib/supabase/server";
 import { getCurrentUser } from "@/lib/auth";
 import { friendlyError } from "@/lib/errors";
 import { getAnalyser } from "@/lib/ai";
-import { createIssueSchema, fieldErrors, updateIssueSchema, type AiField } from "@/lib/validation";
+import { createIssueSchema, fieldErrors, idSchema, updateIssueSchema, type AiField } from "@/lib/validation";
 import type { FormState } from "./types";
 
 // Every action below runs as the signed-in user. The database checks that
@@ -108,4 +108,21 @@ export async function updateIssue(_prev: FormState, formData: FormData): Promise
   const slug = (data[0].organization as unknown as { slug: string }).slug;
   revalidatePath(`/w/${slug}`, "layout");
   return { success: "Changes saved." };
+}
+
+/**
+ * Records that someone answered the customer. Buddy doesn't send replies
+ * itself yet, so a person says when they did; the database stores the time
+ * and who, only once, and only for their own company's issues.
+ */
+export async function recordFirstResponse(_prev: FormState, formData: FormData): Promise<FormState> {
+  if (!(await getCurrentUser())) return SIGNED_OUT;
+  const issueId = idSchema.safeParse(formData.get("issueId"));
+  if (!issueId.success) return { error: "Something went wrong. Reload the page and try again." };
+
+  const supabase = await createClient();
+  const { error } = await supabase.rpc("record_first_response", { p_issue_id: issueId.data });
+  if (error) return { error: friendlyError(error, "We couldn't record the first response. Please try again.", "recordFirstResponse") };
+  revalidatePath("/w/[workspace]", "layout");
+  return { success: "First response recorded." };
 }

@@ -66,7 +66,11 @@ describe("issues", () => {
       urgency: "",
       team: "",
       q: "",
+      due: "",
+      sort: "",
     });
+    expect(issueFiltersSchema.parse({ due: "bogus", sort: "oldest" })).toMatchObject({ due: "", sort: "" });
+    expect(issueFiltersSchema.parse({ due: "overdue", sort: "attention" })).toMatchObject({ due: "overdue", sort: "attention" });
     expect(issueFiltersSchema.parse({ status: "all", q: "  o'neil,(id.eq.1)*  " }).q).toBe("o'neil id.eq.1");
   });
 });
@@ -82,8 +86,15 @@ describe("settings", () => {
       targetHigh: "4",
       targetMedium: "8",
       targetLow: "24",
+      resolutionCritical: "8",
+      resolutionHigh: "24",
+      resolutionMedium: "72",
+      resolutionLow: "120",
     };
     expect(updateOrganizationSchema.parse(base).targetLow).toBe(24);
+    expect(updateOrganizationSchema.parse(base).resolutionLow).toBe(120);
+    expect(updateOrganizationSchema.safeParse({ ...base, resolutionLow: "2161" }).success).toBe(false);
+    expect(updateOrganizationSchema.safeParse({ ...base, resolutionHigh: "0" }).success).toBe(false);
     expect(updateOrganizationSchema.safeParse({ ...base, targetHigh: "0" }).success).toBe(false);
     expect(updateOrganizationSchema.safeParse({ ...base, targetHigh: "1.5" }).success).toBe(false);
     expect(updateOrganizationSchema.safeParse({ ...base, targetLow: "721" }).success).toBe(false);
