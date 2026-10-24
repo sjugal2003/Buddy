@@ -14,7 +14,7 @@ test("AI settings: off by default, owners switch it on, members and other compan
     await expect(p.getByTestId("ai-status")).toHaveText("Off");
     await expect(p.getByTestId("ai-usage")).toHaveText("0 of 500");
     await expect(p.locator("input[name=enabled]")).not.toBeChecked();
-    await shows(p, "text=Buddy does not analyse issues yet");
+    await shows(p, "text=Test analyser (no real AI, free)");
   });
 
   await test.step("a limit above 2,000 is refused and nothing changes", async () => {

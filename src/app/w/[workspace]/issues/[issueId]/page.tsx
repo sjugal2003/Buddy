@@ -5,9 +5,13 @@ import { Card } from "@/components/ui/card";
 import { SentimentBadge, StatusBadge, UrgencyBadge } from "@/components/ui/badges";
 import { FormMessage } from "@/components/auth/auth-card";
 import { UpdateIssueForm } from "@/components/issues/issue-forms";
+import { AiPanel } from "@/components/issues/ai-panel";
+import { aiServiceStatus } from "@/lib/ai";
 import { requireUser } from "@/lib/auth";
 import {
+  getAiEnabled,
   getIssue,
+  getLatestAnalysis,
   getMembershipBySlug,
   listCategories,
   listIssueActivity,
@@ -19,9 +23,9 @@ import {
 } from "@/lib/data/live";
 import { findMatchingRule } from "@/lib/routing";
 import { ApplySuggestionButton } from "@/components/routing/routing-forms";
-import { channelLabels, intentLabels, statusLabels } from "@/lib/labels";
+import { channelLabels, intentLabels, sentimentLabels, statusLabels, urgencyLabels } from "@/lib/labels";
 import { formatDateTime } from "@/lib/format";
-import { statusSchema } from "@/lib/validation";
+import { aiFieldSchema, intentSchema, sentimentSchema, statusSchema, urgencySchema } from "@/lib/validation";
 import { z } from "zod";
 
 export const dynamic = "force-dynamic";
@@ -29,6 +33,17 @@ export const dynamic = "force-dynamic";
 function statusName(value: string | null) {
   const parsed = statusSchema.safeParse(value);
   return parsed.success ? statusLabels[parsed.data] : (value ?? "none");
+}
+
+const fieldNames: Record<string, string> = { sentiment: "sentiment", intent: "type", urgency: "urgency", category: "category" };
+
+/** A value as people read it, e.g. "very_negative" becomes "Very negative". */
+function valueName(field: string, value: string | null) {
+  const label =
+    (field === "urgency" && urgencySchema.safeParse(value).success && urgencyLabels[value as keyof typeof urgencyLabels]) ||
+    (field === "sentiment" && sentimentSchema.safeParse(value).success && sentimentLabels[value as keyof typeof sentimentLabels]) ||
+    (field === "intent" && intentSchema.safeParse(value).success && intentLabels[value as keyof typeof intentLabels]);
+  return label || (value ?? "none");
 }
 
 function describe(event: IssueActivity) {
@@ -44,6 +59,13 @@ function describe(event: IssueActivity) {
       return event.toValue ? `Moved to team ${event.toValue}` : `Removed from team ${event.fromValue ?? ""}`.trim();
     case "escalated":
       return "Escalated";
+    case "ai_analysed":
+      return `Analysed by AI (suggested urgency ${valueName("urgency", event.toValue)})`;
+    case "ai_accepted": {
+      // from_value is "<field>:<old value>", written by accept_issue_analysis.
+      const [field, ...rest] = (event.fromValue ?? "").split(":");
+      return `Accepted AI ${fieldNames[field] ?? field}: ${valueName(field, rest.join(":"))} → ${valueName(field, event.toValue)}`;
+    }
   }
 }
 
@@ -52,7 +74,7 @@ export default async function IssuePage({
   searchParams,
 }: {
   params: Promise<{ workspace: string; issueId: string }>;
-  searchParams: Promise<{ created?: string }>;
+  searchParams: Promise<{ created?: string; analyse?: string }>;
 }) {
   const { workspace: slug, issueId } = await params;
   const user = await requireUser(`/w/${slug}/issues/${issueId}`);
@@ -62,18 +84,23 @@ export default async function IssuePage({
   const orgId = membership.organization.id;
   const issue = await getIssue(orgId, issueId);
   if (!issue) notFound();
-  const [activity, members, teams, categories] = await Promise.all([
+  const [activity, members, teams, categories, analysis, aiEnabled] = await Promise.all([
     listIssueActivity(orgId, issueId),
     listMembers(orgId),
     listTeams(orgId),
     listCategories(orgId),
+    getLatestAnalysis(orgId, issueId),
+    getAiEnabled(orgId),
   ]);
   const rules = await listRoutingRules(orgId);
   const suggestedRule = findMatchingRule(rules, toRoutable(issue));
   const suggestedTeam = teams.find((t) => t.id === suggestedRule?.teamId);
   const team = teams.find((t) => t.id === issue.teamId);
   const category = categories.find((c) => c.id === issue.categoryId);
-  const { created } = await searchParams;
+  const { created, analyse } = await searchParams;
+  // ?analyse=urgency,category (or "none") is set right after the issue is created.
+  const autoFill =
+    analyse === undefined ? null : analyse.split(",").flatMap((f) => (aiFieldSchema.safeParse(f).success ? [aiFieldSchema.parse(f)] : []));
 
   return (
     <>
@@ -150,24 +177,38 @@ export default async function IssuePage({
           </Card>
         </div>
 
-        <Card title="History">
-          {activity.length === 0 ? (
-            <p className="text-sm text-slate-500">No changes yet.</p>
-          ) : (
-            <ol className="space-y-3 border-l border-slate-200 pl-4">
-              {activity.map((event) => (
-                <li key={event.id} className="relative text-sm">
-                  <span className="absolute -left-[21px] top-1.5 h-2 w-2 rounded-full bg-slate-300" />
-                  <p className="text-slate-800">{describe(event)}</p>
-                  <p className="flex items-center gap-1 text-xs text-slate-500">
-                    <Clock className="h-3 w-3" aria-hidden /> {formatDateTime(event.at)}
-                    {event.actorName && <> · {event.actorName}</>}
-                  </p>
-                </li>
-              ))}
-            </ol>
-          )}
-        </Card>
+        <div className="space-y-6">
+          <Card title="AI analysis">
+            <AiPanel
+              issueId={issue.id}
+              analysis={analysis}
+              aiEnabled={aiEnabled}
+              aiConfigured={aiServiceStatus() !== "not_configured"}
+              autoFill={autoFill}
+              current={{ sentiment: issue.sentiment, intent: issue.intent, urgency: issue.urgency, categoryId: issue.categoryId }}
+              categories={categories}
+            />
+          </Card>
+
+          <Card title="History">
+            {activity.length === 0 ? (
+              <p className="text-sm text-slate-500">No changes yet.</p>
+            ) : (
+              <ol className="space-y-3 border-l border-slate-200 pl-4">
+                {activity.map((event) => (
+                  <li key={event.id} className="relative text-sm">
+                    <span className="absolute -left-[21px] top-1.5 h-2 w-2 rounded-full bg-slate-300" />
+                    <p className="text-slate-800">{describe(event)}</p>
+                    <p className="flex items-center gap-1 text-xs text-slate-500">
+                      <Clock className="h-3 w-3" aria-hidden /> {formatDateTime(event.at)}
+                      {event.actorName && <> · {event.actorName}</>}
+                    </p>
+                  </li>
+                ))}
+              </ol>
+            )}
+          </Card>
+        </div>
       </div>
     </>
   );

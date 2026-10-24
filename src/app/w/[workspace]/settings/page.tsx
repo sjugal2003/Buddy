@@ -73,9 +73,9 @@ export default async function SettingsPage({ params }: { params: Promise<{ works
 
         <Card title="AI analysis" description="Claude Haiku 5.5 suggests each issue's sentiment, type, urgency and category.">
           <div className="space-y-4">
-            <p className="rounded-lg bg-amber-50 px-3 py-2 text-xs text-amber-800">
-              Buddy does not analyse issues yet: that arrives in the next update. Switching this on now only gets the
-              company ready.
+            <p className="text-xs text-slate-500">
+              When on, each new issue is analysed after it is saved. Results are marked &ldquo;AI suggested&rdquo; and
+              people can change them.
             </p>
             <dl className="grid grid-cols-[auto_1fr] gap-x-6 gap-y-2 text-sm">
               <dt className="text-slate-500">Status</dt>

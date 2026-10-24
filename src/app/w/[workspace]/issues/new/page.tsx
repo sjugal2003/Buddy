@@ -4,7 +4,8 @@ import { Card } from "@/components/ui/card";
 import { PageHeader } from "@/components/ui/page-header";
 import { NewIssueForm } from "@/components/issues/issue-forms";
 import { requireUser } from "@/lib/auth";
-import { getMembershipBySlug, listCategories, listTeams } from "@/lib/data/live";
+import { getAnalyser } from "@/lib/ai";
+import { getAiEnabled, getMembershipBySlug, listCategories, listTeams } from "@/lib/data/live";
 
 export const dynamic = "force-dynamic";
 
@@ -14,7 +15,8 @@ export default async function NewIssuePage({ params }: { params: Promise<{ works
   const membership = await getMembershipBySlug(user.id, slug);
   if (!membership) notFound();
   const orgId = membership.organization.id;
-  const [teams, categories] = await Promise.all([listTeams(orgId), listCategories(orgId)]);
+  const [teams, categories, aiEnabled] = await Promise.all([listTeams(orgId), listCategories(orgId), getAiEnabled(orgId)]);
+  const aiReady = aiEnabled && getAnalyser() !== null;
 
   return (
     <>
@@ -28,7 +30,7 @@ export default async function NewIssuePage({ params }: { params: Promise<{ works
         }
       />
       <Card>
-        <NewIssueForm organizationId={orgId} teams={teams} categories={categories} />
+        <NewIssueForm organizationId={orgId} teams={teams} categories={categories} aiReady={aiReady} />
       </Card>
     </>
   );

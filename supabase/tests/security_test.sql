@@ -588,6 +588,27 @@ select tests.act_as(current_setting('t.invitee')::uuid);
 select tests.expect_error(format('select public.start_issue_analysis(%L)', current_setting('t.issue_a')),
   'no more analyses once the monthly limit is used (failed ones count too)');
 
+-- Accepting AI suggestions (stage 13)
+select tests.act_as(current_setting('t.b_owner')::uuid);
+select tests.expect_error(format($q$select public.accept_issue_analysis(%L, array['urgency'])$q$,
+  current_setting('t.an1')), 'owner B cannot use a company A analysis');
+select tests.act_as(current_setting('t.invitee')::uuid);
+select tests.expect_error(format($q$select public.accept_issue_analysis(%L, array['status'])$q$,
+  current_setting('t.an1')), 'only AI fields can be accepted');
+select tests.expect_error(format($q$select public.accept_issue_analysis(%L, array['urgency'])$q$,
+  current_setting('t.an2')), 'a failed analysis cannot be accepted');
+select tests.expect_error(format($q$update public.issues set urgency = 'low' where id = %L$q$,
+  current_setting('t.issue_a')), 'a member still cannot set urgency directly');
+select tests.expect_rows(format($q$select 1 where public.accept_issue_analysis(%L, array['urgency', 'category', 'summary']) = 2$q$,
+  current_setting('t.an1')), 1, 'a member accepts the AI urgency and category');
+select tests.expect_rows(format($q$select 1 from public.issues where id = %L and urgency = 'high' and category_id = %L
+  and analysis_source = 'ai' and summary = 'Charged twice.'$q$,
+  current_setting('t.issue_a'), current_setting('t.cat_a2')), 1, 'the issue now has the AI values');
+select tests.expect_rows(format($q$select 1 from public.issue_activity where issue_id = %L and kind = 'ai_accepted'$q$,
+  current_setting('t.issue_a')), 2, 'each accepted value is in the history');
+select tests.expect_rows(format($q$select 1 where public.accept_issue_analysis(%L, array['urgency']) = 0$q$,
+  current_setting('t.an1')), 1, 'accepting the same value again changes nothing');
+
 -- Deleting the issue keeps its analyses, so the monthly count cannot be reset.
 select tests.act_as(current_setting('t.a_owner')::uuid);
 select tests.expect_affected(format('delete from public.issues where id = %L', current_setting('t.issue_a')), 1,

@@ -90,10 +90,22 @@ export const createIssueSchema = z.object({
   channel: channelSchema,
   subject: z.string().trim().min(1, "Enter a subject.").max(200, "Use 200 characters or fewer."),
   message: z.string().trim().min(1, "Enter what the customer said.").max(10000, "Use 10,000 characters or fewer."),
-  urgency: urgencySchema,
-  sentiment: sentimentSchema,
-  intent: intentSchema,
+  // "ai" means "Let AI decide": saved with the usual default, then filled by the AI.
+  urgency: z.union([urgencySchema, z.literal("ai")]),
+  sentiment: z.union([sentimentSchema, z.literal("ai")]),
+  intent: z.union([intentSchema, z.literal("ai")]),
 });
+
+/** Issue fields an AI analysis can fill in. "summary" also covers themes and the next step. */
+export const aiFieldSchema = z.enum(["sentiment", "intent", "urgency", "category", "summary"]);
+export type AiField = z.infer<typeof aiFieldSchema>;
+
+export const analyseIssueSchema = z.object({
+  issueId: z.string().uuid(),
+  fill: z.array(aiFieldSchema).max(5),
+});
+
+export const acceptAiValueSchema = z.object({ analysisId: z.string().uuid(), field: aiFieldSchema });
 
 export const updateIssueSchema = z.object({
   issueId: z.string().uuid(),
