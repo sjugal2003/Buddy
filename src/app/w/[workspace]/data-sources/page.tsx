@@ -2,6 +2,7 @@ import { notFound } from "next/navigation";
 import { FormMessage } from "@/components/auth/auth-card";
 import { CsvImport } from "@/components/data-sources/csv-import";
 import { GmailDisconnect } from "@/components/data-sources/gmail-disconnect";
+import { GmailFetch } from "@/components/data-sources/gmail-fetch";
 import { ImportAiButton } from "@/components/data-sources/import-ai-button";
 import { Card } from "@/components/ui/card";
 import { PageHeader } from "@/components/ui/page-header";
@@ -107,14 +108,37 @@ export default async function DataSourcesPage({
                   {formatDateTimeIn(mailbox.connectedAt, timeZone)}
                   {mailbox.connectedByName && ` by ${mailbox.connectedByName}`}
                 </dd>
-                <dt className="text-slate-500">Fetching email</dt>
-                <dd className="text-slate-900">Not available yet: &ldquo;Fetch new email&rdquo; comes in the next update.</dd>
+                <dt className="text-slate-500">Last fetched</dt>
+                <dd className="text-slate-900" data-testid="gmail-last-fetched">
+                  {mailbox.lastFetchedAt ? formatDateTimeIn(mailbox.lastFetchedAt, timeZone) : "Never"}
+                </dd>
               </dl>
             ) : (
               <p className="text-slate-600" data-testid="gmail-not-connected">
                 No inbox connected.
               </p>
             )}
+            {mailbox &&
+              (canImport ? (
+                gmailService === "not_configured" ? (
+                  <p className="text-xs text-slate-500">
+                    Fetching needs GOOGLE_CLIENT_ID, GOOGLE_CLIENT_SECRET and GMAIL_TOKEN_KEY in .env.local on this server.
+                  </p>
+                ) : (
+                  <div className="space-y-2">
+                    <p className="text-xs text-slate-500">
+                      Fetch reads new emails in the inbox since the last fetch (the first time, the last 7 days), up to 50
+                      at a time, and adds each as an issue. Emails sent from the inbox are left out, and nothing in Gmail
+                      changes. Use a test inbox with made-up emails until Buddy is ready for real customer data.
+                    </p>
+                    <GmailFetch organizationId={membership.organization.id} />
+                  </div>
+                )
+              ) : (
+                <p className="text-xs text-slate-500" data-testid="gmail-fetch-not-allowed">
+                  Owners and admins can fetch new email.
+                </p>
+              ))}
             {gmailService === "not_configured" && !mailbox ? (
               <p className="text-xs text-slate-500" data-testid="gmail-not-configured">
                 Gmail is not set up on this server yet: add GOOGLE_CLIENT_ID, GOOGLE_CLIENT_SECRET and GMAIL_TOKEN_KEY to

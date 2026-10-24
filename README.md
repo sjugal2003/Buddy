@@ -200,8 +200,8 @@ npx.cmd supabase db push
 
 An owner can connect one Gmail inbox per company, **read-only**: Buddy asks
 Google only for `gmail.readonly`, so it can read messages but can never send,
-delete or change email. This version only connects and disconnects; "Fetch
-new email" comes next. Google's setup is free. Use a **test Gmail account with
+delete or change email. Owners and admins then press **Fetch new email** to
+add new emails as issues. Google's setup is free. Use a **test Gmail account with
 made-up emails** until Phase 7.
 
 **1. Create a Google Cloud project** (about 15 minutes, once)
@@ -255,6 +255,16 @@ shows a warning that the app is not verified (normal in Testing mode): click
 to Buddy with "Gmail connected: your-address". **Disconnect Gmail** asks
 Google to cancel Buddy's access and removes the connection; issues already in
 Buddy stay.
+
+**4. Fetch**
+
+Owners and admins press **Fetch new email** on Data sources. Buddy reads the
+inbox's new emails since the last fetch (the first time, the last 7 days), up
+to 50 at a time, leaving out emails sent from the inbox itself, and adds each
+as an open issue: sender's name and email, subject, text and received time.
+The same email is never added twice. If more are waiting, it says so: press
+again. Nothing in Gmail changes (not even "read"). Each fetch shows in the
+import history, and "Analyse with AI" asks first, as for CSV imports.
 
 In Testing mode Google ends the sign-in after **7 days**; then connect again.
 You can also remove Buddy any time at https://myaccount.google.com/permissions.
@@ -334,7 +344,7 @@ which step failed, with a screenshot.
 | `/w/<company>` | Your real workspace: dashboard cards (urgent, due within 2 hours, targets missed, escalations, no team, waiting, this week), recent activity, members, roles, invitations |
 | `/w/<company>/issues` | Customer issues: search, filters (including deadlines and escalations), add, status, assignee, team, category, history, deadlines, "Record first response", escalations with Acknowledge; AI analysis panel and "AI suggested" marks when AI is on |
 | `/w/<company>/routing` | Routing rules: add, edit, reorder, switch off, delete (owners and admins); route open issues that have no team |
-| `/w/<company>/data-sources` | Import a CSV file (owners and admins: match columns, preview, open or past conversations), "Analyse with AI" for an import's issues (asks first, shows the month's remaining analyses), connect or disconnect one Gmail inbox read-only (owners), and every import with its counts and rejected-row reasons |
+| `/w/<company>/data-sources` | Import a CSV file (owners and admins: match columns, preview, open or past conversations), "Analyse with AI" for an import's issues (asks first, shows the month's remaining analyses), connect or disconnect one Gmail inbox read-only (owners), "Fetch new email" (owners and admins), and every import with its counts and rejected-row reasons |
 | `/w/<company>/settings` | Company profile, first-response and resolution targets, AI analysis (on/off, monthly limit, automatic routing), escalation conditions with "Check now" and the automatic-check status, teams, categories (owners and admins edit; automatic routing owners only) |
 | `/demo/<company>/...` | The Phase 1 demo with fictional data (dashboard, inbox, intelligence, routing, data sources, reports, automation, settings) |
 
