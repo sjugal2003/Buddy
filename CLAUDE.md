@@ -33,7 +33,8 @@ Router, React 19, TypeScript strict, Tailwind v4). Full background:
   made saves hang (PROJECT_CONTEXT.md §5).
 - Shared types: `src/lib/types.ts`. Pure logic: `src/lib/analytics.ts`,
   `src/lib/routing.ts`.
-- AI analysis: only through `getAnalyser()` in `src/lib/ai/` (server only).
+- AI analysis: only through `getAnalyser()` in `src/lib/ai/` (server only;
+  Claude or Gemini, picked by which key is set).
   Tests and CI use `BUDDY_AI_MODE=fake`; no test may call the paid API.
 
 ## Database

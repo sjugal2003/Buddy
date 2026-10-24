@@ -122,17 +122,30 @@ per hour.
     team. On the Routing page, **Route open issues that have no team** does
     the same for every open issue without a team.
 
-## AI analysis (optional, paid per use)
+## AI analysis (optional)
 
-Buddy can ask Claude Haiku 5.5 to fill in each new issue's sentiment, type,
-urgency, category, a short summary and a next step. It costs roughly 25 cents
-per 1,000 messages. Without a key everything else works as before.
+Buddy can ask an AI to fill in each new issue's sentiment, type, urgency,
+category, a short summary and a next step. It works with either of two
+services; you only need one key. Without a key everything else works as
+before.
 
-1. At **console.anthropic.com**, sign up, add a small prepaid credit, and set
-   a monthly spend limit under **Settings > Limits** (for example $5).
-2. Under **Settings > API Keys**, create a key named `buddy-dev`.
-3. Add it to `.env.local` as `ANTHROPIC_API_KEY=...` and restart
-   `npm.cmd run dev`. Never put it in a `NEXT_PUBLIC_` variable, a chat or Git.
+| | Gemini 3.5 Flash-Lite (Google) | Claude Haiku 5.5 (Anthropic) |
+|---|---|---|
+| Key goes in `.env.local` as | `GEMINI_API_KEY=...` | `ANTHROPIC_API_KEY=...` |
+| Get a key at | aistudio.google.com > **Get API key** | console.anthropic.com > **Settings > API Keys** |
+| Cost | Free tier within Google's limits; paid tier about $1 per 1,000 messages | About 25 cents per 1,000 messages (prepaid credit) |
+| Privacy | On the free tier Google may use what is sent to improve its products | Not used for training by default |
+
+If both keys are set, Claude is used.
+
+1. Create a key for the service you chose. For Claude, also add a small
+   prepaid credit and set a monthly spend limit under **Settings > Limits**.
+2. Add it to `.env.local` on its own line, for example
+   `GEMINI_API_KEY=...`, and restart `npm.cmd run dev`. Never put it in a
+   `NEXT_PUBLIC_` variable, a chat or Git. Settings should then say
+   "AI service on this server: Set up: ...".
+3. Settings shows "about $... at paid prices": on Gemini's free tier the real
+   cost is $0.
 4. In Buddy, **Settings > AI analysis**: tick the box and choose a monthly
    limit (default 500, at most 2,000).
 5. Add an issue and leave urgency, sentiment and type on **Let AI decide**.
@@ -140,7 +153,7 @@ per 1,000 messages. Without a key everything else works as before.
    Anything you chose yourself is kept; the panel offers **Accept** for the
    AI's view instead. **Analyse again** can be used once every 30 seconds.
 
-What is sent to Anthropic: the subject, the message (first 4,000
+What is sent to the AI service: the subject, the message (first 4,000
 characters), the channel and your category names. Never the customer's name.
 Use made-up messages until Phase 7. If the key ever leaks, delete it in the
 Console and create a new one.
@@ -208,8 +221,10 @@ which step failed, with a screenshot.
 | The home page says "Sign-in is not set up on this computer yet" | `.env.local` is missing or misnamed; it must be in the `Buddy` folder itself |
 | `Port 3000 is in use, trying 3001` | Another `npm.cmd run dev` is still running; close it, because sign-in links only return to port 3000 |
 | `npm.cmd install` lists vulnerabilities | Tell Claude; never run `npm audit fix --force` (it breaks the lint tools) |
-| Settings says "AI service on this server: Not set up" | `ANTHROPIC_API_KEY` is missing from `.env.local`, or `npm.cmd run dev` wasn't restarted after adding it |
-| The AI panel says the key was not accepted, or the account has no credit | Check the key in `.env.local` and the credit and spend limit at console.anthropic.com |
+| Settings says "AI service on this server: Not set up" | `GEMINI_API_KEY` (or `ANTHROPIC_API_KEY`) is missing from `.env.local`, or `npm.cmd run dev` wasn't restarted after adding it |
+| The AI panel says the key was not accepted | Check the key in `.env.local`: no spaces or quotes around it, and the right name |
+| The AI panel says Gemini's limit was reached | The free tier allows only a few requests per minute and per day; wait and press **Analyse again** |
+| The AI panel says the account has no credit (Claude) | Check the credit and spend limit at console.anthropic.com |
 | `npx.cmd supabase start` says it cannot connect to Docker | Open Docker Desktop and wait until it is running |
 | `git pull` says your local changes to `package-lock.json` would be overwritten | `npm.cmd install` rewrote that file. Run `git checkout -- package-lock.json`, then `git pull` and `npm.cmd install` again |
 

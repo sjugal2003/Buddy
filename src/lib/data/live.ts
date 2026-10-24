@@ -1,6 +1,6 @@
 import "server-only";
 import { cache } from "react";
-import { monthStart } from "@/lib/ai/limits";
+import { estimateCostUsd, monthStart } from "@/lib/ai/limits";
 import { createClient } from "@/lib/supabase/server";
 import type { RoutableMessage } from "@/lib/routing";
 import type { Channel, Intent, IssueStatus, RoutingRule, RuleCondition, Sentiment, Urgency } from "@/lib/types";
@@ -332,8 +332,8 @@ export interface AiSettings {
   monthlyLimit: number;
   /** Analyses started since the 1st of this month (UTC), including failed ones. */
   usedThisMonth: number;
-  inputTokens: number;
-  outputTokens: number;
+  /** At paid prices; a free tier may make it lower. */
+  estimatedCostUsd: number;
 }
 
 export interface LiveTeam {
@@ -380,7 +380,7 @@ export async function getAiSettings(organizationId: string): Promise<AiSettings>
     // At most 2,000 a month per company, so reading the token counts is cheap.
     supabase
       .from("issue_analyses")
-      .select("input_tokens, output_tokens")
+      .select("model, input_tokens, output_tokens")
       .eq("organization_id", organizationId)
       .gte("created_at", monthStart(new Date()).toISOString())
       .limit(2500),
@@ -395,8 +395,10 @@ export async function getAiSettings(organizationId: string): Promise<AiSettings>
     enabled: org.data.ai_enabled,
     monthlyLimit: org.data.ai_monthly_limit,
     usedThisMonth: rows.length,
-    inputTokens: rows.reduce((sum, r) => sum + r.input_tokens, 0),
-    outputTokens: rows.reduce((sum, r) => sum + r.output_tokens, 0),
+    estimatedCostUsd: rows.reduce(
+      (sum, r) => sum + estimateCostUsd({ inputTokens: r.input_tokens, outputTokens: r.output_tokens }, r.model),
+      0,
+    ),
   };
 }
 

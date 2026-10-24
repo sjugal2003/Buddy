@@ -64,6 +64,7 @@ export default defineConfig({
       // .env.local on this computer has a real key.
       BUDDY_AI_MODE: "fake",
       ANTHROPIC_API_KEY: "",
+      GEMINI_API_KEY: "",
     },
   },
 });

@@ -15,7 +15,7 @@ import type { FormState } from "./types";
 // finish_issue_analysis records the answer (or the failure) exactly once.
 
 const SIGNED_OUT: FormState = { error: "Your session has ended. Please sign in again." };
-const NOT_SET_UP = "AI is not set up on this server yet (ANTHROPIC_API_KEY is missing from .env.local).";
+const NOT_SET_UP = "AI is not set up on this server yet (add GEMINI_API_KEY or ANTHROPIC_API_KEY to .env.local).";
 
 function refresh() {
   revalidatePath("/w/[workspace]", "layout");
