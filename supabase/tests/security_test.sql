@@ -1509,6 +1509,88 @@ select tests.act_as(current_setting('t.a_owner')::uuid);
 select tests.expect_error('select private.run_daily_cleanup()', 'a signed-in owner cannot run the clean-up');
 select tests.expect_error('select * from cron.job', 'a signed-in user cannot see the scheduled jobs');
 
+-- ---------------------------------------------------------------------------
+-- Reports (Phase 6 stage 32)
+-- ---------------------------------------------------------------------------
+
+reset role;
+-- Company B, January 2025, in India time (UTC+5:30), so the day edges matter.
+update public.organizations set timezone = 'Asia/Kolkata' where id = current_setting('t.org_b')::uuid;
+insert into public.issues (id, organization_id, customer_name, channel, subject, message, urgency, sentiment,
+                           status, received_at, first_response_at, resolved_at, source, source_record_id) values
+  -- Answered within the 1 h Critical target, resolved 3 h after arrival.
+  ('9a000000-0000-4000-8000-000000000001', current_setting('t.org_b')::uuid, 'Report One', 'email', 'R1', 'Test',
+   'critical', 'negative', 'resolved', '2025-01-10T09:00:00Z', '2025-01-10T09:30:00Z', null, 'manual', null),
+  -- Answered after 6 h against a 4 h High target: late. Still open.
+  ('9a000000-0000-4000-8000-000000000002', current_setting('t.org_b')::uuid, 'Report Two', 'live_chat', 'R2', 'Test',
+   'high', 'neutral', 'open', '2025-01-11T00:00:00Z', '2025-01-11T06:00:00Z', null, 'manual', null),
+  -- Never answered and long past its target: missed. Still open.
+  ('9a000000-0000-4000-8000-000000000003', current_setting('t.org_b')::uuid, 'Report Three', 'email', 'R3', 'Test',
+   'low', 'neutral', 'open', '2025-01-12T00:00:00Z', null, null, 'manual', null),
+  -- A past conversation imported as already resolved: received, but not timed.
+  ('9a000000-0000-4000-8000-000000000004', current_setting('t.org_b')::uuid, 'Report Four', 'email', 'R4', 'Test',
+   'medium', 'positive', 'resolved', '2025-01-13T00:00:00Z', null, null, 'csv', 'report-4'),
+  -- 31 Dec 23:30 UTC is 1 Jan 05:00 in India: inside. Resolved 1.5 h later with no response recorded.
+  ('9a000000-0000-4000-8000-000000000005', current_setting('t.org_b')::uuid, 'Report Five', 'social', 'R5', 'Test',
+   'medium', 'neutral', 'resolved', '2024-12-31T23:30:00Z', null, null, 'manual', null),
+  -- 31 Jan 20:00 UTC is 1 Feb 01:30 in India: outside.
+  ('9a000000-0000-4000-8000-000000000006', current_setting('t.org_b')::uuid, 'Report Six', 'email', 'R6', 'Test',
+   'medium', 'neutral', 'open', '2025-01-31T20:00:00Z', null, null, 'manual', null);
+-- Resolving stamps the current time, so the resolution times are set afterwards (as imports do).
+update public.issues set resolved_at = case id
+    when '9a000000-0000-4000-8000-000000000001' then '2025-01-10T12:00:00Z'::timestamptz
+    when '9a000000-0000-4000-8000-000000000004' then '2025-01-13T00:00:00Z'::timestamptz
+    else '2025-01-01T01:00:00Z'::timestamptz end
+  where id in ('9a000000-0000-4000-8000-000000000001', '9a000000-0000-4000-8000-000000000004', '9a000000-0000-4000-8000-000000000005');
+insert into public.escalations (organization_id, issue_id, condition, level, reason, spell, created_at) values
+  (current_setting('t.org_b')::uuid, '9a000000-0000-4000-8000-000000000003', 'first_response_breached', 1, 'Test', 0, '2025-01-12T10:00:00Z');
+insert into public.import_runs (organization_id, source, file_name, started_at, finished_at, status, rows_examined, imported, rejected) values
+  (current_setting('t.org_b')::uuid, 'csv', 'january.csv', '2025-01-13T00:00:00Z', '2025-01-13T00:01:00Z', 'finished', 3, 1, 2);
+
+set local role authenticated;
+select tests.act_as(current_setting('t.b_owner')::uuid);
+select set_config('t.report_b', public.issue_report(current_setting('t.org_b')::uuid, '2025-01-01', '2025-01-31')::text, true);
+select tests.expect_rows($q$select 1 from (select current_setting('t.report_b')::jsonb as r) x where
+  r -> 'totals' = '{"received": 5, "history": 1, "still_open": 2}' and (r ->> 'resolved')::int = 3$q$, 1,
+  'the report counts the days in the company''s time zone');
+select tests.expect_rows($q$select 1 from (select current_setting('t.report_b')::jsonb as r) x where
+  r -> 'first_response' = '{"count": 2, "median_seconds": 11700, "average_seconds": 11700}'
+  and r -> 'resolution' = '{"count": 2, "median_seconds": 8100, "average_seconds": 8100}'$q$, 1,
+  'response and resolution times leave out imported past conversations');
+select tests.expect_rows($q$select 1 from (select current_setting('t.report_b')::jsonb as r) x where
+  r -> 'response_target' = '{"met": 1, "late": 1, "missed": 1, "not_due": 0, "resolved_without_response": 1}'$q$, 1,
+  'the response target counts met, late and missed issues');
+select tests.expect_rows($q$select 1 from (select current_setting('t.report_b')::jsonb as r) x where
+  r -> 'escalations' = '[{"condition": "first_response_breached", "count": 1, "acknowledged": 0}]'
+  and r -> 'imports' = '[{"source": "csv", "runs": 1, "failed": 0, "imported": 1, "skipped_duplicate": 0, "rejected": 2}]'
+  and r -> 'channels' -> 0 = '{"key": "email", "count": 3}'
+  and r -> 'teams' = '[{"name": null, "received": 5, "still_open": 2, "median_response_seconds": 11700, "median_resolution_seconds": 8100}]'$q$, 1,
+  'the report breaks issues down by escalation, import, channel and team');
+select tests.expect_error(format($q$select public.issue_report(%L, '2025-01-31', '2025-01-01')$q$, current_setting('t.org_b')),
+  'a start date after the end date is refused');
+select tests.expect_error(format($q$select public.issue_report(%L, '2024-01-01', '2025-01-31')$q$, current_setting('t.org_b')),
+  'a range longer than 366 days is refused');
+select tests.expect_error(format($q$select public.issue_report(%L, '2025-01-01', '2025-01-31')$q$, current_setting('t.org_a')),
+  'owner B cannot see company A''s report');
+select tests.act_as(current_setting('t.a_owner')::uuid);
+select tests.expect_error(format($q$select public.issue_report(%L, '2025-01-01', '2025-01-31')$q$, current_setting('t.org_b')),
+  'owner A cannot see company B''s report');
+select tests.expect_rows(format($q$select 1 where (public.issue_report(%L, '2025-01-01', '2025-01-31') -> 'totals' ->> 'received')::int = 0$q$,
+  current_setting('t.org_a')), 1, 'company A''s report does not count company B''s issues');
+select tests.act_as(current_setting('t.invitee')::uuid);
+select tests.expect_rows(format($q$select 1 where public.issue_report(%L, current_date - 6, current_date) ? 'totals'$q$,
+  current_setting('t.org_a')), 1, 'a member can see their company''s report');
+select tests.act_as(current_setting('t.outsider')::uuid);
+select tests.expect_error(format($q$select public.issue_report(%L, '2025-01-01', '2025-01-31')$q$, current_setting('t.org_a')),
+  'a signed-in outsider cannot see a company''s report');
+select tests.act_as(null);
+set local role anon;
+select tests.expect_error(format($q$select public.issue_report(%L, '2025-01-01', '2025-01-31')$q$, current_setting('t.org_a')),
+  'a signed-out visitor cannot see a report');
+reset role;
+update public.organizations set timezone = 'UTC' where id = current_setting('t.org_b')::uuid;
+set local role authenticated;
+
 -- Deleting the issue keeps its analyses, so the monthly count cannot be reset.
 select tests.act_as(current_setting('t.a_owner')::uuid);
 select tests.expect_affected(format('delete from public.issues where id = %L', current_setting('t.issue_a')), 1,

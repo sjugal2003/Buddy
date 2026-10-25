@@ -6,6 +6,8 @@ import type { RoutableMessage } from "@/lib/routing";
 import type { EscalationCondition } from "@/lib/escalations";
 import type { DashboardIssue } from "@/lib/dashboard";
 import { isNotificationKind, NOTIFICATION_LIST_LIMIT, type NotificationKind } from "@/lib/notifications";
+import { friendlyError } from "@/lib/errors";
+import { issueReportSchema, type IssueReport } from "@/lib/reports";
 import type { Channel, Intent, IssueSource, IssueStatus, RoutingRule, RuleCondition, Sentiment, Urgency } from "@/lib/types";
 
 // Reads for real (signed-in) workspaces. Every query runs as the signed-in
@@ -951,4 +953,25 @@ export async function countUnreadNotifications(organizationId: string): Promise<
     throw new Error("Could not load your notifications.");
   }
   return count ?? 0;
+}
+
+/**
+ * The company's figures for a range of calendar days (inclusive), counted by
+ * the database in the company's time zone. A refusal (for example a range
+ * that is too long) comes back as a message to show.
+ */
+export async function getIssueReport(
+  organizationId: string,
+  from: string,
+  to: string,
+): Promise<{ report: IssueReport } | { error: string }> {
+  const supabase = await createClient();
+  const { data, error } = await supabase.rpc("issue_report", { p_organization_id: organizationId, p_from: from, p_to: to });
+  if (error) return { error: friendlyError(error, "Could not count the report. Please try again.", "getIssueReport") };
+  const parsed = issueReportSchema.safeParse(data);
+  if (!parsed.success) {
+    console.error("[getIssueReport] unexpected shape", parsed.error.issues[0]?.path.join("."));
+    return { error: "Could not count the report. Please try again." };
+  }
+  return { report: parsed.data };
 }
