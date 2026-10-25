@@ -44,6 +44,12 @@ Router, React 19, TypeScript strict, Tailwind v4). Full background:
   emails go through `import_issues` like CSV rows. Tests and CI use
   `BUDDY_GMAIL_MODE=fake`; no test may contact Google.
 
+- Notifications: created only in the database (`private.notify_staff` /
+  `private.create_notification`, from triggers), in Buddy only, for owners
+  and admins. Titles never contain the customer's message, name or email.
+- Reports: counted only by `public.issue_report` (members only, company time
+  zone). No per-person figures.
+
 ## Database
 
 - Schema changes go in a NEW file in `supabase/migrations/` (never edit an

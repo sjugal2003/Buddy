@@ -1,6 +1,6 @@
 # Buddy: Customer Service Intelligence Hub
 
-**Status: Phase 4 complete; Phase 5 (data sources) in progress (2026-10-24).** Sign-in, company workspaces,
+**Status: Phases 1 to 6 complete (2026-10-25); Phase 7 (security, reliability and deployment readiness) is next.** Sign-in, company workspaces,
 invitations, roles, customer issues, teams, categories, company settings and
 routing rules work against a Supabase database protected by Row Level
 Security, with automated tests on every change. An optional AI (Gemini or
@@ -10,8 +10,12 @@ Routing rules *suggest* a team (and show a conflict when rules disagree),
 unless an owner switches on automatic routing. Each issue has first-response
 and resolution deadlines; escalations flag issues that need attention (with
 "Check now" and automatic checks every 15 minutes), and the workspace home
-shows live counts. Escalations only appear in Buddy: no email or chat
-messages are sent yet. Issues are typed in by hand (with an optional customer email); owners and admins can import customer messages from a CSV file on the Data sources tab, which also shows every import. There is no connection to outside services yet.
+shows live counts. Issues are typed in by hand, imported from a CSV file, or
+fetched from one connected Gmail inbox with a button. Owners and admins get
+**in-app notifications** (the bell) for escalations, new urgent issues,
+import problems and failed automatic checks; nothing is emailed or sent
+outside Buddy. A **Reports** tab shows company-wide figures for a date range
+(no figures for individual people) and downloads them as a CSV file.
 It is **not production-ready** and must not hold real customer data yet.
 
 ## Run it on Windows
@@ -163,6 +167,22 @@ Use made-up customers only until Phase 7.
    email since the last fetch."
 4. Sign in as a member: they see the import history and which inbox is
    connected, but no import, fetch or connect buttons.
+
+### Try notifications and reports
+
+1. As an owner or admin, add an issue with urgency **Critical**. The bell at
+   the top shows **1**; click it to open **Notifications**, then click the
+   notification to open the issue. **Mark all as read** clears the number.
+   Members get no notifications.
+2. Import a CSV file with a rejected row (for example `samples/test-import.csv`
+   into a company that hasn't imported it yet): the bell says the import
+   finished with rows that could not be saved.
+3. Open **Reports**. Pick **Last 7 days**, **Last 30 days** or your own dates
+   and press **Show custom range**. Every box counts only your company's
+   issues, in your company's time zone. **Download CSV** saves the same
+   figures as a file for Excel (widen a column if it shows `########`).
+4. **Settings** > **Escalations** shows whether the automatic checks are
+   running, and in red if the latest one failed.
 
 ## AI analysis (optional)
 
@@ -355,6 +375,10 @@ which step failed, with a screenshot.
 | Data sources says Gmail is not set up | One of `GOOGLE_CLIENT_ID`, `GOOGLE_CLIENT_SECRET`, `GMAIL_TOKEN_KEY` is missing from `.env.local`, or `npm.cmd run dev` wasn't restarted |
 | Fetch says Google's sign-in has ended | Normal after 7 days in Testing mode: **Disconnect Gmail**, then **Connect Gmail** again |
 | Fetch brought in real emails (the wrong inbox was connected) | Don't analyse them. Disconnect, then delete them: Supabase dashboard > **SQL Editor**, run `delete from public.issues where source = 'gmail' and organization_id = (select id from public.organizations where slug = 'your-company');` (run it as `select count(*) ...` first to check the number). Connect a brand-new test Gmail instead |
+| `npx.cmd supabase db push` says "Remote database is up to date" right after a stage with a new migration | The new code isn't on your PC yet: run `git pull`, check `git log -1 --oneline` names the right PR, then `db push` again |
+| `supabase db push\` says `Unknown subcommand` | There's an extra character at the end of the command; type it again exactly |
+| The bell never shows a number | Notifications go to owners and admins only, and only for new events after the notifications migrations were pushed |
+| The downloaded report shows `########` in Excel | The column is too narrow for a date: double-click the line between the column letters to widen it |
 | `git pull` says your local changes to `package-lock.json` would be overwritten | `npm.cmd install` rewrote that file. Run `git checkout -- package-lock.json`, then `git pull` and `npm.cmd ci`. Use `npm.cmd ci` from then on so it doesn't happen again |
 
 ## Pages
@@ -370,7 +394,9 @@ which step failed, with a screenshot.
 | `/w/<company>/issues` | Customer issues: search, filters (including deadlines and escalations), add, status, assignee, team, category, history, deadlines, "Record first response", escalations with Acknowledge; AI analysis panel and "AI suggested" marks when AI is on |
 | `/w/<company>/routing` | Routing rules: add, edit, reorder, switch off, delete (owners and admins); route open issues that have no team |
 | `/w/<company>/data-sources` | Import a CSV file (owners and admins: match columns, preview, open or past conversations), "Analyse with AI" for an import's issues (asks first, shows the month's remaining analyses), connect or disconnect one Gmail inbox read-only (owners), "Fetch new email" (owners and admins), and every import with its counts and rejected-row reasons |
-| `/w/<company>/settings` | Company profile, first-response and resolution targets, AI analysis (on/off, monthly limit, automatic routing), escalation conditions with "Check now" and the automatic-check status, teams, categories (owners and admins edit; automatic routing owners only) |
+| `/w/<company>/notifications` | Your own in-app notifications for this company (owners and admins receive them): newest first, open the linked page, mark one or all as read. The bell in the header shows how many are unread |
+| `/w/<company>/reports` | Company-wide figures for the last 7 days, the last 30 days or your own dates (company time zone): received, resolved, response and resolution times, response target, teams, urgency, sentiment, channel, category, escalations and imports. **Download CSV** saves them. Everyone in the company can see it; no per-person figures |
+| `/w/<company>/settings` | Company profile, first-response and resolution targets, AI analysis (on/off, monthly limit, automatic routing), escalation conditions with "Check now" and the automatic-check status (red when the latest one failed), teams, categories (owners and admins edit; automatic routing owners only) |
 | `/demo/<company>/...` | The Phase 1 demo with fictional data (dashboard, inbox, intelligence, routing, data sources, reports, automation, settings) |
 
 ## Project layout
@@ -387,6 +413,8 @@ src/
   lib/csv-import.ts       reading and checking CSV files (runs in the browser)
   lib/gmail/              Gmail sign-in, token encryption and fetching (server only)
   app/api/gmail/          the Connect Gmail redirect and Google's return address
+  lib/notifications.ts    notification labels and links (notifications are created only by the database)
+  lib/reports.ts          report date ranges and formatting; lib/report-csv.ts builds the CSV file
   lib/supabase/           Supabase clients (server, middleware)
   lib/validation.ts       input rules (zod) for everything the browser sends
 supabase/
