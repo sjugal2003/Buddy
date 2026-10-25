@@ -29,7 +29,7 @@ test("escalations: settings, check now, badge, acknowledge", async ({ browser, b
     await p.goto(`${W}/settings`);
     await expect(p.getByTestId("escalation-last-run")).toHaveText("Never run");
     await shows(p, "text=Not running. Use Check now.");
-    await shows(p, "text=Not set up (Phase 6)");
+    await shows(p, "text=Not set up. Notifications appear in Buddy only");
     await p.click('button:has-text("Check now")');
     await shows(p, "text=Switch on at least one escalation condition first.");
     await p.fill("input[name=noUpdateHours]", "0");

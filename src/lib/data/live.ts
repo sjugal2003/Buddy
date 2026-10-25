@@ -5,6 +5,7 @@ import { createClient } from "@/lib/supabase/server";
 import type { RoutableMessage } from "@/lib/routing";
 import type { EscalationCondition } from "@/lib/escalations";
 import type { DashboardIssue } from "@/lib/dashboard";
+import { isNotificationKind, NOTIFICATION_LIST_LIMIT, type NotificationKind } from "@/lib/notifications";
 import type { Channel, Intent, IssueSource, IssueStatus, RoutingRule, RuleCondition, Sentiment, Urgency } from "@/lib/types";
 
 // Reads for real (signed-in) workspaces. Every query runs as the signed-in
@@ -883,4 +884,53 @@ export async function getMailboxConnection(organizationId: string): Promise<Mail
     connectedAt: data.connected_at,
     lastFetchedAt: data.last_fetched_at,
   };
+}
+
+export interface LiveNotification {
+  id: string;
+  kind: NotificationKind;
+  title: string;
+  issueId: string | null;
+  createdAt: string;
+  readAt: string | null;
+}
+
+/** The signed-in person's notifications in one company, newest first. Row Level Security returns only their own. */
+export async function listNotifications(organizationId: string, limit = NOTIFICATION_LIST_LIMIT): Promise<LiveNotification[]> {
+  const supabase = await createClient();
+  const { data, error } = await supabase
+    .from("notifications")
+    .select("id, kind, title, issue_id, created_at, read_at")
+    .eq("organization_id", organizationId)
+    .order("created_at", { ascending: false })
+    .limit(limit);
+  if (error) {
+    console.error("[listNotifications]", error.code, error.message);
+    throw new Error("Could not load your notifications.");
+  }
+  return (data ?? [])
+    .filter((row) => isNotificationKind(row.kind))
+    .map((row) => ({
+      id: row.id,
+      kind: row.kind as NotificationKind,
+      title: row.title,
+      issueId: row.issue_id,
+      createdAt: row.created_at,
+      readAt: row.read_at,
+    }));
+}
+
+/** How many of the signed-in person's notifications in one company are unread. */
+export async function countUnreadNotifications(organizationId: string): Promise<number> {
+  const supabase = await createClient();
+  const { count, error } = await supabase
+    .from("notifications")
+    .select("id", { count: "exact", head: true })
+    .eq("organization_id", organizationId)
+    .is("read_at", null);
+  if (error) {
+    console.error("[countUnreadNotifications]", error.code, error.message);
+    throw new Error("Could not load your notifications.");
+  }
+  return count ?? 0;
 }

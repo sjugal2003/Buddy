@@ -1242,12 +1242,120 @@ select tests.expect_error('select * from public.mailbox_connections', 'a signed-
 reset role;
 set local role authenticated;
 
+-- ---------------------------------------------------------------------------
+-- Notifications (Phase 6 stage 29)
+-- ---------------------------------------------------------------------------
+
+-- Only the database creates notifications (later stages call this function).
+reset role;
+select set_config('t.note_a1', private.create_notification(current_setting('t.org_a')::uuid,
+  current_setting('t.a_owner')::uuid, 'escalation', 'Issue escalated: no first response', 'test:a1',
+  current_setting('t.issue_a')::uuid)::text, true);
+select set_config('t.note_a2', private.create_notification(current_setting('t.org_a')::uuid,
+  current_setting('t.a_owner')::uuid, 'import_problem', 'An import could not finish', 'test:a2')::text, true);
+select set_config('t.note_admin', private.create_notification(current_setting('t.org_a')::uuid,
+  current_setting('t.a_member')::uuid, 'escalation', 'Issue escalated: no first response', 'test:a1',
+  current_setting('t.issue_a')::uuid)::text, true);
+select set_config('t.note_invitee', private.create_notification(current_setting('t.org_a')::uuid,
+  current_setting('t.invitee')::uuid, 'urgent_issue', 'New critical issue', 'test:i1')::text, true);
+select set_config('t.note_b', private.create_notification(current_setting('t.org_b')::uuid,
+  current_setting('t.b_owner')::uuid, 'urgent_issue', 'New critical issue', 'test:b1',
+  current_setting('t.issue_b')::uuid)::text, true);
+select tests.expect_rows(format($q$select 1 from public.notifications where id in (%L, %L, %L, %L, %L)$q$,
+  current_setting('t.note_a1'), current_setting('t.note_a2'), current_setting('t.note_admin'),
+  current_setting('t.note_invitee'), current_setting('t.note_b')), 5, 'the database creates notifications');
+select tests.expect_rows(format($q$select 1 where private.create_notification(%L, %L, 'escalation', 'Again', 'test:a1') is null$q$,
+  current_setting('t.org_a'), current_setting('t.a_owner')), 1, 'the same event never notifies the same person twice');
+select tests.expect_rows(format($q$select 1 where private.create_notification(%L, %L, 'escalation', 'Not yours', 'test:x') is null$q$,
+  current_setting('t.org_a'), current_setting('t.b_owner')), 1, 'someone outside the company is never notified');
+select tests.expect_rows(format($q$select 1 from public.notifications where recipient_id = %L and organization_id = %L$q$,
+  current_setting('t.b_owner'), current_setting('t.org_a')), 0, 'no notification was stored for the outsider');
+select tests.expect_error(format($q$select private.create_notification(%L, %L, 'escalation', 'Wrong company', 'test:y', %L)$q$,
+  current_setting('t.org_a'), current_setting('t.a_owner'), current_setting('t.issue_b')),
+  'a notification cannot link to another company''s issue');
+select tests.expect_error(format($q$select private.create_notification(%L, %L, 'email', 'Unknown kind', 'test:z')$q$,
+  current_setting('t.org_a'), current_setting('t.a_owner')), 'only known kinds of notification are stored');
+
+set local role authenticated;
+select tests.act_as(current_setting('t.a_owner')::uuid);
+select tests.expect_rows('select 1 from public.notifications', 2, 'owner A sees only their own two notifications');
+select tests.expect_rows('select 1 from public.notifications where read_at is null', 2, 'both start unread');
+select tests.expect_error(format($q$select private.create_notification(%L, %L, 'escalation', 'Fake', 'fake:1')$q$,
+  current_setting('t.org_a'), current_setting('t.a_owner')), 'a signed-in user cannot create notifications');
+select tests.expect_error(format($q$insert into public.notifications (organization_id, recipient_id, kind, title, dedupe_key)
+  values (%L, %L, 'escalation', 'Fake', 'fake:2')$q$, current_setting('t.org_a'), current_setting('t.a_owner')),
+  'a signed-in user cannot insert notifications directly');
+select tests.expect_error(format($q$update public.notifications set read_at = now() where id = %L$q$,
+  current_setting('t.note_a1')), 'a signed-in user cannot update notifications directly');
+select tests.expect_error(format($q$update public.notifications set title = 'Changed' where id = %L$q$,
+  current_setting('t.note_a1')), 'a signed-in user cannot change a notification''s text');
+select tests.expect_error(format($q$delete from public.notifications where id = %L$q$,
+  current_setting('t.note_a1')), 'a signed-in user cannot delete notifications directly');
+select tests.expect_error(format($q$select public.mark_notification_read(%L)$q$, current_setting('t.note_admin')),
+  'owner A cannot mark the admin''s notification as read');
+select tests.expect_error(format($q$select public.mark_notification_read(%L)$q$, gen_random_uuid()),
+  'an unknown notification cannot be marked as read');
+select tests.expect_rows(format($q$select 1 where public.mark_notification_read(%L) is not null$q$,
+  current_setting('t.note_a1')), 1, 'owner A marks their own notification as read');
+select tests.expect_rows(format($q$select 1 from public.notifications where id = %L and read_at is not null$q$,
+  current_setting('t.note_a1')), 1, 'it shows as read');
+select tests.expect_rows(format($q$select 1 where public.mark_notification_read(%L) =
+  (select read_at from public.notifications where id = %L)$q$, current_setting('t.note_a1'), current_setting('t.note_a1')), 1,
+  'marking it again keeps the first read time');
+select tests.expect_rows(format($q$select 1 where public.mark_all_notifications_read(%L) = 1$q$,
+  current_setting('t.org_a')), 1, 'mark all as read changes only the one still unread');
+select tests.expect_rows(format($q$select 1 where public.mark_all_notifications_read(%L) = 0$q$,
+  current_setting('t.org_a')), 1, 'mark all as read again changes nothing');
+select tests.expect_error(format($q$select public.mark_all_notifications_read(%L)$q$, current_setting('t.org_b')),
+  'owner A cannot mark company B''s notifications as read');
+
+select tests.act_as(current_setting('t.a_member')::uuid);
+select tests.expect_rows('select 1 from public.notifications where read_at is null', 1,
+  'the admin''s notification is still unread after owner A marked theirs');
+
+select tests.act_as(current_setting('t.b_owner')::uuid);
+select tests.expect_rows('select 1 from public.notifications', 1, 'owner B sees only their own notification');
+select tests.expect_rows(format($q$select 1 from public.notifications where organization_id = %L$q$,
+  current_setting('t.org_a')), 0, 'owner B sees none of company A''s notifications');
+select tests.expect_error(format($q$select public.mark_notification_read(%L)$q$, current_setting('t.note_a2')),
+  'owner B cannot mark company A''s notification as read');
+
+select tests.act_as(current_setting('t.outsider')::uuid);
+select tests.expect_rows('select 1 from public.notifications', 0, 'outsider sees no notifications');
+select tests.expect_error(format($q$select public.mark_all_notifications_read(%L)$q$, current_setting('t.org_a')),
+  'outsider cannot mark company A''s notifications as read');
+
+reset role;
+set local role anon;
+select tests.act_as(null);
+select tests.expect_error('select * from public.notifications', 'a signed-out visitor cannot read notifications');
+select tests.expect_error(format($q$select public.mark_notification_read(%L)$q$, current_setting('t.note_a2')),
+  'a signed-out visitor cannot mark notifications as read');
+select tests.expect_error(format($q$select public.mark_all_notifications_read(%L)$q$, current_setting('t.org_a')),
+  'a signed-out visitor cannot mark all as read');
+reset role;
+set local role authenticated;
+
 -- Deleting the issue keeps its analyses, so the monthly count cannot be reset.
 select tests.act_as(current_setting('t.a_owner')::uuid);
 select tests.expect_affected(format('delete from public.issues where id = %L', current_setting('t.issue_a')), 1,
   'owner A deletes the analysed issue');
 select tests.expect_rows(format('select 1 from public.issue_analyses where organization_id = %L and issue_id is null',
   current_setting('t.org_a')), 2, 'its analyses still count towards the month');
+
+-- A notification goes with its issue, and leaves view when its person leaves the company.
+reset role;
+select tests.expect_rows(format('select 1 from public.notifications where issue_id = %L', current_setting('t.issue_a')), 0,
+  'deleting an issue deletes its notifications');
+set local role authenticated;
+select tests.act_as(current_setting('t.invitee')::uuid);
+select tests.expect_rows('select 1 from public.notifications', 1, 'the member sees their notification');
+select tests.act_as(current_setting('t.a_owner')::uuid);
+select public.remove_member(current_setting('t.org_a')::uuid, current_setting('t.invitee')::uuid);
+select tests.act_as(current_setting('t.invitee')::uuid);
+select tests.expect_rows('select 1 from public.notifications', 0, 'a removed member no longer sees the company''s notifications');
+select tests.expect_error(format($q$select public.mark_notification_read(%L)$q$, current_setting('t.note_invitee')),
+  'a removed member cannot mark them as read');
 
 reset role;
 select current_setting('tests.passed') || ' security checks passed' as result;
