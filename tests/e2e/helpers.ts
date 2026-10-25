@@ -1,4 +1,8 @@
 import { expect, type Browser, type Page } from "@playwright/test";
+import pg from "pg";
+
+/** The LOCAL test database (never the hosted project). */
+export const TEST_DB = "postgresql://postgres:postgres@127.0.0.1:54322/postgres";
 
 export const PASSWORD = "correct-horse-9";
 
@@ -24,8 +28,33 @@ async function confirmLink(email: string, baseURL: string) {
   throw new Error(`No confirmation email arrived for ${email}`);
 }
 
-/** Signs up in a fresh browser window and confirms the email. Ends on /onboarding. */
-export async function signUpAndConfirm(browser: Browser, baseURL: string, name: string, email: string) {
+/**
+ * Puts an email on Buddy's list of people who may create a company (creating
+ * a company is invite-only), directly in the local test database.
+ */
+export async function allowCompanyCreation(email: string) {
+  const client = new pg.Client({ connectionString: TEST_DB });
+  await client.connect();
+  try {
+    await client.query("insert into private.company_creators (email) values (lower($1)) on conflict do nothing", [email]);
+  } finally {
+    await client.end();
+  }
+}
+
+/**
+ * Signs up in a fresh browser window and confirms the email. Ends on
+ * /onboarding. Unless `canCreateCompany` is false, the email is first put on
+ * the list of people who may create a company.
+ */
+export async function signUpAndConfirm(
+  browser: Browser,
+  baseURL: string,
+  name: string,
+  email: string,
+  { canCreateCompany = true } = {},
+) {
+  if (canCreateCompany) await allowCompanyCreation(email);
   const context = await browser.newContext({ baseURL });
   const page = await context.newPage();
   page.on("dialog", (d) => d.accept());

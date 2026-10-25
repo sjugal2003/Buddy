@@ -94,6 +94,11 @@ insert into auth.users (id, email, email_confirmed_at, raw_user_meta_data) value
   ('d0000000-0000-4000-8000-000000000001', 'invitee@example.com',   now(), '{"full_name":"Dana Invitee"}'),
   ('e0000000-0000-4000-8000-000000000001', 'late@example.com',      null,  '{"full_name":"Eli Unconfirmed"}');
 
+-- Creating a company is by invitation only (stage 36): the two owners and the
+-- unconfirmed user are on Buddy's list; the others are not.
+insert into private.company_creators (email) values
+  ('owner-a@example.com'), ('owner-b@example.com'), ('late@example.com');
+
 -- Only these six users, so accounts left by other tests don't change the count.
 select tests.expect_rows($q$select 1 from public.profiles where id in (
   select id from auth.users where email like any (array[
@@ -181,6 +186,7 @@ select tests.expect_error('select * from public.issues', 'signed-out visitor can
 select tests.expect_error('select * from public.organizations', 'signed-out visitor cannot read companies');
 select tests.expect_error('select * from public.profiles', 'signed-out visitor cannot read profiles');
 select tests.expect_error($q$select public.create_organization('X', 'xxx')$q$, 'signed-out visitor cannot create a company');
+select tests.expect_error($q$select public.can_create_company()$q$, 'a signed-out visitor cannot ask whether they may create a company');
 
 -- ---------------------------------------------------------------------------
 -- Signed-in user who belongs to no company
@@ -398,6 +404,24 @@ select tests.expect_error(format(
 select tests.expect_error(format(
   $q$select public.remove_member(%L, %L)$q$, current_setting('t.org_a'), current_setting('t.a_owner')),
   'the last owner cannot leave');
+-- Invite-only company creation (stage 36)
+select tests.act_as(current_setting('t.outsider')::uuid);
+select tests.expect_rows('select 1 where not public.can_create_company()', 1, 'someone not on the list may not create a company');
+select tests.expect_error($q$select public.create_organization('Outsider Co', 'outsider-co')$q$,
+  'someone not on the list cannot create a company');
+select tests.act_as(current_setting('t.unconfirmed')::uuid);
+select tests.expect_error($q$select public.create_organization('Late Co', 'late-co')$q$,
+  'an unconfirmed email on the list cannot create a company');
+select tests.expect_error('select 1 from private.company_creators', 'users cannot read the list of who may create companies');
+select tests.expect_error($q$insert into private.company_creators (email) values ('outsider@example.com')$q$,
+  'users cannot add themselves to the list');
+select tests.expect_error('update private.platform_settings set ai_monthly_cap = 100000',
+  'users cannot change the AI limit for the whole app');
+select tests.expect_error($q$select private.can_create_company('c0000000-0000-4000-8000-000000000001')$q$,
+  'users cannot call the private list check');
+select tests.act_as(current_setting('t.a_owner')::uuid);
+select tests.expect_rows('select 1 where public.can_create_company()', 1, 'an owner on the list may create a company');
+
 select tests.expect_error($q$select public.create_organization('Bad slug', 'Not A Slug!')$q$,
   'a company web address with invalid characters is rejected');
 select tests.expect_error($q$select public.create_organization('Copy', 'company-b')$q$,
@@ -587,6 +611,31 @@ set local role authenticated;
 select tests.act_as(current_setting('t.invitee')::uuid);
 select tests.expect_error(format('select public.start_issue_analysis(%L)', current_setting('t.issue_a')),
   'no more analyses once the monthly limit is used (failed ones count too)');
+
+-- The AI limit for the whole app (stage 36) applies even when the company has
+-- analyses left: set it to exactly what this month has used so far.
+reset role;
+update public.organizations set ai_monthly_limit = 2000 where id = current_setting('t.org_a')::uuid;
+update private.platform_settings set ai_monthly_cap = (select count(*) from public.issue_analyses
+  where created_at >= date_trunc('month', now() at time zone 'UTC') at time zone 'UTC');
+set local role authenticated;
+select tests.act_as(current_setting('t.invitee')::uuid);
+do $$
+begin
+  perform public.start_issue_analysis(current_setting('t.issue_a')::uuid);
+  raise exception 'FAIL: an analysis started although the whole-app limit was used';
+exception when others then
+  if sqlerrm not like 'Buddy has used all of this month%' then
+    raise exception 'FAIL: expected the whole-app limit message, got: %', sqlerrm;
+  end if;
+  perform tests.pass('no more analyses once the whole-app monthly limit is used, even with company analyses left');
+end;
+$$;
+reset role;
+update private.platform_settings set ai_monthly_cap = 100000;
+update public.organizations set ai_monthly_limit = 2 where id = current_setting('t.org_a')::uuid;
+set local role authenticated;
+select tests.act_as(current_setting('t.invitee')::uuid);
 
 -- Accepting AI suggestions (stage 13)
 select tests.act_as(current_setting('t.b_owner')::uuid);
