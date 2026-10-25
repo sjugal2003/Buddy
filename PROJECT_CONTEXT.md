@@ -194,6 +194,7 @@ Files (`supabase/`):
 | `migrations/20261027120000_notification_events.sql` | Phase 6 stage 30: `private.notify_staff` (owners and admins of a company, through `create_notification`); triggers `escalations_notify` (per check: up to 10 escalations each notify with the issue link, more become one summary), `issues_notify_urgent` (an open issue created as or raised to High or Critical, once per issue), `import_runs_notify` (an import or fetch that fails or finishes with rejected rows). Titles use Buddy's own labels and the issue reference, never customer text. None of these functions can be called from the app |
 | `migrations/20261027150000_scheduler_reliability.sql` | Phase 6 stage 31: trigger `escalation_runs_notify_failure` (a scheduled check that fails notifies owners and admins, at most once a day per company; a failed Check now does not); `private.run_daily_cleanup()` (database owner only) closes imports left running for over an hour as failed "Did not finish." (which notifies), deletes notifications read more than 90 days ago (unread ones are kept) and escalation check logs older than 90 days; cron job `buddy-daily-cleanup` at 03:30 UTC daily |
 | `migrations/20261027180000_reports.sql` | Phase 6 stage 32: `public.issue_report(org, from, to)` (members only; security definer, read only; dates are inclusive calendar days in the company's time zone, at most 366; returns one JSON object with totals, times, the response target, escalations, team and other breakdowns and import results; no per-person figures) |
+| `migrations/20261028090000_security_foundation.sql` | Phase 7 stage 36: `private.company_creators` (emails that may create a company; current owners copied in) checked by `create_organization` and `public.can_create_company()`; `private.platform_settings.ai_monthly_cap` (default 300 analyses a month for all companies together, checked in `start_issue_analysis` under an advisory lock); both private tables have RLS on and no grants; revokes the default grant on `private.create_escalation_settings` |
 | `tests/security_test.sql` | 426 checks of tenant isolation, roles, invitations, teams, categories, settings, routing rules, AI analysis, resolution tracking, escalations, routing history, scheduled checks, imports, the Gmail connection, fetching, notifications and reports; runs in one transaction and rolls back |
 | `tests/local-supabase-stub.sql` | Minimal stand-in for Supabase's `auth` schema and roles, for plain PostgreSQL only. Never run on Supabase |
 
@@ -268,6 +269,13 @@ How access works:
   same checks and the one-issue-per-record rule apply. It is stored encrypted (AES-256-GCM) with
   `GMAIL_TOKEN_KEY`, which exists only on the server, so the database value
   alone cannot be used. The token is never sent to the browser or logged.
+- Invite-only company creation (Phase 7 stage 36): `create_organization`
+  refuses anyone whose confirmed email is not in `private.company_creators`.
+  Anyone can still make an account; without an invitation it can do nothing.
+  The list and `private.platform_settings` (the AI limit for the whole app)
+  are changed only in the SQL Editor; the API cannot reach the private
+  schema. `supabase/seed.sql` raises the AI limit to 100,000 on local
+  databases only, so repeated browser test runs don't use it up.
 
 ## 8. Authentication status
 
@@ -311,6 +319,7 @@ never commit values. Without them the app runs in demo-only mode.
 | `GOOGLE_CLIENT_ID` | **Never** (server only) | Google OAuth client for connecting Gmail (stage 25). Read only in `src/lib/gmail/index.ts` |
 | `GOOGLE_CLIENT_SECRET` | **Never** (server only) | Secret of that OAuth client |
 | `GMAIL_TOKEN_KEY` | **Never** (server only) | 32 random bytes in base64 that encrypt the stored Gmail token. Changing it means reconnecting Gmail. All three must be set for Connect Gmail to appear |
+| `BUDDY_SITE_URL` | Not secret (server only) | Buddy's own address for sign-up email links and invitation links (stage 36, `src/lib/site-url.ts`). Optional in development (the request's address is used); in production Buddy refuses to make those links without it, because Host/Origin headers can be faked |
 | `BUDDY_GMAIL_MODE` | No | `fake` swaps in a pretend Google for automated tests and CI. Leave unset otherwise |
 
 ## 10. Development commands (Windows PowerShell)
@@ -415,6 +424,15 @@ run keeps the Playwright report for 7 days (Actions > the run > Artifacts).
   that doesn't match Next 15. If findings appear, check whether
   `npm audit --omit=dev` (what the app ships) is still 0 and upgrade the
   package named, one at a time.
+- Phase 7 inspection (stage 35, 2026-10-25): full report and plan at
+  https://claude.ai/artifact/NYCfw1NtEYH6wLSK9jwe4P (findings F1 to F29).
+  Stage 36 closes F1 (open sign-up with AI on the owner's key), F4 (security
+  headers), F7 (links built from request headers), F12 and F13. Still open,
+  planned for stages 37 to 40: rate limits, deleting data and accounts,
+  password reset, the AI provider for real data, monitoring, backups, a
+  runbook, deployment settings, a privacy notice.
+- The Content-Security-Policy still allows inline scripts, because Next.js
+  adds them to every page; moving to per-request nonces is a later change.
 - Demo pages load the whole workspace into the browser. Real workspaces
   filter on the server but show at most 200 issues; paging comes later.
 - The assignee is a name picked from the workspace's members (stored as
@@ -449,7 +467,8 @@ run keeps the Playwright report for 7 days (Actions > the run > Artifacts).
   member could call `finish_issue_analysis` themselves and record a made-up
   "AI" answer for an issue in their own company. It can't touch another
   company, raise the limit, or change anything a member couldn't already
-  edit by hand. Closing this needs a server-only key (Phase 7).
+  edit by hand. Closing this needs a server-only credential; planned as a
+  separate pull request in Phase 7 stage 36 (finding F5).
 - Automatic routing only happens right after an AI analysis (on save or
   "Analyse again"); issues added while AI is off still need the buttons.
 - AI cost per message has not been measured on real traffic yet: Settings
@@ -547,7 +566,14 @@ run keeps the Playwright report for 7 days (Actions > the run > Artifacts).
    Reports page everyone in the company can see (no per-person figures);
    optional CSV export. Stages 29 to 34, one PR each, Jugal's go before each.
    **Done (2026-10-25).**
-7. Security, reliability and deployment readiness.
+7. Security, reliability and deployment readiness. Inspection report and
+   plan (stage 35) approved by Jugal 2026-10-25
+   (https://claude.ai/artifact/NYCfw1NtEYH6wLSK9jwe4P): 36 security
+   foundation, 37 data, API and AI protection, 38 reliability and recovery,
+   39 deployment preparation (no deploy), 40 final checks and launch
+   decision. One stage at a time, Jugal's go before each; deployment, real
+   customer data, production database, OAuth and credential changes each
+   need Jugal's explicit approval.
 
 ## 15. Completed and remaining work
 
@@ -836,3 +862,15 @@ Slack and other outside notifications, per-person notification settings,
 "approaching the deadline" warnings and per-person reports. Next: Phase 7
 (security, reliability and deployment readiness), only after Jugal approves
 a plan.
+
+Phase 7 (security, reliability and deployment readiness).
+- Stage 35: read-only inspection and plan (no code change). Report:
+  https://claude.ai/artifact/NYCfw1NtEYH6wLSK9jwe4P. 0 Critical, 3 High
+  findings (open sign-up with AI on the owner's key; Gemini free tier and
+  real data; no deletion or retention process).
+- Stage 36 (first part): invite-only company creation, an AI limit for the
+  whole app, security headers (`next.config.ts`), `BUDDY_SITE_URL` for
+  email and invitation links, Gmail disconnect checks the owner role before
+  revoking, tidied grant. Migration `20261028090000_security_foundation.sql`.
+  Tests: `security_test.sql` (436 checks), new
+  `tests/e2e/security-foundation.spec.ts`, new `tests/unit/site-url.test.ts`.

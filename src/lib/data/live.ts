@@ -434,6 +434,20 @@ export async function getLatestAnalysis(organizationId: string, issueId: string)
   };
 }
 
+/**
+ * Whether the signed-in person may create a company (Buddy is invite-only:
+ * the database keeps the list and refuses everyone else anyway).
+ */
+export async function canCreateCompany(): Promise<boolean> {
+  const supabase = await createClient();
+  const { data, error } = await supabase.rpc("can_create_company");
+  if (error) {
+    console.error("[canCreateCompany]", error.code, error.message);
+    return false;
+  }
+  return data === true;
+}
+
 /** Whether AI analysis is switched on for this company. */
 export async function getAiEnabled(organizationId: string): Promise<boolean> {
   const supabase = await createClient();

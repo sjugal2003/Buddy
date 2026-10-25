@@ -1,6 +1,6 @@
 # Buddy: Customer Service Intelligence Hub
 
-**Status: Phases 1 to 6 complete (2026-10-25); Phase 7 (security, reliability and deployment readiness) is next.** Sign-in, company workspaces,
+**Status: Phases 1 to 6 complete (2026-10-25); Phase 7 (security, reliability and deployment readiness) in progress: stage 36 makes creating a company invite-only, adds an AI limit for the whole app and security headers.** Sign-in, company workspaces,
 invitations, roles, customer issues, teams, categories, company settings and
 routing rules work against a Supabase database protected by Row Level
 Security, with automated tests on every change. An optional AI (Gemini or
@@ -17,6 +17,9 @@ import problems and failed automatic checks; nothing is emailed or sent
 outside Buddy. A **Reports** tab shows company-wide figures for a date range
 (no figures for individual people) and downloads them as a CSV file.
 It is **not production-ready** and must not hold real customer data yet.
+Creating a company is **invite-only**: anyone can make an account, but only
+email addresses on Buddy's own list can create a company (see
+[Invite-only and app-wide limits](#invite-only-and-app-wide-limits)).
 
 ## Run it on Windows
 
@@ -121,7 +124,10 @@ per hour.
 
 ## Try it
 
-1. Sign up, open the confirmation email, create your company.
+1. Sign up, open the confirmation email, create your company. (Your email
+   must be on the list of people who may create a company: see
+   [Invite-only and app-wide limits](#invite-only-and-app-wide-limits).
+   If you already owned a company before stage 36, you are on it.)
 2. Under **Invite a colleague**, create a link for a second email address you own.
    Buddy does not send emails yet, so copy the link yourself.
 3. In a private browser window, sign up with that second address, confirm it,
@@ -184,6 +190,51 @@ Use made-up customers only until Phase 7.
 4. **Settings** > **Escalations** shows whether the automatic checks are
    running, and in red if the latest one failed.
 
+## Invite-only and app-wide limits
+
+Two settings protect Buddy while it is being tested (Phase 7 stage 36). Both
+live in the database's private area, which the app can't reach, so only you
+can change them, in the Supabase dashboard > **SQL Editor**.
+
+**Who may create a company.** Anyone can make an account, but without an
+invitation or a place on this list it can do nothing. Everyone who already
+owned a company when the stage 36 migration was pushed is on the list.
+
+```sql
+-- See the list
+select email, added_at from private.company_creators order by added_at;
+-- Let someone create companies (use their sign-up email)
+insert into private.company_creators (email) values (lower('person@example.com'));
+-- Take it away again (companies they already own stay)
+delete from private.company_creators where email = lower('person@example.com');
+```
+
+People invited to a company never need to be on the list.
+
+**AI analyses for the whole app.** Each company has its own monthly limit
+(Settings > AI analysis). On top of that, all companies together can use at
+most **300 analyses a month** (counted from the 1st, UTC), so new sign-ups can
+never spend more than you chose. When it is used up, the AI panel says so and
+everything else keeps working.
+
+```sql
+-- See the limit
+select ai_monthly_cap from private.platform_settings;
+-- Change it (0 switches AI off for everyone)
+update private.platform_settings set ai_monthly_cap = 300, updated_at = now();
+```
+
+**Buddy's web address (`BUDDY_SITE_URL`).** Sign-up emails and invitation
+links point at this address. On your PC you can leave it out: Buddy uses the
+address you opened it on (`http://localhost:3000`). A live server refuses to
+send those links until it is set, for example
+`BUDDY_SITE_URL=https://your-buddy-address`, because the address a request
+claims to come from can be faked.
+
+**Security headers.** Every page tells the browser not to let other sites
+show Buddy inside a frame, not to guess file types, and to load scripts and
+styles only from Buddy itself.
+
 ## AI analysis (optional)
 
 Buddy can ask an AI to fill in each new issue's sentiment, type, urgency,
@@ -209,7 +260,9 @@ If both keys are set, Claude is used.
 3. Settings shows "about $... at paid prices": on Gemini's free tier the real
    cost is $0.
 4. In Buddy, **Settings > AI analysis**: tick the box and choose a monthly
-   limit (default 500, at most 2,000).
+   limit (default 500, at most 2,000). The limit for the whole app (300 a
+   month, see [Invite-only and app-wide limits](#invite-only-and-app-wide-limits))
+   applies on top.
 5. Add an issue and leave urgency, sentiment and type on **Let AI decide**.
    After saving, the **AI analysis** panel fills in within a few seconds.
    Anything you chose yourself is kept; the panel offers **Accept** for the
@@ -378,6 +431,9 @@ which step failed, with a screenshot.
 | `npx.cmd supabase db push` says "Remote database is up to date" right after a stage with a new migration | The new code isn't on your PC yet: run `git pull`, check `git log -1 --oneline` names the right PR, then `db push` again |
 | `supabase db push\` says `Unknown subcommand` | There's an extra character at the end of the command; type it again exactly |
 | The bell never shows a number | Notifications go to owners and admins only, and only for new events after the notifications migrations were pushed |
+| Onboarding says "You need an invitation" | Creating a company is invite-only. Add the email to the list (see [Invite-only and app-wide limits](#invite-only-and-app-wide-limits)), then reload the page |
+| The AI panel says "Buddy has used all of this month's AI analyses" | The limit for the whole app is used up. Raise it in the SQL Editor (see [Invite-only and app-wide limits](#invite-only-and-app-wide-limits)) or wait until the 1st |
+| Sign-up or an invitation says "Buddy's web address is not set up yet" | Only on a live server: set `BUDDY_SITE_URL` to Buddy's address and restart it |
 | The downloaded report shows `########` in Excel | The column is too narrow for a date: double-click the line between the column letters to widen it |
 | `git pull` says your local changes to `package-lock.json` would be overwritten | `npm.cmd install` rewrote that file. Run `git checkout -- package-lock.json`, then `git pull` and `npm.cmd ci`. Use `npm.cmd ci` from then on so it doesn't happen again |
 
@@ -417,6 +473,7 @@ src/
   lib/reports.ts          report date ranges and formatting; lib/report-csv.ts builds the CSV file
   lib/supabase/           Supabase clients (server, middleware)
   lib/validation.ts       input rules (zod) for everything the browser sends
+  lib/site-url.ts         Buddy's own address for email and invitation links (BUDDY_SITE_URL)
 supabase/
   migrations/             database tables and security rules
   tests/                  database security tests

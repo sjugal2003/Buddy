@@ -1,12 +1,12 @@
 "use server";
 
 import { createHash, randomBytes } from "node:crypto";
-import { headers } from "next/headers";
 import { revalidatePath } from "next/cache";
 import { redirect } from "next/navigation";
 import { createClient } from "@/lib/supabase/server";
 import { getCurrentUser } from "@/lib/auth";
 import { friendlyError } from "@/lib/errors";
+import { siteUrl } from "@/lib/site-url";
 import {
   createInvitationSchema,
   createOrganizationSchema,
@@ -55,6 +55,9 @@ export async function createInvitation(_prev: FormState, formData: FormData): Pr
     role: formData.get("role"),
   });
   if (!parsed.success) return { fieldErrors: fieldErrors(parsed.error) };
+  // Checked first, so an invitation is never saved without a link to share.
+  const site = await siteUrl();
+  if ("error" in site) return { error: site.error };
 
   // The code goes in the link; only its hash is stored, so a database
   // leak would not reveal working invitation links.
@@ -76,11 +79,9 @@ export async function createInvitation(_prev: FormState, formData: FormData): Pr
   }
 
   revalidatePath("/w/[workspace]", "layout");
-  const h = await headers();
-  const origin = h.get("origin") ?? `http://${h.get("host") ?? "localhost:3000"}`;
   return {
     success: `Invitation created for ${parsed.data.email}.`,
-    link: `${origin}/invite?token=${token}`,
+    link: `${site.url}/invite?token=${token}`,
   };
 }
 

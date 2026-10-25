@@ -47,6 +47,14 @@ Router, React 19, TypeScript strict, Tailwind v4). Full background:
 - Notifications: created only in the database (`private.notify_staff` /
   `private.create_notification`, from triggers), in Buddy only, for owners
   and admins. Titles never contain the customer's message, name or email.
+- Creating a company is invite-only (`private.company_creators`, checked in
+  `create_organization`), and all companies together share an AI limit
+  (`private.platform_settings.ai_monthly_cap`, checked in
+  `start_issue_analysis`). Keep both checks in the database; never add a way
+  for the app to change them.
+- Links that leave the site (email confirmation, invitations) use
+  `siteUrl()` from `src/lib/site-url.ts`, never the Host/Origin header.
+- Security headers live in `next.config.ts`; e2e tests check them.
 - Reports: counted only by `public.issue_report` (members only, company time
   zone). No per-person figures.
 

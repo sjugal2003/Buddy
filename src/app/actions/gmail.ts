@@ -24,12 +24,25 @@ import type { FormState } from "./types";
 // and its token. Issues already in Buddy stay.
 
 export async function disconnectGmail(_prev: FormState, formData: FormData): Promise<FormState> {
-  if (!(await getCurrentUser())) return { error: "Your session has ended. Please sign in again." };
+  const user = await getCurrentUser();
+  if (!user) return { error: "Your session has ended. Please sign in again." };
   const organizationId = idSchema.safeParse(formData.get("organizationId"));
   if (!organizationId.success) return { error: "Something went wrong. Reload the page and try again." };
 
   const supabase = await createClient();
-  // Only owners and admins get the token; disconnect_mailbox below refuses admins.
+  // Owners only. Checked before Google is asked to cancel access, so nobody
+  // else can break the connection; disconnect_mailbox checks again.
+  const membership = await supabase
+    .from("organization_members")
+    .select("role")
+    .eq("organization_id", organizationId.data)
+    .eq("user_id", user.id)
+    .maybeSingle();
+  if (membership.error) {
+    return { error: friendlyError(membership.error, "We couldn't disconnect the inbox. Please try again.", "disconnectGmail") };
+  }
+  if (membership.data?.role !== "owner") return { error: "Only the company owner can disconnect Gmail." };
+
   const token = await supabase.rpc("mailbox_token", { p_organization_id: organizationId.data });
   if (token.error) return { error: friendlyError(token.error, "We couldn't disconnect the inbox. Please try again.", "disconnectGmail") };
 

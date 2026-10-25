@@ -1,21 +1,16 @@
 "use server";
 
-import { headers } from "next/headers";
 import { redirect } from "next/navigation";
 import { createClient } from "@/lib/supabase/server";
 import { isSupabaseConfigured } from "@/lib/supabase/config";
 import { safeNextPath } from "@/lib/auth";
+import { siteUrl } from "@/lib/site-url";
 import { fieldErrors, signInSchema, signUpSchema } from "@/lib/validation";
 import type { FormState } from "./types";
 
 const NOT_CONFIGURED: FormState = {
   error: "Sign-in is not set up yet. Add the Supabase settings to .env.local (see the README).",
 };
-
-async function siteOrigin() {
-  const h = await headers();
-  return h.get("origin") ?? `http://${h.get("host") ?? "localhost:3000"}`;
-}
 
 export async function signUp(_prev: FormState, formData: FormData): Promise<FormState> {
   if (!isSupabaseConfigured()) return NOT_CONFIGURED;
@@ -25,6 +20,8 @@ export async function signUp(_prev: FormState, formData: FormData): Promise<Form
     password: formData.get("password"),
   });
   if (!parsed.success) return { fieldErrors: fieldErrors(parsed.error) };
+  const site = await siteUrl();
+  if ("error" in site) return { error: site.error };
 
   const supabase = await createClient();
   const { error } = await supabase.auth.signUp({
@@ -32,7 +29,7 @@ export async function signUp(_prev: FormState, formData: FormData): Promise<Form
     password: parsed.data.password,
     options: {
       data: { full_name: parsed.data.fullName },
-      emailRedirectTo: `${await siteOrigin()}/auth/confirm?next=/onboarding`,
+      emailRedirectTo: `${site.url}/auth/confirm?next=/onboarding`,
     },
   });
   if (error) {
