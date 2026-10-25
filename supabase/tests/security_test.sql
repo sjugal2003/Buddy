@@ -1438,6 +1438,77 @@ select tests.act_as(current_setting('t.b_owner')::uuid);
 select tests.expect_rows(format($q$select 1 from public.notifications where issue_id in (%L, %L)$q$,
   current_setting('t.issue_n1'), current_setting('t.issue_n2')), 0, 'owner B sees none of company A''s event notifications');
 
+-- ---------------------------------------------------------------------------
+-- Scheduler reliability (Phase 6 stage 31)
+-- ---------------------------------------------------------------------------
+
+reset role;
+-- A failed scheduled check notifies the owner and the admin, at most once a day.
+insert into public.escalation_runs (id, organization_id, source, started_at) values
+  ('e1000000-0000-4000-8000-000000000001', current_setting('t.org_a')::uuid, 'scheduled', '2026-10-20T10:00:00Z'),
+  ('e1000000-0000-4000-8000-000000000002', current_setting('t.org_a')::uuid, 'scheduled', '2026-10-20T10:15:00Z'),
+  ('e1000000-0000-4000-8000-000000000003', current_setting('t.org_a')::uuid, 'manual', '2026-10-20T10:20:00Z'),
+  ('e1000000-0000-4000-8000-000000000004', current_setting('t.org_a')::uuid, 'scheduled', '2026-10-20T10:30:00Z');
+update public.escalation_runs set finished_at = started_at, issues_checked = 3
+  where id = 'e1000000-0000-4000-8000-000000000004';
+select tests.expect_rows($q$select 1 from public.notifications where kind = 'scheduler_failed'$q$, 0,
+  'a successful scheduled check notifies nobody');
+update public.escalation_runs set finished_at = started_at, error = 'Something broke.'
+  where id = 'e1000000-0000-4000-8000-000000000001';
+select tests.expect_rows(format($q$select 1 from public.notifications where kind = 'scheduler_failed'
+  and dedupe_key = 'scheduler_failed:2026-10-20' and recipient_id in (%L, %L) and organization_id = %L
+  and title = 'The automatic escalation check failed. See Settings for the reason.'$q$,
+  current_setting('t.a_owner'), current_setting('t.a_member'), current_setting('t.org_a')), 2,
+  'a failed scheduled check notifies the owner and the admin');
+select tests.expect_rows(format($q$select 1 from public.notifications where kind = 'scheduler_failed' and recipient_id in (%L, %L)$q$,
+  current_setting('t.invitee'), current_setting('t.b_owner')), 0, 'members and other companies are not told');
+update public.escalation_runs set finished_at = started_at, error = 'Something broke again.'
+  where id = 'e1000000-0000-4000-8000-000000000002';
+select tests.expect_rows($q$select 1 from public.notifications where kind = 'scheduler_failed'$q$, 2,
+  'a second failure the same day does not notify again');
+update public.escalation_runs set finished_at = started_at, error = 'A manual check broke.'
+  where id = 'e1000000-0000-4000-8000-000000000003';
+select tests.expect_rows($q$select 1 from public.notifications where kind = 'scheduler_failed'$q$, 2,
+  'a failed Check now (seen by the person who pressed it) does not notify');
+
+-- Daily clean-up.
+select tests.expect_rows($q$select 1 from cron.job where jobname = 'buddy-daily-cleanup' and schedule = '30 3 * * *'$q$, 1,
+  'the daily clean-up job is scheduled');
+insert into public.import_runs (id, organization_id, source, file_name, started_at) values
+  ('f1000000-0000-4000-8000-000000000001', current_setting('t.org_a')::uuid, 'csv', 'stuck.csv', now() - interval '2 hours'),
+  ('f1000000-0000-4000-8000-000000000002', current_setting('t.org_a')::uuid, 'csv', 'busy.csv', now() - interval '5 minutes');
+insert into public.escalation_runs (id, organization_id, source, started_at, finished_at) values
+  ('e1000000-0000-4000-8000-000000000005', current_setting('t.org_a')::uuid, 'scheduled', now() - interval '100 days', now() - interval '100 days');
+update public.notifications set read_at = now() - interval '100 days'
+  where id = current_setting('t.note_a2')::uuid;
+update public.notifications set read_at = now() - interval '10 days'
+  where id = current_setting('t.note_admin')::uuid;
+update public.notifications set read_at = null, created_at = now() - interval '200 days'
+  where id = current_setting('t.note_b')::uuid;
+select tests.expect_rows($q$select 1 where (private.run_daily_cleanup() ->> 'imports_closed')::int >= 1$q$, 1,
+  'the clean-up runs and reports what it did');
+select tests.expect_rows($q$select 1 from public.import_runs where id = 'f1000000-0000-4000-8000-000000000001'
+  and status = 'failed' and error = 'Did not finish.' and finished_at is not null$q$, 1, 'an import stuck for over an hour is closed');
+select tests.expect_rows($q$select 1 from public.notifications where dedupe_key = 'import:f1000000-0000-4000-8000-000000000001'$q$, 2,
+  'closing it notifies the owner and the admin');
+select tests.expect_rows($q$select 1 from public.import_runs where id = 'f1000000-0000-4000-8000-000000000002' and status = 'running'$q$, 1,
+  'an import still in progress is left alone');
+select tests.expect_rows(format('select 1 from public.notifications where id = %L', current_setting('t.note_a2')), 0,
+  'a notification read over 90 days ago is deleted');
+select tests.expect_rows(format('select 1 from public.notifications where id = %L', current_setting('t.note_admin')), 1,
+  'a recently read notification is kept');
+select tests.expect_rows(format('select 1 from public.notifications where id = %L', current_setting('t.note_b')), 1,
+  'an unread notification is kept however old');
+select tests.expect_rows($q$select 1 from public.escalation_runs where id = 'e1000000-0000-4000-8000-000000000005'$q$, 0,
+  'a check log older than 90 days is deleted');
+select tests.expect_rows($q$select 1 from public.escalation_runs where id = 'e1000000-0000-4000-8000-000000000004'$q$, 1,
+  'recent check logs are kept');
+
+set local role authenticated;
+select tests.act_as(current_setting('t.a_owner')::uuid);
+select tests.expect_error('select private.run_daily_cleanup()', 'a signed-in owner cannot run the clean-up');
+select tests.expect_error('select * from cron.job', 'a signed-in user cannot see the scheduled jobs');
+
 -- Deleting the issue keeps its analyses, so the monthly count cannot be reset.
 select tests.act_as(current_setting('t.a_owner')::uuid);
 select tests.expect_affected(format('delete from public.issues where id = %L', current_setting('t.issue_a')), 1,
