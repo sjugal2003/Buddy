@@ -30,6 +30,8 @@ export function notificationHref(slug: string, kind: NotificationKind, issueId: 
   if (issueId) return `${base}/issues/${encodeURIComponent(issueId)}`;
   if (kind === "import_problem") return `${base}/data-sources`;
   if (kind === "scheduler_failed") return `${base}/settings`;
+  // A summary of many escalations opens the list of unacknowledged ones.
+  if (kind === "escalation") return `${base}/issues?escalated=open`;
   return `${base}/issues`;
 }
 

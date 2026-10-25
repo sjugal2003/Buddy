@@ -1278,8 +1278,12 @@ select tests.expect_error(format($q$select private.create_notification(%L, %L, '
 
 set local role authenticated;
 select tests.act_as(current_setting('t.a_owner')::uuid);
-select tests.expect_rows('select 1 from public.notifications', 2, 'owner A sees only their own two notifications');
-select tests.expect_rows('select 1 from public.notifications where read_at is null', 2, 'both start unread');
+select tests.expect_rows($q$select 1 from public.notifications where dedupe_key like 'test:%'$q$, 2,
+  'owner A sees only their own two test notifications');
+select tests.expect_rows(format($q$select 1 from public.notifications where recipient_id <> %L$q$, current_setting('t.a_owner')), 0,
+  'owner A sees nobody else''s notifications');
+select tests.expect_rows($q$select 1 from public.notifications where dedupe_key like 'test:%' and read_at is null$q$, 2,
+  'both start unread');
 select tests.expect_error(format($q$select private.create_notification(%L, %L, 'escalation', 'Fake', 'fake:1')$q$,
   current_setting('t.org_a'), current_setting('t.a_owner')), 'a signed-in user cannot create notifications');
 select tests.expect_error(format($q$insert into public.notifications (organization_id, recipient_id, kind, title, dedupe_key)
@@ -1302,19 +1306,23 @@ select tests.expect_rows(format($q$select 1 from public.notifications where id =
 select tests.expect_rows(format($q$select 1 where public.mark_notification_read(%L) =
   (select read_at from public.notifications where id = %L)$q$, current_setting('t.note_a1'), current_setting('t.note_a1')), 1,
   'marking it again keeps the first read time');
-select tests.expect_rows(format($q$select 1 where public.mark_all_notifications_read(%L) = 1$q$,
-  current_setting('t.org_a')), 1, 'mark all as read changes only the one still unread');
+select tests.expect_rows(format($q$select 1 where public.mark_all_notifications_read(%L) >= 1$q$,
+  current_setting('t.org_a')), 1, 'mark all as read changes the ones still unread');
+select tests.expect_rows('select 1 from public.notifications where read_at is null', 0, 'nothing of owner A''s is left unread');
 select tests.expect_rows(format($q$select 1 where public.mark_all_notifications_read(%L) = 0$q$,
   current_setting('t.org_a')), 1, 'mark all as read again changes nothing');
 select tests.expect_error(format($q$select public.mark_all_notifications_read(%L)$q$, current_setting('t.org_b')),
   'owner A cannot mark company B''s notifications as read');
 
 select tests.act_as(current_setting('t.a_member')::uuid);
-select tests.expect_rows('select 1 from public.notifications where read_at is null', 1,
+select tests.expect_rows($q$select 1 from public.notifications where dedupe_key like 'test:%' and read_at is null$q$, 1,
   'the admin''s notification is still unread after owner A marked theirs');
 
 select tests.act_as(current_setting('t.b_owner')::uuid);
-select tests.expect_rows('select 1 from public.notifications', 1, 'owner B sees only their own notification');
+select tests.expect_rows($q$select 1 from public.notifications where dedupe_key like 'test:%'$q$, 1,
+  'owner B sees only their own test notification');
+select tests.expect_rows(format($q$select 1 from public.notifications where recipient_id <> %L$q$, current_setting('t.b_owner')), 0,
+  'owner B sees nobody else''s notifications');
 select tests.expect_rows(format($q$select 1 from public.notifications where organization_id = %L$q$,
   current_setting('t.org_a')), 0, 'owner B sees none of company A''s notifications');
 select tests.expect_error(format($q$select public.mark_notification_read(%L)$q$, current_setting('t.note_a2')),
@@ -1335,6 +1343,100 @@ select tests.expect_error(format($q$select public.mark_all_notifications_read(%L
   'a signed-out visitor cannot mark all as read');
 reset role;
 set local role authenticated;
+
+-- ---------------------------------------------------------------------------
+-- What creates notifications (Phase 6 stage 30)
+-- ---------------------------------------------------------------------------
+
+-- An issue typed in as Critical notifies company A's owner and admin, not the member.
+set local role authenticated;
+select tests.act_as(current_setting('t.a_owner')::uuid);
+select tests.expect_affected(format(
+  $q$insert into public.issues (organization_id, reference, customer_name, channel, subject, message, urgency)
+     values (%L, 'N-1', 'Secret Customer', 'email', 'Secret subject', 'Secret message text.', 'critical')$q$,
+  current_setting('t.org_a')), 1, 'owner A creates a critical issue');
+reset role;
+select set_config('t.issue_n1', (select id::text from public.issues where reference = 'N-1'), true);
+select tests.expect_rows(format($q$select 1 from public.notifications where issue_id = %L and kind = 'urgent_issue'
+  and recipient_id in (%L, %L) and title = 'Critical issue: N-1'$q$, current_setting('t.issue_n1'),
+  current_setting('t.a_owner'), current_setting('t.a_member')), 2, 'a critical issue notifies the owner and the admin');
+select tests.expect_rows(format($q$select 1 from public.notifications where issue_id = %L and recipient_id = %L$q$,
+  current_setting('t.issue_n1'), current_setting('t.invitee')), 0, 'members are not notified');
+select tests.expect_rows(format($q$select 1 from public.notifications where issue_id = %L
+  and (title ilike '%%secret%%' or title ilike '%%@%%')$q$, current_setting('t.issue_n1')), 0,
+  'the notification holds none of the customer''s words');
+
+-- Raised later (by a person or the AI): once per issue.
+insert into public.issues (organization_id, reference, customer_name, channel, subject, message)
+values (current_setting('t.org_a')::uuid, 'N-2', 'Customer', 'email', 'Subject', 'Message.');
+select set_config('t.issue_n2', (select id::text from public.issues where reference = 'N-2'), true);
+select tests.expect_rows(format($q$select 1 from public.notifications where issue_id = %L$q$, current_setting('t.issue_n2')), 0,
+  'a medium-urgency issue notifies nobody');
+update public.issues set urgency = 'high' where id = current_setting('t.issue_n2')::uuid;
+select tests.expect_rows(format($q$select 1 from public.notifications where issue_id = %L and kind = 'urgent_issue'
+  and title = 'High urgency issue: N-2'$q$, current_setting('t.issue_n2')), 2, 'raising an issue to High notifies');
+update public.issues set urgency = 'medium' where id = current_setting('t.issue_n2')::uuid;
+update public.issues set urgency = 'critical' where id = current_setting('t.issue_n2')::uuid;
+select tests.expect_rows(format($q$select 1 from public.notifications where issue_id = %L and kind = 'urgent_issue'$q$,
+  current_setting('t.issue_n2')), 2, 'lowering and raising it again does not notify twice');
+insert into public.issues (organization_id, reference, customer_name, channel, subject, message, urgency, status)
+values (current_setting('t.org_a')::uuid, 'N-3', 'Customer', 'email', 'Subject', 'Message.', 'critical', 'resolved');
+select tests.expect_rows($q$select 1 from public.notifications n join public.issues i on i.id = n.issue_id
+  where i.reference = 'N-3'$q$, 0, 'an already resolved issue notifies nobody');
+
+-- Escalations: one notification each, linking to the issue; never twice.
+insert into public.escalations (organization_id, issue_id, condition, level, reason, spell)
+values (current_setting('t.org_a')::uuid, current_setting('t.issue_n2')::uuid, 'resolution_breached', 2, 'Test', 0);
+select set_config('t.esc_n2', (select id::text from public.escalations where issue_id = current_setting('t.issue_n2')::uuid), true);
+select tests.expect_rows(format($q$select 1 from public.notifications where dedupe_key = %L and kind = 'escalation'
+  and issue_id = %L and title = 'Escalated (level 2): resolution target missed, N-2'$q$,
+  'escalation:' || current_setting('t.esc_n2'), current_setting('t.issue_n2')), 2, 'an escalation notifies the owner and the admin');
+insert into public.escalations (organization_id, issue_id, condition, level, reason, spell)
+values (current_setting('t.org_a')::uuid, current_setting('t.issue_n2')::uuid, 'resolution_breached', 2, 'Test', 0)
+on conflict (issue_id, condition, spell) do nothing;
+select tests.expect_rows(format($q$select 1 from public.notifications where issue_id = %L and kind = 'escalation'$q$,
+  current_setting('t.issue_n2')), 2, 'an escalation that already exists notifies nobody again');
+
+-- More than 10 in one check become one summary.
+insert into public.issues (organization_id, reference, customer_name, channel, subject, message)
+select current_setting('t.org_b')::uuid, 'BULK-' || g, 'Customer', 'email', 'Subject', 'Message.' from generate_series(1, 11) g;
+insert into public.escalations (organization_id, issue_id, condition, level, reason, spell)
+select organization_id, id, 'no_update', 1, 'Test', 0 from public.issues where reference like 'BULK-%';
+select tests.expect_rows(format($q$select 1 from public.notifications where recipient_id = %L and kind = 'escalation'
+  and title = '11 issues escalated in one check. See the Issues list.' and issue_id is null$q$,
+  current_setting('t.b_owner')), 1, 'eleven escalations in one check give one summary');
+select tests.expect_rows($q$select 1 from public.notifications n join public.issues i on i.id = n.issue_id
+  where i.reference like 'BULK-%'$q$, 0, 'and no notification per issue');
+
+-- Imports and fetches: only problems notify.
+insert into public.import_runs (id, organization_id, source, file_name) values
+  ('f0000000-0000-4000-8000-000000000001', current_setting('t.org_a')::uuid, 'csv', 'clean.csv'),
+  ('f0000000-0000-4000-8000-000000000002', current_setting('t.org_a')::uuid, 'csv', 'partly.csv'),
+  ('f0000000-0000-4000-8000-000000000003', current_setting('t.org_a')::uuid, 'gmail', 'inbox@example.com');
+update public.import_runs set status = 'finished', finished_at = now(), imported = 3
+  where id = 'f0000000-0000-4000-8000-000000000001';
+update public.import_runs set status = 'finished', finished_at = now(), imported = 1, rejected = 2
+  where id = 'f0000000-0000-4000-8000-000000000002';
+update public.import_runs set status = 'failed', finished_at = now(), error = 'Google stopped answering.'
+  where id = 'f0000000-0000-4000-8000-000000000003';
+select tests.expect_rows($q$select 1 from public.notifications where dedupe_key = 'import:f0000000-0000-4000-8000-000000000001'$q$, 0,
+  'a clean import notifies nobody');
+select tests.expect_rows($q$select 1 from public.notifications where dedupe_key = 'import:f0000000-0000-4000-8000-000000000002'
+  and kind = 'import_problem' and title = 'CSV import finished, but 2 rows could not be saved. See the import history.'$q$, 2,
+  'rejected rows notify the owner and the admin');
+select tests.expect_rows($q$select 1 from public.notifications where dedupe_key = 'import:f0000000-0000-4000-8000-000000000003'
+  and title = 'Gmail fetch stopped with an error. See the import history.'$q$, 2, 'a failed fetch notifies the owner and the admin');
+select tests.expect_rows(format($q$select 1 from public.notifications where dedupe_key like 'import:f0000000%%'
+  and recipient_id in (%L, %L)$q$, current_setting('t.invitee'), current_setting('t.b_owner')), 0,
+  'nobody outside company A''s owners and admins hears about its imports');
+
+set local role authenticated;
+select tests.act_as(current_setting('t.a_owner')::uuid);
+select tests.expect_error(format($q$select private.notify_staff(%L, 'escalation', 'Fake', 'fake:3')$q$,
+  current_setting('t.org_a')), 'a signed-in user cannot send notifications to the staff');
+select tests.act_as(current_setting('t.b_owner')::uuid);
+select tests.expect_rows(format($q$select 1 from public.notifications where issue_id in (%L, %L)$q$,
+  current_setting('t.issue_n1'), current_setting('t.issue_n2')), 0, 'owner B sees none of company A''s event notifications');
 
 -- Deleting the issue keeps its analyses, so the monthly count cannot be reset.
 select tests.act_as(current_setting('t.a_owner')::uuid);

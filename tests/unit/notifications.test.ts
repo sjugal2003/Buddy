@@ -12,6 +12,7 @@ describe("notificationHref", () => {
     expect(notificationHref("acme", "import_problem", null)).toBe("/w/acme/data-sources");
     expect(notificationHref("acme", "scheduler_failed", null)).toBe("/w/acme/settings");
     expect(notificationHref("acme", "urgent_issue", null)).toBe("/w/acme/issues");
+    expect(notificationHref("acme", "escalation", null)).toBe("/w/acme/issues?escalated=open");
   });
 
   it("always stays inside the workspace", () => {
