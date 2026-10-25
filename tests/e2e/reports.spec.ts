@@ -1,4 +1,5 @@
-import { expect, test } from "@playwright/test";
+import { readFile } from "node:fs/promises";
+import { expect, request, test } from "@playwright/test";
 import pg from "pg";
 import { createOrg, signUpAndConfirm, stamp } from "./helpers";
 
@@ -94,6 +95,21 @@ test("reports: company figures for a chosen range, private to the company", asyn
     await expect(A.getByTestId("report-received")).toContainText("1 of them still open");
   });
 
+  await test.step("Download CSV saves the same range as a file", async () => {
+    const [download] = await Promise.all([A.waitForEvent("download"), A.getByTestId("report-download").click()]);
+    expect(download.suggestedFilename()).toBe(`buddy-report-${slugA}-${oldFrom}-to-${oldTo}.csv`);
+    const csv = await readFile((await download.path())!, "utf8");
+    expect(csv).toContain("Report,Company,Report Co");
+    expect(csv).toContain(`Report,From,${oldFrom}`);
+    expect(csv).toContain("Totals,Issues received,1\r\n");
+    expect(csv).toContain("By urgency,Medium,1");
+    expect(csv).not.toContain("Test Person");
+
+    const bad = await A.request.get(`${W}/reports/download?range=custom&from=2025-02-01&to=2025-01-01`);
+    expect(bad.status()).toBe(400);
+    expect(await bad.text()).toBe("Choose a start date on or before the end date.");
+  });
+
   await test.step("an unusable range says so and shows the last 30 days", async () => {
     await A.goto(`${W}/reports?range=custom&from=2025-02-01&to=2025-01-01`);
     await expect(A.getByTestId("report-range-error")).toContainText("Choose a start date on or before the end date.");
@@ -104,6 +120,15 @@ test("reports: company figures for a chosen range, private to the company", asyn
     const B = await signUpAndConfirm(browser, baseURL!, "Bea Owner", `rep-other${id}@example.com`);
     await createOrg(B, "Other Co", slugB);
     expect((await B.goto(`${W}/reports`))?.status()).toBe(404);
+    const theirs = await B.request.get(`${W}/reports/download?range=30d`);
+    expect(theirs.status()).toBe(404);
+    expect(await theirs.text()).not.toContain("Report Co");
+    // Signed out: sent to the sign-in page, no file.
+    const visitor = await request.newContext({ baseURL });
+    const anon = await visitor.get(`${W}/reports/download?range=30d`);
+    expect(anon.url()).toContain("/login");
+    expect(await anon.text()).not.toContain("Report Co");
+    await visitor.dispose();
     await B.goto(`/w/${slugB}/reports`);
     await expect(B.getByTestId("report-empty")).toBeVisible();
   });

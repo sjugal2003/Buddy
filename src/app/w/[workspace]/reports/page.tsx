@@ -1,7 +1,8 @@
 import Link from "next/link";
 import { notFound } from "next/navigation";
 import { Card } from "@/components/ui/card";
-import { inputClass, primaryButton } from "@/components/ui/form";
+import { Download } from "lucide-react";
+import { inputClass, primaryButton, secondaryButton } from "@/components/ui/form";
 import { PageHeader } from "@/components/ui/page-header";
 import { StatCard } from "@/components/ui/stat-card";
 import { requireUser } from "@/lib/auth";
@@ -72,6 +73,9 @@ export default async function ReportsPage({
   const range = resolveReportRange(await searchParams, today);
   const result = await getIssueReport(membership.organization.id, range.from, range.to);
   const base = `/w/${slug}/reports`;
+  // The file covers exactly the range on screen.
+  const rangeQuery =
+    range.preset === "custom" ? `range=custom&from=${range.from}&to=${range.to}` : `range=${range.preset}`;
 
   const presetLink = (preset: Exclude<ReportPreset, "custom">) => (
     <Link
@@ -91,6 +95,14 @@ export default async function ReportsPage({
       <PageHeader
         title="Reports"
         description="Figures for the whole company, counted by the database from this workspace's own issues. Everyone in the company can see them. There are no figures for individual people."
+        actions={
+          "error" in result ? undefined : (
+            // A plain link: the browser saves the file the server sends.
+            <a href={`${base}/download?${rangeQuery}`} download className={secondaryButton} data-testid="report-download">
+              <Download className="h-4 w-4" aria-hidden /> Download CSV
+            </a>
+          )
+        }
       />
 
       <Card className="mb-6">
