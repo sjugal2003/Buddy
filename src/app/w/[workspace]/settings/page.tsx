@@ -157,7 +157,7 @@ export default async function SettingsPage({ params }: { params: Promise<{ works
                 )}
               </dd>
               <dt className="text-slate-500">Email and chat notifications</dt>
-              <dd className="text-slate-900">Not set up (Phase 6)</dd>
+              <dd className="text-slate-900">Not set up. Notifications appear in Buddy only (the bell at the top).</dd>
             </dl>
             {canEdit ? (
               <>

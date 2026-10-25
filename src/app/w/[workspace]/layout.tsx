@@ -4,8 +4,9 @@ import { LogOut, Sparkles } from "lucide-react";
 import { signOut } from "@/app/actions/auth";
 import { WorkspaceSwitcher } from "@/components/org/workspace-switcher";
 import { WorkspaceNav } from "@/components/issues/workspace-nav";
+import { NotificationBell } from "@/components/notifications/notification-bell";
 import { requireUser } from "@/lib/auth";
-import { getMembershipBySlug, listMyMemberships } from "@/lib/data/live";
+import { countUnreadNotifications, getMembershipBySlug, listMyMemberships } from "@/lib/data/live";
 
 export const dynamic = "force-dynamic";
 
@@ -22,7 +23,11 @@ export default async function LiveWorkspaceLayout({
   // belong to gives the same "not found" page as one that doesn't exist.
   const membership = await getMembershipBySlug(user.id, slug);
   if (!membership) notFound();
-  const memberships = await listMyMemberships(user.id);
+  const [memberships, unread] = await Promise.all([
+    listMyMemberships(user.id),
+    // A failed count must not take the whole workspace down; the bell then shows no number.
+    countUnreadNotifications(membership.organization.id).catch(() => null),
+  ]);
 
   return (
     <div className="min-h-screen bg-slate-50">
@@ -39,6 +44,7 @@ export default async function LiveWorkspaceLayout({
             options={memberships.map((m) => ({ slug: m.organization.slug, name: m.organization.name }))}
           />
           <div className="ml-auto flex items-center gap-3">
+            <NotificationBell slug={slug} unread={unread} />
             <span className="hidden text-sm text-slate-500 sm:inline">{user.email}</span>
             <form action={signOut}>
               <button type="submit" className="inline-flex items-center gap-1.5 rounded-lg px-2 py-1.5 text-sm text-slate-600 hover:bg-slate-100">
