@@ -15,10 +15,11 @@ export function WorkspaceNav({ slug }: { slug: string }) {
       label: "Data sources",
       active: pathname.startsWith(`/w/${slug}/data-sources`),
     },
+    { href: `/w/${slug}/reports`, label: "Reports", active: pathname.startsWith(`/w/${slug}/reports`) },
     { href: `/w/${slug}/settings`, label: "Settings", active: pathname.startsWith(`/w/${slug}/settings`) },
   ];
   return (
-    <nav aria-label="Workspace" className="mx-auto flex max-w-5xl gap-1 px-4 sm:px-6">
+    <nav aria-label="Workspace" className="mx-auto flex max-w-5xl gap-1 overflow-x-auto px-4 sm:px-6">
       {tabs.map((tab) => (
         <Link
           key={tab.href}
