@@ -675,9 +675,15 @@ export interface EscalationRun {
 
 export async function getEscalationSettings(
   organizationId: string,
-): Promise<{ settings: EscalationSettings; lastRun: EscalationRun | null; lastScheduledAt: string | null }> {
+): Promise<{
+  settings: EscalationSettings;
+  lastRun: EscalationRun | null;
+  lastScheduledAt: string | null;
+  lastScheduledError: string | null;
+  lastScheduledSuccessAt: string | null;
+}> {
   const supabase = await createClient();
-  const [settings, runs, scheduled] = await Promise.all([
+  const [settings, runs, scheduled, scheduledOk] = await Promise.all([
     supabase
       .from("escalation_settings")
       .select(
@@ -694,13 +700,23 @@ export async function getEscalationSettings(
     // The latest check started by the database scheduler (stage 20), if any ever ran.
     supabase
       .from("escalation_runs")
-      .select("started_at")
+      .select("started_at, error")
       .eq("organization_id", organizationId)
       .eq("source", "scheduled")
       .order("started_at", { ascending: false })
       .limit(1),
+    // The latest scheduled check that finished without an error (stage 31).
+    supabase
+      .from("escalation_runs")
+      .select("started_at")
+      .eq("organization_id", organizationId)
+      .eq("source", "scheduled")
+      .is("error", null)
+      .not("finished_at", "is", null)
+      .order("started_at", { ascending: false })
+      .limit(1),
   ]);
-  const error = settings.error ?? runs.error ?? scheduled.error;
+  const error = settings.error ?? runs.error ?? scheduled.error ?? scheduledOk.error;
   if (error || !settings.data) {
     console.error("[getEscalationSettings]", error?.code, error?.message);
     throw new Error("Could not load the escalation settings.");
@@ -728,6 +744,8 @@ export async function getEscalationSettings(
         }
       : null,
     lastScheduledAt: scheduled.data?.[0]?.started_at ?? null,
+    lastScheduledError: scheduled.data?.[0]?.error ?? null,
+    lastScheduledSuccessAt: scheduledOk.data?.[0]?.started_at ?? null,
   };
 }
 

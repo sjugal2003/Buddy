@@ -45,7 +45,10 @@ export default async function SettingsPage({ params }: { params: Promise<{ works
   ]);
   const aiService = aiServiceStatus();
   // Judged from the scheduled checks actually logged, with the server's clock.
-  const automatic = automaticCheckStatus(escalation.lastScheduledAt, new Date());
+  const automatic = automaticCheckStatus(escalation.lastScheduledAt, new Date(), {
+    error: escalation.lastScheduledError,
+    lastSuccessAt: escalation.lastScheduledSuccessAt,
+  });
   const aiCost = ai.estimatedCostUsd;
   // Listed on the server so the page and the browser show the same options.
   const timeZones = Array.from(new Set(["UTC", settings.timezone, ...Intl.supportedValuesOf("timeZone")]));
@@ -148,11 +151,19 @@ export default async function SettingsPage({ params }: { params: Promise<{ works
                   : "Never run"}
               </dd>
               <dt className="text-slate-500">Automatic checks</dt>
-              <dd className="text-slate-900" data-testid="automatic-checks">
+              <dd className={automatic.failing ? "text-red-700" : "text-slate-900"} data-testid="automatic-checks">
                 {automatic.text}
                 {escalation.lastScheduledAt && (
                   <span className="block text-xs text-slate-500">
                     Last scheduled check: {formatDateTimeIn(escalation.lastScheduledAt, settings.timezone)}
+                  </span>
+                )}
+                {automatic.failing && (
+                  <span className="block text-xs text-slate-500" data-testid="automatic-last-success">
+                    Last successful scheduled check:{" "}
+                    {escalation.lastScheduledSuccessAt
+                      ? formatDateTimeIn(escalation.lastScheduledSuccessAt, settings.timezone)
+                      : "none yet"}
                   </span>
                 )}
               </dd>
