@@ -1,6 +1,6 @@
 # Buddy: project context
 
-Last updated: 2026-10-25 (Phase 6 stage 33: report CSV download).
+Last updated: 2026-10-25 (Phase 6 complete: stage 34 wrap-up).
 Keep this file accurate. Update it at the end of every stage.
 
 ## 1. Product vision
@@ -428,7 +428,8 @@ run keeps the Playwright report for 7 days (Actions > the run > Artifacts).
 - The "This week" card opens the full Issues list: there is no "this week"
   filter, so only the six other cards match their list exactly.
 - Every scheduled escalation check adds a row to `escalation_runs` (about 96
-  a day per company with a condition on). Nothing tidies old rows yet.
+  a day per company with a condition on). From stage 31 the daily clean-up
+  (03:30 UTC) deletes rows older than 90 days.
 - A free Supabase project pauses after about a week without activity, and
   pg_cron stops with it. Settings then warns that automatic checks may have
   stopped; restoring the project in the Supabase dashboard starts them again.
@@ -485,6 +486,31 @@ run keeps the Playwright report for 7 days (Actions > the run > Artifacts).
   issue (replies in a thread are not grouped yet). Use a test
   Gmail account with made-up emails until Phase 7's security review.
 
+- **Notifications (Phase 6):** in Buddy only (no email, chat or SMS) and
+  only for owners and admins; members get none because teams have no member
+  list. There are no per-person on/off settings. Each event notifies each
+  person once; more than 10 escalations in one check become one summary; a
+  failing automatic check notifies at most once a day. Events from before
+  the notifications migrations were pushed never notify. Read notifications
+  are deleted after 90 days; unread ones are kept. There is no "approaching
+  the deadline" warning (escalations cover missed targets).
+- **Daily clean-up (Phase 6):** the `buddy-daily-cleanup` pg_cron job (03:30
+  UTC) was confirmed to be scheduled on Jugal's hosted project on
+  2026-10-25, but has not yet been seen to run there; check
+  `cron.job_run_details` after its first run. Like the 15-minute job, it
+  stops while a free Supabase project is paused.
+- **Reports (Phase 6):** times run around the clock from arrival (no
+  business hours), and the response target uses the current targets in
+  Settings, so changing a target changes past figures too. Response times
+  exist only where someone pressed "Record first response"; resolution time
+  is from arrival to the latest resolution (time waiting on the customer
+  included). Past conversations imported as already resolved count as
+  received but are not timed. The import figures come from the import
+  history, which keeps the counts from the time of each import even if those
+  issues were deleted later. Ranges are at most 366 days. There are no
+  per-person figures (the assignee is free text, and raw counts are not a
+  fair measure of a person's work).
+
 ## 13. Security requirements (apply from Phase 2 on)
 
 - Real data only after sign-in, memberships and Row Level Security are in place
@@ -520,6 +546,7 @@ run keeps the Playwright report for 7 days (Actions > the run > Artifacts).
    checks; read ones deleted after 90 days; reuse the pg_cron scheduler; a
    Reports page everyone in the company can see (no per-person figures);
    optional CSV export. Stages 29 to 34, one PR each, Jugal's go before each.
+   **Done (2026-10-25).**
 7. Security, reliability and deployment readiness.
 
 ## 15. Completed and remaining work
@@ -790,3 +817,22 @@ Phase 6:
   (`tests/e2e/reports.spec.ts` now downloads the file and checks another
   company gets 404 and a signed-out visitor is sent to sign in), 426/426
   security checks, lint, type check, build, `npm audit` 0 (2026-10-25).
+  PR #32, merged 2026-10-25; checked on Jugal's PC (the file opened in
+  Excel with the same figures as the page).
+- Stage 34: wrap-up (README: status, trying notifications and reports, new
+  pages and troubleshooting rows; this file: limitations). No code or
+  database change. Every check run once more: 426/426 security checks, 20/20
+  browser tests, 158 unit tests, lint, type check, build, `npm audit` 0
+  (2026-10-25).
+
+Phase 6 is complete. Verified on Jugal's hosted project: the bell and
+Notifications page (stage 29), notifications for a Critical issue and an
+import with rejected rows (stage 30), the automatic-check status and both
+pg_cron jobs scheduled (stage 31), the Reports page (stage 32) and its CSV
+download (stage 33). Not yet seen on the hosted project: a notification for
+an escalation or a failed automatic check (both covered by tests), and a run
+of the daily clean-up job. Deferred by Jugal's decisions: email, WhatsApp,
+Slack and other outside notifications, per-person notification settings,
+"approaching the deadline" warnings and per-person reports. Next: Phase 7
+(security, reliability and deployment readiness), only after Jugal approves
+a plan.
