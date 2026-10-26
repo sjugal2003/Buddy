@@ -111,4 +111,8 @@ configured Supabase project.
 
 Do not run `npm audit fix --force`: it makes breaking upgrades (for example it
 downgrades `eslint-config-next`). Upgrade the flagged package on its own
-instead (see PROJECT_CONTEXT.md §12). `npm audit` reported 0 on 2026-10-24.
+instead (see PROJECT_CONTEXT.md §12). `npm audit` reported 0 on 2026-10-26.
+CI fails on high or critical advisories (`npm audit --audit-level=high`).
+GitHub Actions are pinned to a commit with the version in a comment; keep it
+that way. Review Dependabot PRs (read the changelog, run all checks) before
+telling the owner they are safe to merge.

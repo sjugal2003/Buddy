@@ -443,9 +443,18 @@ npm.cmd run build       # full production build
 npm.cmd test            # unit tests (no setup needed)
 ```
 
-GitHub runs all of these, plus the database and browser tests below, on
-every pull request: the **Checks** tick or cross on the PR page. You only need
-the next section if you want to run those yourself.
+GitHub runs all of these, plus the database and browser tests below and a
+package security check (`npm audit`), on every pull request: the **Checks**
+tick or cross on the PR page. You only need the next section if you want to
+run those yourself.
+
+### Package updates (Dependabot)
+
+GitHub's free Dependabot checks Buddy's packages every Monday and opens a pull
+request when updates are available (from the user "dependabot"). Don't merge
+those yourself: ask Claude to look first, because an update can break
+something even when the checks pass. If `npm audit` turns a check red, upgrade
+the package it names on its own. Never run `npm.cmd audit fix --force`.
 
 ### Database and browser tests on your PC (optional)
 
@@ -470,8 +479,8 @@ copy of the app on port 3100):
 
 ```powershell
 npx.cmd supabase start     # first time downloads a few GB; later about 30 seconds
-npm.cmd run test:db        # should end with "426 security checks passed"
-npm.cmd run test:e2e       # should end with "20 passed"
+npm.cmd run test:db        # should end with "503 security checks passed"
+npm.cmd run test:e2e       # should end with "29 passed"
 npx.cmd supabase stop
 ```
 

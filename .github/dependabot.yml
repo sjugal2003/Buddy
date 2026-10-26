@@ -1,0 +1,27 @@
+# Dependabot (free, built into GitHub) looks for package updates once a week
+# and opens a pull request for them. Small updates come together in one pull
+# request; a big (major) update gets its own, because it can break things.
+# Dependabot pull requests go through the same checks as any other. Ask
+# Claude to look at one before merging it.
+version: 2
+updates:
+  - package-ecosystem: npm
+    directory: /
+    schedule:
+      interval: weekly
+      day: monday
+      timezone: Asia/Kolkata
+    open-pull-requests-limit: 3
+    groups:
+      small-updates:
+        update-types: [minor, patch]
+
+  - package-ecosystem: github-actions
+    directory: /
+    schedule:
+      interval: monthly
+      timezone: Asia/Kolkata
+    open-pull-requests-limit: 2
+    groups:
+      actions:
+        patterns: ["*"]
