@@ -2,6 +2,9 @@
   "name": "buddy",
   "version": "0.1.0",
   "private": true,
+  "engines": {
+    "node": "24.x"
+  },
   "scripts": {
     "dev": "next dev",
     "build": "next build",
@@ -11,7 +14,8 @@
     "test:db": "node scripts/test-db.mjs",
     "test:e2e": "playwright test",
     "ai-key": "node scripts/ai-result-key.mjs",
-    "backup": "node scripts/backup.mjs"
+    "backup": "node scripts/backup.mjs",
+    "check-env": "node scripts/check-env.mjs"
   },
   "dependencies": {
     "@anthropic-ai/sdk": "^1.2.0",

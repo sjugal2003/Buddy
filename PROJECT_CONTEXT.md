@@ -993,3 +993,16 @@ Phase 7 (security, reliability and deployment readiness).
   `/api/gmail/callback` in production (Connect Gmail says "not set up" without
   it), the request's address in development. Unit tests in `site-url`, `ai`
   and `gmail` tests (189 unit tests).
+- Stage 39 PR 1 = PR #49, merged and verified by Jugal 2026-10-26.
+- Stage 39 PR 2: Node 24 and `npm run check-env` (F28, F21). CI reads the
+  Node version from `.nvmrc` (24; Node 20 reached end of life in April 2026);
+  `package.json` `engines.node` is `24.x` so a host picks the same.
+  `scripts/check-env.mjs` (rules in `scripts/check-env-plan.mjs`, tested in
+  `tests/unit/check-env.test.ts`) reads `.env.local` plus Buddy's variables
+  from the environment and prints each known setting as set or missing,
+  never a value. Errors (exit 1): missing Supabase settings, any
+  `NEXT_PUBLIC_` name besides the two Supabase ones, a Supabase secret or
+  service_role key under any name, an unusable `BUDDY_SITE_URL`; with
+  `--live` also a missing, non-https or localhost `BUDDY_SITE_URL` and any
+  test mode. Warnings: half-set AI or Gmail, short AI result key, wrong-size
+  `GMAIL_TOKEN_KEY`, test modes on this computer.
