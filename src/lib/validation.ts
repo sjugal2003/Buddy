@@ -16,6 +16,15 @@ export const signInSchema = z.object({
   password: z.string().min(1, "Enter your password.").max(72),
 });
 
+export const forgotPasswordSchema = z.object({ email: emailSchema });
+
+export const newPasswordSchema = z
+  .object({
+    password: z.string().min(8, "Use at least 8 characters.").max(72, "Use 72 characters or fewer."),
+    confirm: z.string().max(72),
+  })
+  .refine((v) => v.password === v.confirm, { path: ["confirm"], message: "The two passwords don't match." });
+
 export const slugSchema = z
   .string()
   .trim()

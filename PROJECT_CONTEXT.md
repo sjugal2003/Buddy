@@ -88,6 +88,7 @@ Demo details:
 |---|---|---|---|
 | `/` | `app/page.tsx` | Home: sign in, sign up, or open the demo. Signed-in users go to their first workspace or `/onboarding`. Shows a notice when Supabase is not configured | |
 | `/signup`, `/login`, `/check-email` | `components/auth/*` | Account pages with validation and plain errors | |
+| `/forgot-password`, `/reset-password` | `components/auth/auth-forms.tsx` | Phase 7 stage 37. Ask for a reset email (`requestPasswordReset`, same answer whether or not the account exists); the email link signs the person in through `/auth/confirm` and opens `/reset-password`, where they choose a new password (`updatePassword`) | |
 | `/auth/confirm` | route handler | Verifies the email link (`token_hash`, or `code` fallback), redirects only within the app | |
 | `/onboarding` | `components/org/create-org-form.tsx` | Create a company (`create_organization`), caller becomes owner | |
 | `/invite?token=` | `components/org/members.tsx` | Accept an invitation (`accept_invitation`) | |
@@ -196,7 +197,8 @@ Files (`supabase/`):
 | `migrations/20261027180000_reports.sql` | Phase 6 stage 32: `public.issue_report(org, from, to)` (members only; security definer, read only; dates are inclusive calendar days in the company's time zone, at most 366; returns one JSON object with totals, times, the response target, escalations, team and other breakdowns and import results; no per-person figures) |
 | `migrations/20261028090000_security_foundation.sql` | Phase 7 stage 36: `private.company_creators` (emails that may create a company; current owners copied in) checked by `create_organization` and `public.can_create_company()`; `private.platform_settings.ai_monthly_cap` (default 300 analyses a month for all companies together, checked in `start_issue_analysis` under an advisory lock); both private tables have RLS on and no grants; revokes the default grant on `private.create_escalation_settings` |
 | `migrations/20261028120000_ai_result_key.sql` | Phase 7 stage 36 part 2: `private.platform_settings.ai_result_key_hash`, `private.check_ai_result_key`; `start_issue_analysis(uuid, text)` and `finish_issue_analysis(uuid, jsonb, text)` replace the old versions and refuse without the server's key |
-| `tests/security_test.sql` | 426 checks of tenant isolation, roles, invitations, teams, categories, settings, routing rules, AI analysis, resolution tracking, escalations, routing history, scheduled checks, imports, the Gmail connection, fetching, notifications and reports; runs in one transaction and rolls back |
+| `migrations/20261029090000_rate_limits.sql` | Phase 7 stage 37: `private.rate_limit_events` (RLS on, no grants) and trigger function `private.enforce_rate_limit(action, max, seconds, label)` under an advisory lock per person and action; triggers limit each signed-in person per hour to 30 invitations, 30 imports and Gmail fetches together, 200 issues added by hand (`source = 'manual'`) and 30 "Check now" escalation checks. Database jobs (no `auth.uid()`) are not counted |
+| `tests/security_test.sql` | 450 checks of tenant isolation, roles, invitations, teams, categories, settings, routing rules, AI analysis, resolution tracking, escalations, routing history, scheduled checks, imports, the Gmail connection, fetching, notifications and reports; runs in one transaction and rolls back |
 | `tests/local-supabase-stub.sql` | Minimal stand-in for Supabase's `auth` schema and roles, for plain PostgreSQL only. Never run on Supabase |
 
 Tables: `profiles`, `organizations`, `organization_members`,
@@ -351,7 +353,7 @@ npx.cmd supabase db push
 | Command | What it checks | Needs |
 |---|---|---|
 | `npm.cmd test` | Unit tests (`tests/unit/`): routing rule matching, conflicts and explanations, analytics, input rules, deadlines, escalations, CSV reading and checks, AI batches, token encryption and Google sign-in links, turning Gmail messages into issues, AI engine with stand-in clients | Nothing |
-| `npm.cmd run test:db` | `supabase/tests/security_test.sql` (426 checks); rolls itself back | Local Supabase |
+| `npm.cmd run test:db` | `supabase/tests/security_test.sql` (450 checks); rolls itself back | Local Supabase |
 | `npm.cmd run test:e2e` | Browser tests (`tests/e2e/`, Playwright): sign-up, invitations, roles, issues, settings, routing, AI analysis and automatic routing (free test analyser), deadlines and first response, escalations, dashboard counts, data sources, CSV import, AI for imports, Gmail connect, disconnect and fetch (pretend Google), cross-company access | Local Supabase, test browser |
 
 Local Supabase needs Docker Desktop. One-time setup, then each time:
@@ -429,9 +431,9 @@ run keeps the Playwright report for 7 days (Actions > the run > Artifacts).
 - Phase 7 inspection (stage 35, 2026-10-25): full report and plan at
   https://claude.ai/artifact/NYCfw1NtEYH6wLSK9jwe4P (findings F1 to F29).
   Stage 36 closes F1 (open sign-up with AI on the owner's key), F4 (security
-  headers), F7 (links built from request headers), F12 and F13. Still open,
-  planned for stages 37 to 40: rate limits, deleting data and accounts,
-  password reset, the AI provider for real data, monitoring, backups, a
+  headers), F7 (links built from request headers), F12 and F13. Stage 37 PR 1 adds
+  rate limits (F6) and password reset (F8). Still open, planned for stages
+  37 to 40: deleting data and accounts, the AI provider for real data, monitoring, backups, a
   runbook, deployment settings, a privacy notice.
 - The Content-Security-Policy still allows inline scripts, because Next.js
   adds them to every page; moving to per-request nonces is a later change.
@@ -883,3 +885,11 @@ Phase 7 (security, reliability and deployment readiness).
   versions that take `p_server_key`, checked against
   `private.platform_settings.ai_result_key_hash`. `npm run ai-key` makes a
   key and prints its SQL line. 444 security checks.
+  PR #35, merged 2026-10-26; pushed and checked on Jugal's PC (key set up,
+  a Gemini analysis worked).
+- Stage 37 PR 1: limits on repeated actions and Forgot password. Migration
+  `20261029090000_rate_limits.sql` (see §7). `/forgot-password`
+  (`requestPasswordReset`, always the same answer so it doesn't reveal who
+  has an account; the link goes through `/auth/confirm` to
+  `/reset-password`) and `/reset-password` (`updatePassword`, signed-in
+  only). 450 security checks; new `tests/e2e/account.spec.ts`.

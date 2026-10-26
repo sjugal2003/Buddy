@@ -47,6 +47,9 @@ Router, React 19, TypeScript strict, Tailwind v4). Full background:
 - Notifications: created only in the database (`private.notify_staff` /
   `private.create_notification`, from triggers), in Buddy only, for owners
   and admins. Titles never contain the customer's message, name or email.
+- Limits on repeated actions (invitations, imports and fetches, issues added
+  by hand, "Check now") are triggers using `private.enforce_rate_limit`. Add
+  a trigger there for any new action a person can repeat many times.
 - Creating a company is invite-only (`private.company_creators`, checked in
   `create_organization`), and all companies together share an AI limit
   (`private.platform_settings.ai_monthly_cap`, checked in
