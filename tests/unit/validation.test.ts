@@ -4,8 +4,10 @@ import {
   analyseIssueSchema,
   createIssueSchema,
   createRuleSchema,
+  forgotPasswordSchema,
   fieldErrors,
   issueFiltersSchema,
+  newPasswordSchema,
   signUpSchema,
   slugSchema,
   timezoneSchema,
@@ -22,6 +24,16 @@ describe("sign-up and workspace names", () => {
     expect(ok).toMatchObject({ fullName: "Ada", email: "ada@example.com" });
     const bad = signUpSchema.safeParse({ fullName: "Ada", email: "ada@example.com", password: "short" });
     expect(bad.success || fieldErrors(bad.error)).toEqual({ password: "Use at least 8 characters." });
+  });
+
+  it("checks the forgot-password email and that both new passwords match", () => {
+    expect(forgotPasswordSchema.parse({ email: " ADA@Example.com " })).toEqual({ email: "ada@example.com" });
+    expect(forgotPasswordSchema.safeParse({ email: "not an email" }).success).toBe(false);
+    expect(newPasswordSchema.safeParse({ password: "long enough", confirm: "long enough" }).success).toBe(true);
+    const mismatch = newPasswordSchema.safeParse({ password: "long enough", confirm: "long enuogh" });
+    expect(mismatch.success || fieldErrors(mismatch.error)).toEqual({ confirm: "The two passwords don't match." });
+    const short = newPasswordSchema.safeParse({ password: "short", confirm: "short" });
+    expect(short.success || fieldErrors(short.error)).toEqual({ password: "Use at least 8 characters." });
   });
 
   it("accepts simple workspace addresses only", () => {

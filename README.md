@@ -1,6 +1,6 @@
 # Buddy: Customer Service Intelligence Hub
 
-**Status: Phases 1 to 6 complete (2026-10-25); Phase 7 (security, reliability and deployment readiness) in progress: stage 36 makes creating a company invite-only, adds an AI limit for the whole app and security headers.** Sign-in, company workspaces,
+**Status: Phases 1 to 6 complete (2026-10-25); Phase 7 (security, reliability and deployment readiness) in progress: stage 36 makes creating a company invite-only, adds an AI limit for the whole app and security headers; stage 37 adds limits on repeated actions and a Forgot password page.** Sign-in, company workspaces,
 invitations, roles, customer issues, teams, categories, company settings and
 routing rules work against a Supabase database protected by Row Level
 Security, with automated tests on every change. An optional AI (Gemini or
@@ -246,6 +246,28 @@ It prints a line to add to `.env.local` and one SQL line to run in the SQL
 Editor, then restart `npm.cmd run dev`. Never share the key, not even with
 Claude. Running it again makes a new key; then do both steps again.
 
+**Limits on repeated actions (stage 37).** So that one account can't flood
+Buddy, each person can do these at most so many times in any hour. The
+database counts them, so they can't be skipped:
+
+| Action | Limit per person per hour |
+|---|---|
+| Send invitations | 30 |
+| Imports and Gmail fetches (together) | 30 |
+| Add issues by hand | 200 |
+| Press "Check now" for escalations | 30 |
+
+When someone reaches a limit, Buddy says "Too many ... in the last hour" and
+the rest keeps working. Automatic jobs (the scheduled checks, AI analysis)
+are not counted.
+
+**Forgot password (stage 37).** The sign-in page has a **Forgot password?**
+link. Buddy emails a reset link (through Supabase's free sender, which allows
+only a few emails an hour) and always says the same thing, so nobody can use
+it to find out who has an account. The link opens a page to choose a new
+password. It needs the same Supabase redirect setting as sign-up
+(`http://localhost:3000/**` in Authentication > URL Configuration).
+
 **Security headers.** Every page tells the browser not to let other sites
 show Buddy inside a frame, not to guess file types, and to load scripts and
 styles only from Buddy itself.
@@ -453,6 +475,9 @@ which step failed, with a screenshot.
 | Settings says AI is "Not set up" although your Gemini or Claude key is in `.env.local` | `BUDDY_AI_RESULT_KEY` is missing: run `npm.cmd run ai-key` and follow what it prints (see [Invite-only and app-wide limits](#invite-only-and-app-wide-limits)) |
 | The AI panel says the AI result key "is not set up in the database" or "does not match" | Run the SQL line that `npm.cmd run ai-key` printed. If you ran the command twice, use the newest key **and** the newest SQL line, then restart `npm.cmd run dev` |
 | Sign-up or an invitation says "Buddy's web address is not set up yet" | Only on a live server: set `BUDDY_SITE_URL` to Buddy's address and restart it |
+| An action says "Too many ... in the last hour" | That person reached a limit on repeated actions (see [Invite-only and app-wide limits](#invite-only-and-app-wide-limits)). Wait a while; other actions keep working |
+| No password reset email arrives | Check the spam folder. Supabase's free sender allows only a few emails per hour, so wait and try again. Buddy says the same thing whether or not the email has an account |
+| The reset link opens the sign-in page or says it expired | Open the newest link, in the same browser, within an hour. Or ask for a new one with **Forgot password?** |
 | The downloaded report shows `########` in Excel | The column is too narrow for a date: double-click the line between the column letters to widen it |
 | `git pull` says your local changes to `package-lock.json` would be overwritten | `npm.cmd install` rewrote that file. Run `git checkout -- package-lock.json`, then `git pull` and `npm.cmd ci`. Use `npm.cmd ci` from then on so it doesn't happen again |
 
@@ -462,6 +487,7 @@ which step failed, with a screenshot.
 |---|---|
 | `/` | Home: sign in, create an account, or open the demo |
 | `/signup`, `/login`, `/check-email` | Account pages |
+| `/forgot-password`, `/reset-password` | Ask for a password reset email; choose a new password from its link |
 | `/auth/confirm` | Where the confirmation email link lands |
 | `/onboarding` | Create a company workspace (you become its owner) |
 | `/invite?token=...` | Accept an invitation |

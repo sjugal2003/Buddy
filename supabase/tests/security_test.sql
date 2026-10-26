@@ -1692,6 +1692,41 @@ select tests.expect_rows('select 1 from public.notifications', 0, 'a removed mem
 select tests.expect_error(format($q$select public.mark_notification_read(%L)$q$, current_setting('t.note_invitee')),
   'a removed member cannot mark them as read');
 
+-- ---------------------------------------------------------------------------
+-- Limits on repeated actions (Phase 7 stage 37): owner A has already used up
+-- this hour's invitations and hand-typed issues; older events don't count.
+-- ---------------------------------------------------------------------------
+
+reset role;
+insert into private.rate_limit_events (user_id, action, created_at)
+select current_setting('t.a_owner')::uuid, 'invite', now() - interval '1 minute' from generate_series(1, 30);
+insert into private.rate_limit_events (user_id, action, created_at)
+select current_setting('t.a_owner')::uuid, 'issue', now() - interval '1 minute' from generate_series(1, 200);
+insert into private.rate_limit_events (user_id, action, created_at)
+select current_setting('t.b_owner')::uuid, 'invite', now() - interval '2 hours' from generate_series(1, 30);
+set local role authenticated;
+
+select tests.act_as(current_setting('t.a_owner')::uuid);
+select tests.expect_error(format(
+  $q$insert into public.organization_invitations (organization_id, email, role, token_hash)
+     values (%L, 'limit@example.com', 'member', repeat('c', 64))$q$, current_setting('t.org_a')),
+  'the 31st invitation within an hour is refused');
+select tests.expect_error(format(
+  $q$insert into public.issues (organization_id, customer_name, channel, subject, message)
+     values (%L, 'Limit', 'email', 'Limit', 'Limit')$q$, current_setting('t.org_a')),
+  'the 201st hand-typed issue within an hour is refused');
+select tests.expect_error('select 1 from private.rate_limit_events', 'users cannot read the counts');
+select tests.expect_error(format($q$delete from private.rate_limit_events where user_id = %L$q$, current_setting('t.a_owner')),
+  'users cannot reset their own counts');
+select tests.act_as(current_setting('t.b_owner')::uuid);
+select tests.expect_affected(format(
+  $q$insert into public.organization_invitations (organization_id, email, role, token_hash)
+     values (%L, 'limit-b@example.com', 'member', repeat('d', 64))$q$, current_setting('t.org_b')), 1,
+  'invitations from more than an hour ago no longer count');
+reset role;
+select tests.expect_rows(format($q$select 1 from private.rate_limit_events where user_id = %L and action = 'invite'$q$,
+  current_setting('t.b_owner')), 1, 'old counts are cleared as new ones are added');
+
 reset role;
 select current_setting('tests.passed') || ' security checks passed' as result;
 
