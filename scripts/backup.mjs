@@ -31,11 +31,12 @@ const isWindows = process.platform === "win32";
 for (const step of backupSteps(local)) {
   const file = path.join(folder, step.file);
   console.log(`\n${step.label}...`);
-  // Fixed arguments only; Windows needs the shell to run npx.cmd.
-  const result = spawnSync(isWindows ? "npx.cmd" : "npx", [...step.args, "--file", file], {
-    stdio: "inherit",
-    shell: isWindows,
-  });
+  // Fixed arguments only. Windows needs the shell to run npx.cmd, and Node
+  // wants one command string then (an argument list with the shell is
+  // deprecated, DEP0190), so the file path is quoted for spaces.
+  const result = isWindows
+    ? spawnSync(["npx.cmd", ...step.args, "--file", `"${file}"`].join(" "), { stdio: "inherit", shell: true })
+    : spawnSync("npx", [...step.args, "--file", file], { stdio: "inherit" });
   if (result.status !== 0 || !existsSync(file)) {
     console.error(`\nThe backup stopped at "${step.label}". Is Docker Desktop running? See "Backups" in docs/RUNBOOK.md.`);
     process.exit(1);
