@@ -70,6 +70,10 @@ Router, React 19, TypeScript strict, Tailwind v4). Full background:
   answer, never anything about companies, people or settings.
   `scheduled_job_status` returns job names, schedules, times and statuses
   only (never commands or error text), to owners and admins.
+- Backups: `npm run backup` (`scripts/backup.mjs`) writes to `backups/`,
+  which must stay in `.gitignore`. Never commit, upload or print a backup.
+  Recovery steps live in `docs/RUNBOOK.md`; keep it accurate when an error
+  message, key or job it names changes.
 - Reports: counted only by `public.issue_report` (members only, company time
   zone). No per-person figures.
 
