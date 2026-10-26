@@ -1,6 +1,6 @@
 import { describe, expect, it } from "vitest";
 import { describeDeletion, RETENTION_DAYS, retentionLabel } from "@/lib/data-retention";
-import { deleteCustomerDataSchema, deleteIssueSchema, retentionSchema } from "@/lib/validation";
+import { deleteAccountSchema, deleteCustomerDataSchema, deleteIssueSchema, retentionSchema } from "@/lib/validation";
 
 const org = "11111111-1111-4111-8111-111111111111";
 
@@ -53,3 +53,11 @@ describe("deletion input", () => {
     expect(retentionSchema.safeParse({ organizationId: org, retentionDays: "abc" }).success).toBe(false);
   });
 });
+
+describe("deleting your own account", () => {
+  it("needs an email typed, compared without case or spaces", () => {
+    expect(deleteAccountSchema.parse({ confirm: " Me@Example.com " }).confirm).toBe("me@example.com");
+    expect(deleteAccountSchema.safeParse({ confirm: "" }).success).toBe(false);
+  });
+});
+

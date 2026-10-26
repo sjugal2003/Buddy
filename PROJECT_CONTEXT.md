@@ -199,7 +199,8 @@ Files (`supabase/`):
 | `migrations/20261028120000_ai_result_key.sql` | Phase 7 stage 36 part 2: `private.platform_settings.ai_result_key_hash`, `private.check_ai_result_key`; `start_issue_analysis(uuid, text)` and `finish_issue_analysis(uuid, jsonb, text)` replace the old versions and refuse without the server's key |
 | `migrations/20261029090000_rate_limits.sql` | Phase 7 stage 37: `private.rate_limit_events` (RLS on, no grants) and trigger function `private.enforce_rate_limit(action, max, seconds, label)` under an advisory lock per person and action; triggers limit each signed-in person per hour to 30 invitations, 30 imports and Gmail fetches together, 200 issues added by hand (`source = 'manual'`) and 30 "Check now" escalation checks. Database jobs (no `auth.uid()`) are not counted |
 | `migrations/20261029120000_data_deletion.sql` | Phase 7 stage 37 PR 2: `deletion_log` (when, who, kind `issue`/`customer`/`retention`, count, issue reference; never customer details; owners read, nobody writes); `delete_issue(id)` and `delete_customer_data(org, email)` (owners only; the old owner/admin delete policy and grant on `issues` are removed); `organizations.retention_days` (30 to 3650 or empty) set by `set_retention_days` (owners); `private.apply_retention()` deletes resolved issues past the setting (5,000 per company per run), called from `private.run_daily_cleanup()`; trigger `issues_clear_analyses` clears the AI text of a deleted issue's analyses |
-| `tests/security_test.sql` | 483 checks of tenant isolation, roles, invitations, teams, categories, settings, routing rules, AI analysis, resolution tracking, escalations, routing history, scheduled checks, imports, the Gmail connection, fetching, notifications and reports; runs in one transaction and rolls back |
+| `migrations/20261029150000_account_deletion.sql` | Phase 7 stage 37 PR 3: `account_deletion_plan()` (for each of the caller's companies: `leave`, `delete` when they are its only member, `blocked_owner` when they are its only owner and others belong, `blocked_gmail` when it would be deleted with Gmail connected) and `delete_my_account(email)` (typed own email; deletes the solo companies, the company-creators entry, rate-limit counts and the `auth.users` row, which removes the profile and memberships and sets their name to empty elsewhere). `mailbox_token(uuid, text)` and `start_gmail_fetch(uuid, text)` replace the old versions and need the server key (`BUDDY_AI_RESULT_KEY`, checked by `private.check_server_key_for_gmail`) |
+| `tests/security_test.sql` | 503 checks of tenant isolation, roles, invitations, teams, categories, settings, routing rules, AI analysis, resolution tracking, escalations, routing history, scheduled checks, imports, the Gmail connection, fetching, notifications and reports; runs in one transaction and rolls back |
 | `tests/local-supabase-stub.sql` | Minimal stand-in for Supabase's `auth` schema and roles, for plain PostgreSQL only. Never run on Supabase |
 
 Tables: `profiles`, `organizations`, `organization_members`,
@@ -327,7 +328,7 @@ never commit values. Without them the app runs in demo-only mode.
 | `GOOGLE_CLIENT_ID` | **Never** (server only) | Google OAuth client for connecting Gmail (stage 25). Read only in `src/lib/gmail/index.ts` |
 | `GOOGLE_CLIENT_SECRET` | **Never** (server only) | Secret of that OAuth client |
 | `GMAIL_TOKEN_KEY` | **Never** (server only) | 32 random bytes in base64 that encrypt the stored Gmail token. Changing it means reconnecting Gmail. All three must be set for Connect Gmail to appear |
-| `BUDDY_AI_RESULT_KEY` | **Never** (server only) | Stage 36 part 2: random key (`npm run ai-key`) that `start_issue_analysis` and `finish_issue_analysis` require; the database stores only its SHA-256 hash in `private.platform_settings.ai_result_key_hash`. Without it AI shows as not set up. Read only in `src/lib/ai/index.ts` |
+| `BUDDY_AI_RESULT_KEY` | **Never** (server only) | Stage 36 part 2: random key (`npm run ai-key`) that `start_issue_analysis` and `finish_issue_analysis` require; the database stores only its SHA-256 hash in `private.platform_settings.ai_result_key_hash`. Without it AI shows as not set up. From stage 37 also required by `mailbox_token` and `start_gmail_fetch` (Gmail fetching). Read only in `src/lib/ai/index.ts` |
 | `BUDDY_SITE_URL` | Not secret (server only) | Buddy's own address for sign-up email links and invitation links (stage 36, `src/lib/site-url.ts`). Optional in development (the request's address is used); in production Buddy refuses to make those links without it, because Host/Origin headers can be faked |
 | `BUDDY_GMAIL_MODE` | No | `fake` swaps in a pretend Google for automated tests and CI. Leave unset otherwise |
 
@@ -358,7 +359,7 @@ npx.cmd supabase db push
 | Command | What it checks | Needs |
 |---|---|---|
 | `npm.cmd test` | Unit tests (`tests/unit/`): routing rule matching, conflicts and explanations, analytics, input rules, deadlines, escalations, CSV reading and checks, AI batches, token encryption and Google sign-in links, turning Gmail messages into issues, AI engine with stand-in clients | Nothing |
-| `npm.cmd run test:db` | `supabase/tests/security_test.sql` (483 checks); rolls itself back | Local Supabase |
+| `npm.cmd run test:db` | `supabase/tests/security_test.sql` (503 checks); rolls itself back | Local Supabase |
 | `npm.cmd run test:e2e` | Browser tests (`tests/e2e/`, Playwright): sign-up, invitations, roles, issues, settings, routing, AI analysis and automatic routing (free test analyser), deadlines and first response, escalations, dashboard counts, data sources, CSV import, AI for imports, Gmail connect, disconnect and fetch (pretend Google), cross-company access | Local Supabase, test browser |
 
 Local Supabase needs Docker Desktop. One-time setup, then each time:
@@ -386,6 +387,10 @@ run keeps the Playwright report for 7 days (Actions > the run > Artifacts).
 
 ## 11. Important technical decisions
 
+- **AI and real customer data (F2, recorded 2026-10-26, stage 37).** Gemini's
+  free tier stays for made-up data only. Before real customer messages are
+  analysed (Gate 3), the owner picks a paid Gemini tier, the Claude API, or
+  AI off; until then AI stays off for real data. No code change.
 - **One data module.** Pages never import demo data directly; they go through
   `src/lib/data`. Phase 2 swaps what that module talks to.
 - **Workspace in the URL** (`/w/<slug>`), so a user who belongs to several
@@ -438,8 +443,9 @@ run keeps the Playwright report for 7 days (Actions > the run > Artifacts).
   Stage 36 closes F1 (open sign-up with AI on the owner's key), F4 (security
   headers), F7 (links built from request headers), F12 and F13. Stage 37 PR 1 adds
   rate limits (F6) and password reset (F8); PR 2 adds deleting an issue or a
-  customer's data and a retention setting (F3). Still open, planned for
-  stages 37 to 40: leaving a company and deleting an account, the AI provider for real data, monitoring, backups, a
+  customer's data and a retention setting (F3). PR 3 adds Delete my account (F9; leaving a company already
+  existed), F11 and F19, and records the F2 decision. Still open, planned for
+  stages 38 to 40: the AI provider for real data, monitoring, backups, a
   runbook, deployment settings, a privacy notice.
 - The Content-Security-Policy still allows inline scripts, because Next.js
   adds them to every page; moving to per-request nonces is a later change.
@@ -910,3 +916,15 @@ Phase 7 (security, reliability and deployment readiness).
   deletion log (owners only). Wording in `src/lib/data-retention.ts`.
   483 security checks; new `tests/e2e/data-deletion.spec.ts` and
   `tests/unit/data-retention.test.ts`.
+  PR #37, merged 2026-10-26; pushed and checked on Jugal's PC.
+- Stage 37 PR 3: your own account and small fixes. Migration
+  `20261029150000_account_deletion.sql` (see §7). `/account` page (link from
+  the email in the workspace header): change password, the deletion plan per
+  company and "Delete my account" (`deleteMyAccount` in
+  `app/actions/auth.ts`, type your email; signs out and shows "Your account
+  has been deleted." on `/login`). F11: Gmail token only with the server key
+  (`aiResultKey()` passed by `fetchGmail` and `disconnectGmail`; disconnect
+  still works without it but then can't cancel Google's access). F19:
+  `cancelInvitation` validates the id, asks for the row back and shows a
+  message (`CancelInvitationButton`). F2 recorded in §11. 503 security
+  checks; new tests in `tests/e2e/account.spec.ts`.

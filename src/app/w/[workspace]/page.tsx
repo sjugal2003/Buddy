@@ -2,8 +2,7 @@ import Link from "next/link";
 import { notFound } from "next/navigation";
 import { Card } from "@/components/ui/card";
 import { PageHeader } from "@/components/ui/page-header";
-import { InviteForm, MemberRow } from "@/components/org/members";
-import { cancelInvitation } from "@/app/actions/organizations";
+import { CancelInvitationButton, InviteForm, MemberRow } from "@/components/org/members";
 import { requireUser } from "@/lib/auth";
 import {
   countIssuesSince,
@@ -227,12 +226,7 @@ export default async function LiveWorkspaceHome({ params }: { params: Promise<{ 
                           {new Date(inv.expiresAt) < new Date() ? "expired" : `expires ${formatDate(inv.expiresAt)}`}
                         </span>
                       </span>
-                      <form action={cancelInvitation}>
-                        <input type="hidden" name="invitationId" value={inv.id} />
-                        <button type="submit" className="text-xs font-medium text-red-700 hover:underline">
-                          Cancel
-                        </button>
-                      </form>
+                      <CancelInvitationButton invitationId={inv.id} />
                     </li>
                   ))}
                 </ul>

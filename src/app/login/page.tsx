@@ -9,9 +9,9 @@ export const dynamic = "force-dynamic";
 export default async function LoginPage({
   searchParams,
 }: {
-  searchParams: Promise<{ next?: string; error?: string }>;
+  searchParams: Promise<{ next?: string; error?: string; deleted?: string }>;
 }) {
-  const { next, error } = await searchParams;
+  const { next, error, deleted } = await searchParams;
   const nextPath = safeNextPath(next);
   if (await getCurrentUser()) redirect(nextPath);
 
@@ -30,6 +30,11 @@ export default async function LoginPage({
       {error === "confirm" && (
         <div className="mb-4">
           <FormMessage error="That confirmation link is invalid or has expired. Try signing in. If your email is not confirmed yet, sign up again with the same details to get a new link." />
+        </div>
+      )}
+      {deleted === "1" && (
+        <div className="mb-4">
+          <FormMessage success="Your account has been deleted." />
         </div>
       )}
       <SignInForm next={nextPath} />

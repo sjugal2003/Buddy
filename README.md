@@ -1,6 +1,6 @@
 # Buddy: Customer Service Intelligence Hub
 
-**Status: Phases 1 to 6 complete (2026-10-25); Phase 7 (security, reliability and deployment readiness) in progress: stage 36 makes creating a company invite-only, adds an AI limit for the whole app and security headers; stage 37 adds limits on repeated actions, a Forgot password page, and deleting customer data.** Sign-in, company workspaces,
+**Status: Phases 1 to 6 complete (2026-10-25); Phase 7 (security, reliability and deployment readiness) in progress: stage 36 makes creating a company invite-only, adds an AI limit for the whole app and security headers; stage 37 adds limits on repeated actions, a Forgot password page, deleting customer data, and Delete my account.** Sign-in, company workspaces,
 invitations, roles, customer issues, teams, categories, company settings and
 routing rules work against a Supabase database protected by Row Level
 Security, with automated tests on every change. An optional AI (Gemini or
@@ -243,7 +243,7 @@ npm.cmd run ai-key
 ```
 
 It prints a line to add to `.env.local` and one SQL line to run in the SQL
-Editor, then restart `npm.cmd run dev`. Never share the key, not even with
+Editor, then restart `npm.cmd run dev`. From stage 37 Gmail fetching uses the same key, so only Buddy's server can open the saved Google sign-in. Never share the key, not even with
 Claude. Running it again makes a new key; then do both steps again.
 
 **Limits on repeated actions (stage 37).** So that one account can't flood
@@ -287,6 +287,16 @@ email or message). Deleting can't be undone.
 
 The AI's monthly count doesn't go down when issues are deleted.
 
+**Your own account (stage 37).** Click your email at the top right (or
+**Account** on a phone) to open **Your account**. There you can change your
+password or **Delete my account**: type your own email to confirm. Companies
+you share with others keep going without you (your work stays, without your
+name). A company where you are the only member is deleted with your account.
+Buddy refuses while you are the only owner of a company that has other
+people (make one of them an owner first), or while a company that would be
+deleted still has Gmail connected (disconnect it first). To leave just one
+company, use **Leave** next to your name in its **Members** list.
+
 **Security headers.** Every page tells the browser not to let other sites
 show Buddy inside a frame, not to guess file types, and to load scripts and
 styles only from Buddy itself.
@@ -306,6 +316,11 @@ before.
 | Privacy | On the free tier Google may use what is sent to improve its products | Not used for training by default |
 
 If both keys are set, Claude is used.
+
+**Real customer data (decision, Phase 7 stage 37):** keep using Gemini's free
+tier with made-up messages only. Before any real customer message goes to an
+AI, the owner chooses one: a paid Gemini tier, the Claude API, or AI switched
+off for that company. Until then, AI stays off for anything real.
 
 1. Create a key for the service you chose. For Claude, also add a small
    prepaid credit and set a monthly spend limit under **Settings > Limits**.
@@ -498,6 +513,8 @@ which step failed, with a screenshot.
 | No password reset email arrives | Check the spam folder. Supabase's free sender allows only a few emails per hour, so wait and try again. Buddy says the same thing whether or not the email has an account |
 | The reset link opens the sign-in page or says it expired | Open the newest link, in the same browser, within an hour. Or ask for a new one with **Forgot password?** |
 | There is no **Delete issue** card or **Customer data** form | Only the company's owner sees them. Admins and members can't delete |
+| Delete my account says you are the only owner | Open that company, make another member an owner (Members list), then try again. Or remove the other members first |
+| **Fetch new email** says it needs `BUDDY_AI_RESULT_KEY` | From stage 37 Gmail also uses Buddy's server key. Run `npm.cmd run ai-key` and follow what it prints (see [Invite-only and app-wide limits](#invite-only-and-app-wide-limits)) |
 | The downloaded report shows `########` in Excel | The column is too narrow for a date: double-click the line between the column letters to widen it |
 | `git pull` says your local changes to `package-lock.json` would be overwritten | `npm.cmd install` rewrote that file. Run `git checkout -- package-lock.json`, then `git pull` and `npm.cmd ci`. Use `npm.cmd ci` from then on so it doesn't happen again |
 
@@ -507,6 +524,7 @@ which step failed, with a screenshot.
 |---|---|
 | `/` | Home: sign in, create an account, or open the demo |
 | `/signup`, `/login`, `/check-email` | Account pages |
+| `/account` | Your account: change password, Delete my account |
 | `/forgot-password`, `/reset-password` | Ask for a password reset email; choose a new password from its link |
 | `/auth/confirm` | Where the confirmation email link lands |
 | `/onboarding` | Create a company workspace (you become its owner) |

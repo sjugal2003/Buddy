@@ -2,7 +2,7 @@
 
 import { useActionState, useState } from "react";
 import { Check, Copy } from "lucide-react";
-import { acceptInvitation, changeMemberRole, createInvitation, removeMember } from "@/app/actions/organizations";
+import { acceptInvitation, cancelInvitation, changeMemberRole, createInvitation, removeMember } from "@/app/actions/organizations";
 import type { FormState } from "@/app/actions/types";
 import { Field, inputClass, primaryButton, secondaryButton } from "@/components/ui/form";
 import { FieldError, FormMessage } from "@/components/auth/auth-card";
@@ -148,5 +148,24 @@ export function AcceptInviteForm({ token }: { token: string }) {
         {pending ? "Joining…" : "Accept invitation"}
       </button>
     </form>
+  );
+}
+
+export function CancelInvitationButton({ invitationId }: { invitationId: string }) {
+  const [state, action, pending] = useActionState<FormState, FormData>(cancelInvitation, {});
+  return (
+    <div className="flex flex-col items-end gap-1">
+      <form action={action}>
+        <input type="hidden" name="invitationId" value={invitationId} />
+        <button type="submit" disabled={pending} className="text-xs font-medium text-red-700 hover:underline disabled:opacity-50">
+          {pending ? "Cancelling…" : "Cancel"}
+        </button>
+      </form>
+      {state.error && (
+        <p role="alert" className="text-xs text-red-700">
+          {state.error}
+        </p>
+      )}
+    </div>
   );
 }

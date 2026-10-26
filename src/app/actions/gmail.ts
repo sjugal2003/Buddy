@@ -17,6 +17,7 @@ import {
 import { decryptToken } from "@/lib/gmail/crypto";
 import { fetchQuery, messageToRow, planFetch, receivedAt, type GmailMessage } from "@/lib/gmail/message";
 import { idSchema } from "@/lib/validation";
+import { aiResultKey } from "@/lib/ai";
 import type { FormState } from "./types";
 
 // Disconnecting the company's Gmail inbox (owners only; the database checks).
@@ -43,12 +44,14 @@ export async function disconnectGmail(_prev: FormState, formData: FormData): Pro
   }
   if (membership.data?.role !== "owner") return { error: "Only the company owner can disconnect Gmail." };
 
-  const token = await supabase.rpc("mailbox_token", { p_organization_id: organizationId.data });
-  if (token.error) return { error: friendlyError(token.error, "We couldn't disconnect the inbox. Please try again.", "disconnectGmail") };
+  // Only Buddy's server gets the encrypted token (it needs the server key). If
+  // that fails, Buddy still disconnects and says Google's access wasn't cancelled.
+  const token = await supabase.rpc("mailbox_token", { p_organization_id: organizationId.data, p_server_key: aiResultKey() });
+  if (token.error) friendlyError(token.error, "", "disconnectGmail");
 
   let revoked = false;
   const key = tokenKey();
-  const refreshToken = typeof token.data === "string" && key ? decryptToken(token.data, key) : null;
+  const refreshToken = !token.error && typeof token.data === "string" && key ? decryptToken(token.data, key) : null;
   if (refreshToken) revoked = await revokeToken(refreshToken);
 
   const { data, error } = await supabase.rpc("disconnect_mailbox", { p_organization_id: organizationId.data });
@@ -113,8 +116,13 @@ export async function fetchGmail(organizationId: string): Promise<FetchGmailResu
     return { error: "Gmail is not set up on this server yet (see the README)." };
   }
 
+  const serverKey = aiResultKey();
+  if (!serverKey) {
+    return { error: "Gmail fetching needs BUDDY_AI_RESULT_KEY in .env.local: run npm.cmd run ai-key (see the README)." };
+  }
+
   const supabase = await createClient();
-  const started = await supabase.rpc("start_gmail_fetch", { p_organization_id: parsed.data });
+  const started = await supabase.rpc("start_gmail_fetch", { p_organization_id: parsed.data, p_server_key: serverKey });
   if (started.error) return { error: friendlyError(started.error, "We couldn't start fetching. Please try again.", "fetchGmail") };
   const start = (started.data as { run_id: string; fetched_until: string | null; encrypted_token: string }[] | null)?.[0];
   if (!start) return { error: "We couldn't start fetching. Please try again." };

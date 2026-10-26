@@ -45,7 +45,12 @@ export default async function LiveWorkspaceLayout({
           />
           <div className="ml-auto flex items-center gap-3">
             <NotificationBell slug={slug} unread={unread} />
-            <span className="hidden text-sm text-slate-500 sm:inline">{user.email}</span>
+            <Link href="/account" className="hidden text-sm text-slate-500 hover:text-slate-700 hover:underline sm:inline">
+              {user.email}
+            </Link>
+            <Link href="/account" className="text-sm text-slate-600 hover:underline sm:hidden">
+              Account
+            </Link>
             <form action={signOut}>
               <button type="submit" className="inline-flex items-center gap-1.5 rounded-lg px-2 py-1.5 text-sm text-slate-600 hover:bg-slate-100">
                 <LogOut className="h-4 w-4" aria-hidden />

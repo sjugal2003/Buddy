@@ -929,6 +929,31 @@ export async function getDataSettings(organizationId: string, logLimit = 20): Pr
   };
 }
 
+export type AccountDeletionOutcome = "leave" | "delete" | "blocked_owner" | "blocked_gmail";
+
+export interface AccountDeletionStep {
+  organizationId: string;
+  name: string;
+  slug: string;
+  outcome: AccountDeletionOutcome;
+}
+
+/** What deleting the signed-in account would do to each of its companies. */
+export async function getAccountDeletionPlan(): Promise<AccountDeletionStep[]> {
+  const supabase = await createClient();
+  const { data, error } = await supabase.rpc("account_deletion_plan");
+  if (error) {
+    console.error("[getAccountDeletionPlan]", error.code, error.message);
+    throw new Error("Could not load your account details.");
+  }
+  return ((data ?? []) as { organization_id: string; name: string; slug: string; outcome: string }[]).map((row) => ({
+    organizationId: row.organization_id,
+    name: row.name,
+    slug: row.slug,
+    outcome: row.outcome as AccountDeletionOutcome,
+  }));
+}
+
 export interface MailboxConnection {
   emailAddress: string;
   connectedByName: string | null;
