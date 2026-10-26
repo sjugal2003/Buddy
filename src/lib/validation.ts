@@ -339,3 +339,5 @@ export const retentionSchema = z.object({
   ]),
 });
 
+export const deleteAccountSchema = z.object({ confirm: emailSchema });
+

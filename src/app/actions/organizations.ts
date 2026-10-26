@@ -11,6 +11,7 @@ import {
   createInvitationSchema,
   createOrganizationSchema,
   fieldErrors,
+  idSchema,
   inviteTokenSchema,
   memberChangeSchema,
   roleSchema,
@@ -85,14 +86,18 @@ export async function createInvitation(_prev: FormState, formData: FormData): Pr
   };
 }
 
-export async function cancelInvitation(formData: FormData) {
-  if (!(await getCurrentUser())) return;
-  const id = formData.get("invitationId");
-  if (typeof id !== "string" || !/^[0-9a-f-]{36}$/.test(id)) return;
+export async function cancelInvitation(_prev: FormState, formData: FormData): Promise<FormState> {
+  if (!(await getCurrentUser())) return SIGNED_OUT;
+  const id = idSchema.safeParse(formData.get("invitationId"));
+  if (!id.success) return { error: "Something went wrong. Reload the page and try again." };
   const supabase = await createClient();
-  const { error } = await supabase.from("organization_invitations").delete().eq("id", id);
-  if (error) friendlyError(error, "", "cancelInvitation");
+  // The row comes back only if it was really deleted: one the user may not
+  // cancel, or that was already used or cancelled, deletes nothing.
+  const { data, error } = await supabase.from("organization_invitations").delete().eq("id", id.data).select("id");
+  if (error) return { error: friendlyError(error, "We couldn't cancel the invitation. Please try again.", "cancelInvitation") };
+  if (!data?.length) return { error: "This invitation was already used or cancelled, or you can't cancel it." };
   revalidatePath("/w/[workspace]", "layout");
+  return { success: "Invitation cancelled." };
 }
 
 export async function acceptInvitation(_prev: FormState, formData: FormData): Promise<FormState> {

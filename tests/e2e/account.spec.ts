@@ -1,9 +1,9 @@
 import { expect, test } from "@playwright/test";
 import pg from "pg";
-import { createOrg, PASSWORD, shows, signUpAndConfirm, stamp, TEST_DB } from "./helpers";
+import { acceptInvite, createOrg, hidden, inviteLink, PASSWORD, shows, signUpAndConfirm, stamp, TEST_DB } from "./helpers";
 
-// Phase 7 stage 37: Forgot password, and limits on repeated actions (rules in
-// supabase/tests/security_test.sql).
+// Phase 7 stage 37: Forgot password, limits on repeated actions, cancelling an
+// invitation and deleting your own account (rules in supabase/tests/security_test.sql).
 
 /** The newest "reset password" email for this address in the local email catcher. */
 async function resetLink(email: string) {
@@ -105,3 +105,75 @@ test("limits: too many invitations in an hour are refused with a plain message",
   await shows(p, "text=Too many invitations in the last hour (the limit is 30)");
   await expect(p.locator('input[aria-label="Invitation link"]')).toHaveCount(0);
 });
+
+test("invitations can be cancelled, and the cancel says so", async ({ browser, baseURL }) => {
+  const id = stamp();
+  const slug = `cancel-${id}`;
+  const owner = await signUpAndConfirm(browser, baseURL!, "Olive Owner", `cancel-owner${id}@example.com`);
+  await createOrg(owner, "Cancel Co", slug);
+  await inviteLink(owner, slug, `cancelled${id}@example.com`);
+  await owner.goto(`/w/${slug}`);
+  await shows(owner, `text=cancelled${id}@example.com`);
+  await owner.getByRole("button", { name: "Cancel" }).click();
+  await hidden(owner, `text=cancelled${id}@example.com`);
+});
+
+test("delete my account: a member leaves cleanly; a sole owner must hand over first", async ({ browser, baseURL }) => {
+  const id = stamp();
+  const slug = `leaving-${id}`;
+  const ownerEmail = `leave-owner${id}@example.com`;
+  const memberEmail = `leave-member${id}@example.com`;
+  const owner = await signUpAndConfirm(browser, baseURL!, "Olive Owner", ownerEmail);
+  await createOrg(owner, "Leaving Co", slug);
+  const link = await inviteLink(owner, slug, memberEmail);
+  const member = await signUpAndConfirm(browser, baseURL!, "Mo Member", memberEmail, { canCreateCompany: false });
+  await acceptInvite(member, link, slug);
+
+  await test.step("the only owner of a company with others can't delete yet", async () => {
+    await owner.click(`header >> text=${ownerEmail}`);
+    await owner.waitForURL("**/account");
+    await expect(owner.getByTestId("account-deletion-plan")).toContainText("Leaving Co: You are its only owner.");
+    await expect(owner.getByRole("button", { name: "Delete my account for good" })).toBeDisabled();
+  });
+
+  await test.step("a member must type their own email, then the account is gone", async () => {
+    await member.goto("/account");
+    await expect(member.getByTestId("account-deletion-plan")).toContainText("Leaving Co: You leave it.");
+    await member.fill("input[name=confirm]", "someone-else@example.com");
+    await member.click('button:has-text("Delete my account for good")');
+    await shows(member, "text=Type your own email address to confirm.");
+    await member.fill("input[name=confirm]", memberEmail.toUpperCase());
+    await member.click('button:has-text("Delete my account for good")');
+    await member.waitForURL("**/login?deleted=1");
+    await shows(member, "text=Your account has been deleted.");
+    await member.goto(`/w/${slug}`);
+    await member.waitForURL(/\/login/);
+  });
+
+  await test.step("the member can no longer sign in", async () => {
+    await member.goto("/login");
+    await member.fill("input[name=email]", memberEmail);
+    await member.fill("input[name=password]", PASSWORD);
+    await member.click("button[type=submit]");
+    await shows(member, "text=That email and password don't match an account.");
+  });
+
+  await test.step("the owner's company keeps going without them", async () => {
+    await owner.goto(`/w/${slug}`);
+    await expect(owner.locator("main")).not.toContainText("Mo Member");
+  });
+
+  await test.step("now alone, the owner can delete their account and the company with it", async () => {
+    await owner.goto("/account");
+    await expect(owner.getByTestId("account-deletion-plan")).toContainText("Leaving Co: You are its only member");
+    await owner.fill("input[name=confirm]", ownerEmail);
+    await owner.click('button:has-text("Delete my account for good")');
+    await owner.waitForURL("**/login?deleted=1");
+    const client = new pg.Client({ connectionString: TEST_DB });
+    await client.connect();
+    const { rows } = await client.query("select 1 from public.organizations where slug = $1", [slug]);
+    await client.end();
+    expect(rows).toHaveLength(0);
+  });
+});
+

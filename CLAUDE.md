@@ -61,6 +61,7 @@ Router, React 19, TypeScript strict, Tailwind v4). Full background:
 - Starting or finishing an AI analysis needs `aiResultKey()`
   (`BUDDY_AI_RESULT_KEY`, server only); the database checks its hash. Never
   log it, send it to the browser, or put it in a `NEXT_PUBLIC_` variable.
+  The same key is needed for `mailbox_token` and `start_gmail_fetch`.
   Tests use the made-up key in `tests/e2e/helpers.ts`.
 - Links that leave the site (email confirmation, invitations) use
   `siteUrl()` from `src/lib/site-url.ts`, never the Host/Origin header.

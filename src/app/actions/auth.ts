@@ -5,7 +5,15 @@ import { createClient } from "@/lib/supabase/server";
 import { isSupabaseConfigured } from "@/lib/supabase/config";
 import { siteUrl } from "@/lib/site-url";
 import { getCurrentUser, safeNextPath } from "@/lib/auth";
-import { fieldErrors, forgotPasswordSchema, newPasswordSchema, signInSchema, signUpSchema } from "@/lib/validation";
+import { friendlyError } from "@/lib/errors";
+import {
+  deleteAccountSchema,
+  fieldErrors,
+  forgotPasswordSchema,
+  newPasswordSchema,
+  signInSchema,
+  signUpSchema,
+} from "@/lib/validation";
 import type { FormState } from "./types";
 
 const NOT_CONFIGURED: FormState = {
@@ -123,4 +131,24 @@ export async function signOut() {
     await supabase.auth.signOut();
   }
   redirect("/login");
+}
+
+/**
+ * Deletes the signed-in person's own account (Phase 7 stage 37). The database
+ * checks the typed email, refuses while they are the only owner of a company
+ * with other people in it, deletes the companies they are alone in, and
+ * deletes the sign-in itself.
+ */
+export async function deleteMyAccount(_prev: FormState, formData: FormData): Promise<FormState> {
+  if (!(await getCurrentUser())) return { error: "Your session has ended. Please sign in again." };
+  const parsed = deleteAccountSchema.safeParse({ confirm: formData.get("confirm") ?? "" });
+  if (!parsed.success) return { fieldErrors: { confirm: "Type your own email address to confirm." } };
+
+  const supabase = await createClient();
+  const { error } = await supabase.rpc("delete_my_account", { p_confirm: parsed.data.confirm });
+  if (error) return { error: friendlyError(error, "We couldn't delete your account. Please try again.", "deleteMyAccount") };
+
+  // The account is gone; clear this browser's sign-in too.
+  await supabase.auth.signOut();
+  redirect("/login?deleted=1");
 }

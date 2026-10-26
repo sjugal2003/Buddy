@@ -1193,23 +1193,29 @@ select public.save_mailbox_connection(current_setting('t.org_a')::uuid, 'Inbox@E
 select tests.expect_rows(format($q$select 1 from public.mailbox_connections where organization_id = %L
   and email_address = 'inbox@example.com' and connected_by = %L$q$, current_setting('t.org_a'), current_setting('t.a_owner')), 1,
   'owner A connects an inbox (stored in lower case)');
-select tests.expect_rows(format($q$select 1 where public.mailbox_token(%L) = 'v1:aaaa:bbbb:cccc'$q$, current_setting('t.org_a')), 1,
+select tests.expect_rows(format($q$select 1 where public.mailbox_token(%L, 'security-test-ai-result-key') = 'v1:aaaa:bbbb:cccc'$q$, current_setting('t.org_a')), 1,
   'the owner can get the encrypted token back for the server');
+select tests.expect_error(format($q$select public.mailbox_token(%L, null)$q$, current_setting('t.org_a')),
+  'without the server key even the owner cannot get the encrypted token');
+select tests.expect_error(format($q$select public.mailbox_token(%L, 'a-wrong-key')$q$, current_setting('t.org_a')),
+  'a wrong server key cannot get the encrypted token');
+select tests.expect_error(format($q$select * from public.start_gmail_fetch(%L, 'a-wrong-key')$q$, current_setting('t.org_a')),
+  'a fetch cannot start without the right server key');
 
 -- Reconnecting replaces, never duplicates.
 select public.save_mailbox_connection(current_setting('t.org_a')::uuid, 'inbox@example.com', 'v1:dddd:eeee:ffff');
 select tests.expect_rows(format($q$select 1 from public.mailbox_connections where organization_id = %L$q$,
   current_setting('t.org_a')), 1, 'reconnecting keeps one connection per company');
-select tests.expect_rows(format($q$select 1 where public.mailbox_token(%L) = 'v1:dddd:eeee:ffff'$q$, current_setting('t.org_a')), 1,
+select tests.expect_rows(format($q$select 1 where public.mailbox_token(%L, 'security-test-ai-result-key') = 'v1:dddd:eeee:ffff'$q$, current_setting('t.org_a')), 1,
   'reconnecting replaces the token');
 
 select tests.act_as(current_setting('t.a_member')::uuid);
-select tests.expect_rows(format($q$select 1 where public.mailbox_token(%L) is not null$q$, current_setting('t.org_a')), 1,
+select tests.expect_rows(format($q$select 1 where public.mailbox_token(%L, 'security-test-ai-result-key') is not null$q$, current_setting('t.org_a')), 1,
   'an admin can use the connected inbox (for fetching)');
 select tests.act_as(current_setting('t.invitee')::uuid);
 select tests.expect_rows(format($q$select 1 from public.mailbox_connections where organization_id = %L$q$,
   current_setting('t.org_a')), 1, 'a member can see which inbox is connected');
-select tests.expect_error(format($q$select public.mailbox_token(%L)$q$, current_setting('t.org_a')),
+select tests.expect_error(format($q$select public.mailbox_token(%L, 'security-test-ai-result-key')$q$, current_setting('t.org_a')),
   'a member cannot get the token');
 select tests.expect_error('select * from public.mailbox_tokens', 'nobody can read the token table directly');
 select tests.expect_error(format($q$update public.mailbox_connections set email_address = 'x@example.com'
@@ -1222,28 +1228,28 @@ select tests.expect_error(format($q$select public.disconnect_mailbox(%L)$q$, cur
 select tests.act_as(current_setting('t.b_owner')::uuid);
 select tests.expect_rows(format($q$select 1 from public.mailbox_connections where organization_id = %L$q$,
   current_setting('t.org_a')), 0, 'company B cannot see company A''s inbox');
-select tests.expect_error(format($q$select public.mailbox_token(%L)$q$, current_setting('t.org_a')),
+select tests.expect_error(format($q$select public.mailbox_token(%L, 'security-test-ai-result-key')$q$, current_setting('t.org_a')),
   'owner B cannot get company A''s token');
 select tests.expect_error(format($q$select public.disconnect_mailbox(%L)$q$, current_setting('t.org_a')),
   'owner B cannot disconnect company A''s inbox');
-select tests.expect_rows(format($q$select 1 where public.mailbox_token(%L) is null$q$, current_setting('t.org_b')), 1,
+select tests.expect_rows(format($q$select 1 where public.mailbox_token(%L, 'security-test-ai-result-key') is null$q$, current_setting('t.org_b')), 1,
   'company B has no inbox connected');
 
 -- Fetching email (Phase 5 stage 26)
 select tests.act_as(current_setting('t.invitee')::uuid);
-select tests.expect_error(format($q$select * from public.start_gmail_fetch(%L)$q$, current_setting('t.org_a')),
+select tests.expect_error(format($q$select * from public.start_gmail_fetch(%L, 'security-test-ai-result-key')$q$, current_setting('t.org_a')),
   'a member cannot fetch email');
 select tests.act_as(current_setting('t.b_owner')::uuid);
-select tests.expect_error(format($q$select * from public.start_gmail_fetch(%L)$q$, current_setting('t.org_a')),
+select tests.expect_error(format($q$select * from public.start_gmail_fetch(%L, 'security-test-ai-result-key')$q$, current_setting('t.org_a')),
   'owner B cannot fetch company A''s email');
-select tests.expect_error(format($q$select * from public.start_gmail_fetch(%L)$q$, current_setting('t.org_b')),
+select tests.expect_error(format($q$select * from public.start_gmail_fetch(%L, 'security-test-ai-result-key')$q$, current_setting('t.org_b')),
   'a company with no inbox cannot fetch');
 select tests.act_as(current_setting('t.a_member')::uuid);
-select set_config('t.fetch_1', (select run_id::text from public.start_gmail_fetch(current_setting('t.org_a')::uuid)), true);
+select set_config('t.fetch_1', (select run_id::text from public.start_gmail_fetch(current_setting('t.org_a')::uuid, 'security-test-ai-result-key')), true);
 select tests.expect_rows(format($q$select 1 from public.import_runs where id = %L and source = 'gmail'
   and file_name = 'inbox@example.com' and status = 'running'$q$, current_setting('t.fetch_1')), 1,
   'an admin starts a fetch, logged as a Gmail import');
-select tests.expect_error(format($q$select * from public.start_gmail_fetch(%L)$q$, current_setting('t.org_a')),
+select tests.expect_error(format($q$select * from public.start_gmail_fetch(%L, 'security-test-ai-result-key')$q$, current_setting('t.org_a')),
   'a second fetch cannot start while one is running');
 select tests.expect_rows(format($q$select 1 from jsonb_array_elements(public.import_issues(%L,
   '[{"row":1,"customer_name":"Mail Customer","customer_email":"Mail@Example.com","channel":"email","subject":"Help",
@@ -1274,7 +1280,7 @@ select tests.expect_error(format($q$select public.finish_gmail_fetch(%L, '2026-1
   current_setting('t.fetch_1')), 'a fetch cannot be finished twice');
 
 -- The starting point never moves back, and a stopped fetch still keeps its progress.
-select set_config('t.fetch_2', (select run_id::text from public.start_gmail_fetch(current_setting('t.org_a')::uuid)), true);
+select set_config('t.fetch_2', (select run_id::text from public.start_gmail_fetch(current_setting('t.org_a')::uuid, 'security-test-ai-result-key')), true);
 select public.finish_gmail_fetch(current_setting('t.fetch_2')::uuid, '2026-10-19T10:00:00Z', 'Google stopped answering.');
 select tests.expect_rows(format($q$select 1 from public.mailbox_connections where organization_id = %L
   and fetched_until = '2026-10-20T10:00:00Z'$q$, current_setting('t.org_a')), 1,
@@ -1289,7 +1295,7 @@ select tests.expect_error(format($q$select public.start_import(%L, 'gmail')$q$, 
 select tests.act_as(current_setting('t.a_owner')::uuid);
 select tests.expect_error(format($q$update public.mailbox_connections set fetched_until = null where organization_id = %L$q$,
   current_setting('t.org_a')), 'nobody moves the starting point directly');
-select tests.expect_rows(format($q$select 1 from public.start_gmail_fetch(%L) where encrypted_token = 'v1:dddd:eeee:ffff'$q$,
+select tests.expect_rows(format($q$select 1 from public.start_gmail_fetch(%L, 'security-test-ai-result-key') where encrypted_token = 'v1:dddd:eeee:ffff'$q$,
   current_setting('t.org_a')), 1, 'the owner can fetch too (the server gets the encrypted token)');
 -- Reconnecting the same inbox keeps the starting point; another inbox starts afresh.
 select public.save_mailbox_connection(current_setting('t.org_a')::uuid, 'inbox@example.com', 'v1:dddd:eeee:ffff');
@@ -1308,7 +1314,7 @@ select tests.expect_rows(format($q$select 1 where public.disconnect_mailbox(%L)$
   'the owner disconnects the inbox');
 select tests.expect_rows(format($q$select 1 from public.mailbox_connections where organization_id = %L$q$,
   current_setting('t.org_a')), 0, 'the connection is gone');
-select tests.expect_rows(format($q$select 1 where public.mailbox_token(%L) is null$q$, current_setting('t.org_a')), 1,
+select tests.expect_rows(format($q$select 1 where public.mailbox_token(%L, 'security-test-ai-result-key') is null$q$, current_setting('t.org_a')), 1,
   'and so is the token');
 select tests.expect_rows(format($q$select 1 where not public.disconnect_mailbox(%L)$q$, current_setting('t.org_a')), 1,
   'disconnecting again reports that nothing was connected');
@@ -1316,7 +1322,7 @@ select tests.expect_rows(format($q$select 1 where not public.disconnect_mailbox(
 select tests.act_as(null);
 reset role;
 set local role anon;
-select tests.expect_error(format($q$select public.mailbox_token(%L)$q$, current_setting('t.org_a')),
+select tests.expect_error(format($q$select public.mailbox_token(%L, 'security-test-ai-result-key')$q$, current_setting('t.org_a')),
   'a signed-out visitor cannot reach the token');
 select tests.expect_error('select * from public.mailbox_connections', 'a signed-out visitor cannot see connections');
 reset role;
@@ -1845,6 +1851,80 @@ select tests.expect_rows($q$select 1 from public.issues where subject = 'Old res
 select tests.expect_rows(format($q$select 1 from public.deletion_log where organization_id = %L and kind = 'retention'
   and deleted_by is null and issue_count >= 1$q$, current_setting('t.org_a')), 1,
   'the clean-up logs what it deleted');
+
+-- ---------------------------------------------------------------------------
+-- Deleting your own account (Phase 7 stage 37): only your own, typed email to
+-- confirm, never leaving a company without an owner.
+-- ---------------------------------------------------------------------------
+
+reset role;
+select tests.act_as(null);
+insert into auth.users (id, email, email_confirmed_at, raw_user_meta_data)
+values
+  ('f0000000-0000-4000-8000-000000000001', 'leaver@example.com', now(), '{"full_name":"Lee Leaver"}'),
+  ('f0000000-0000-4000-8000-000000000002', 'stayer@example.com', now(), '{"full_name":"Sam Stayer"}');
+insert into private.company_creators (email) values ('leaver@example.com');
+set local role authenticated;
+select tests.act_as('f0000000-0000-4000-8000-000000000001');
+select set_config('t.solo', public.create_organization('Solo Co', 'solo-co-del')::text, true);
+select set_config('t.shared', public.create_organization('Shared Co', 'shared-co-del')::text, true);
+insert into public.issues (organization_id, customer_name, channel, subject, message, created_by)
+values (current_setting('t.shared')::uuid, 'Kept', 'email', 'Shared work', 'x', 'f0000000-0000-4000-8000-000000000001');
+reset role;
+select tests.act_as(null);
+insert into public.organization_members (organization_id, user_id, role)
+values (current_setting('t.shared')::uuid, 'f0000000-0000-4000-8000-000000000002', 'member');
+set local role authenticated;
+
+select tests.act_as('f0000000-0000-4000-8000-000000000001');
+select tests.expect_rows($q$select 1 from public.account_deletion_plan() where slug = 'solo-co-del' and outcome = 'delete'$q$, 1,
+  'the plan says a company you are alone in is deleted with you');
+select tests.expect_rows($q$select 1 from public.account_deletion_plan() where slug = 'shared-co-del' and outcome = 'blocked_owner'$q$, 1,
+  'the plan says you must hand over a company you alone own with others in it');
+select tests.expect_error($q$select public.delete_my_account('leaver@example.com')$q$,
+  'the only owner of a company with other people cannot delete their account');
+select public.set_member_role(current_setting('t.shared')::uuid, 'f0000000-0000-4000-8000-000000000002', 'owner');
+select tests.expect_rows($q$select 1 from public.account_deletion_plan() where slug = 'shared-co-del' and outcome = 'leave'$q$, 1,
+  'with another owner, the plan says you just leave');
+select tests.expect_error($q$select public.delete_my_account('someone-else@example.com')$q$,
+  'deleting needs your own email typed');
+select tests.expect_error($q$select public.delete_my_account('')$q$, 'deleting needs the confirmation');
+
+select tests.act_as(current_setting('t.b_owner')::uuid);
+select tests.expect_rows($q$select 1 from public.account_deletion_plan() where slug in ('solo-co-del', 'shared-co-del')$q$, 0,
+  'nobody sees another person''s deletion plan');
+
+select tests.act_as('f0000000-0000-4000-8000-000000000001');
+select public.save_mailbox_connection(current_setting('t.solo')::uuid, 'solo-inbox@example.com', 'v1:solo:solo:solo');
+select tests.expect_rows($q$select 1 from public.account_deletion_plan() where slug = 'solo-co-del' and outcome = 'blocked_gmail'$q$, 1,
+  'a company that would be deleted with Gmail still connected must disconnect first');
+select tests.expect_error($q$select public.delete_my_account('leaver@example.com')$q$,
+  'the account cannot be deleted while that Gmail is connected');
+select public.disconnect_mailbox(current_setting('t.solo')::uuid);
+select tests.act_as('f0000000-0000-4000-8000-000000000001');
+select tests.expect_rows($q$select 1 where public.delete_my_account(' Leaver@Example.com ') = 1$q$, 1,
+  'the person deletes their account; their solo company goes with it');
+
+reset role;
+select tests.expect_rows($q$select 1 from auth.users where id = 'f0000000-0000-4000-8000-000000000001'$q$, 0,
+  'the sign-in is gone');
+select tests.expect_rows($q$select 1 from public.profiles where id = 'f0000000-0000-4000-8000-000000000001'$q$, 0,
+  'the profile is gone');
+select tests.expect_rows(format('select 1 from public.organizations where id = %L', current_setting('t.solo')), 0,
+  'the company they were alone in is deleted');
+select tests.expect_rows(format($q$select 1 from public.organization_members where organization_id = %L
+  and user_id = 'f0000000-0000-4000-8000-000000000002' and role = 'owner'$q$, current_setting('t.shared')), 1,
+  'the shared company keeps its other owner');
+select tests.expect_rows(format($q$select 1 from public.issues where organization_id = %L and subject = 'Shared work'
+  and created_by is null$q$, current_setting('t.shared')), 1,
+  'their work in the shared company stays, without their name');
+select tests.expect_rows($q$select 1 from private.company_creators where email = 'leaver@example.com'$q$, 0,
+  'their email is taken off the company-creators list');
+set local role authenticated;
+select tests.act_as(null);
+set local role anon;
+select tests.expect_error($q$select public.delete_my_account('x@example.com')$q$, 'a signed-out visitor cannot delete anything');
+reset role;
 
 reset role;
 select current_setting('tests.passed') || ' security checks passed' as result;
