@@ -326,13 +326,13 @@ never commit values. Without them the app runs in demo-only mode.
 | Secret key (`sb_secret_...`) | **Never** | Not used by the app. Must never be added |
 | `ANTHROPIC_API_KEY` | **Never** (server only, no `NEXT_PUBLIC_`) | Turns on Claude analysis (Phase 3). Read only in `src/lib/ai/index.ts`. Wins if both AI keys are set |
 | `GEMINI_API_KEY` | **Never** (server only, no `NEXT_PUBLIC_`) | Turns on Gemini analysis when there is no Anthropic key. Read only in `src/lib/ai/index.ts`. Neither key means AI is shown as not set up |
-| `BUDDY_AI_MODE` | No | `fake` swaps in the free keyword test analyser (automated tests and CI). Leave unset otherwise |
+| `BUDDY_AI_MODE` | No | `fake` swaps in the free keyword test analyser (automated tests and CI). Leave unset otherwise. From stage 39 it only works when Buddy runs on this computer (dev server, or `BUDDY_SITE_URL` on localhost); on a live server it is ignored and logged, and AI shows as not set up |
 | `GOOGLE_CLIENT_ID` | **Never** (server only) | Google OAuth client for connecting Gmail (stage 25). Read only in `src/lib/gmail/index.ts` |
 | `GOOGLE_CLIENT_SECRET` | **Never** (server only) | Secret of that OAuth client |
 | `GMAIL_TOKEN_KEY` | **Never** (server only) | 32 random bytes in base64 that encrypt the stored Gmail token. Changing it means reconnecting Gmail (steps in docs/RUNBOOK.md §7). All three must be set for Connect Gmail to appear |
 | `BUDDY_AI_RESULT_KEY` | **Never** (server only) | Stage 36 part 2: random key (`npm run ai-key`) that `start_issue_analysis` and `finish_issue_analysis` require; the database stores only its SHA-256 hash in `private.platform_settings.ai_result_key_hash`. Without it AI shows as not set up. From stage 37 also required by `mailbox_token` and `start_gmail_fetch` (Gmail fetching). Read only in `src/lib/ai/index.ts` |
-| `BUDDY_SITE_URL` | Not secret (server only) | Buddy's own address for sign-up email links and invitation links (stage 36, `src/lib/site-url.ts`). Optional in development (the request's address is used); in production Buddy refuses to make those links without it, because Host/Origin headers can be faked |
-| `BUDDY_GMAIL_MODE` | No | `fake` swaps in a pretend Google for automated tests and CI. Leave unset otherwise |
+| `BUDDY_SITE_URL` | Not secret (server only) | Buddy's own address for sign-up email links and invitation links (stage 36, `src/lib/site-url.ts`). Optional in development (the request's address is used); in production Buddy refuses to make those links without it, because Host/Origin headers can be faked. From stage 39 also the Gmail return address in production (`gmailCallbackUrl`), and what decides whether fake modes may run |
+| `BUDDY_GMAIL_MODE` | No | `fake` swaps in a pretend Google for automated tests and CI. Leave unset otherwise. Same stage 39 guard as `BUDDY_AI_MODE` |
 
 ## 10. Development commands (Windows PowerShell)
 
@@ -979,3 +979,17 @@ Phase 7 (security, reliability and deployment readiness).
   2026-10-26: all rows back and a restored user signed in. README's
   `GMAIL_TOKEN_KEY` command now uses Node's crypto random bytes instead of
   `Get-Random`. New `tests/unit/backup-plan.test.ts`.
+- Stage 38 tidy-up: PR #48 (no DEP0190 warning from `npm run backup` on
+  Windows; `wsl --install` step in RUNBOOK §8 and README). Merged and
+  verified by Jugal 2026-10-26. Stage 38 complete.
+- Stage 39 (deployment prep, no deploy), plan approved 2026-10-26:
+  https://claude.ai/artifact/XcP15nVzF5ZNfqiDYg7K7p
+- Stage 39 PR 1: safety guards (F14, F26). `runsOnThisComputer()` in
+  `src/lib/site-url.ts` (dev server, or a production build whose
+  `BUDDY_SITE_URL` is localhost/127.0.0.1). `BUDDY_AI_MODE=fake` and
+  `BUDDY_GMAIL_MODE=fake` work only then; otherwise they are ignored with a
+  log line and AI/Gmail show as not set up. Gmail's OAuth return address comes
+  from `gmailCallbackUrl()` (`src/lib/gmail/oauth.ts`): `BUDDY_SITE_URL` +
+  `/api/gmail/callback` in production (Connect Gmail says "not set up" without
+  it), the request's address in development. Unit tests in `site-url`, `ai`
+  and `gmail` tests (189 unit tests).

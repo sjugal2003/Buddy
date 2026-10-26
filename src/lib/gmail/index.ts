@@ -1,15 +1,21 @@
 import "server-only";
 import { randomBytes } from "node:crypto";
+import { runsOnThisComputer } from "@/lib/site-url";
 import { parseTokenKey } from "./crypto";
 import { FETCH_SCAN, type GmailMessage } from "./message";
 
 // Talking to Google, on the server only. BUDDY_GMAIL_MODE=fake (tests and CI)
-// swaps in a stand-in that never contacts Google, like BUDDY_AI_MODE=fake.
+// swaps in a stand-in that never contacts Google, like BUDDY_AI_MODE=fake, and
+// like it only works when Buddy runs on this computer.
 
 export type GmailStatus = "fake" | "configured" | "not_configured";
 
 export function gmailStatus(): GmailStatus {
-  if (process.env.BUDDY_GMAIL_MODE === "fake") return "fake";
+  if (process.env.BUDDY_GMAIL_MODE === "fake") {
+    if (runsOnThisComputer(process.env)) return "fake";
+    console.error("[gmail] BUDDY_GMAIL_MODE=fake is for tests only and is ignored on a live server");
+    return "not_configured";
+  }
   const ready =
     process.env.GOOGLE_CLIENT_ID?.trim() && process.env.GOOGLE_CLIENT_SECRET?.trim() && parseTokenKey(process.env.GMAIL_TOKEN_KEY);
   return ready ? "configured" : "not_configured";

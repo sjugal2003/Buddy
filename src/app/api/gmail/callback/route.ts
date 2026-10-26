@@ -4,7 +4,7 @@ import { getCurrentUser } from "@/lib/auth";
 import { getMembershipBySlug } from "@/lib/data/live";
 import { exchangeCode, gmailStatus, inboxAddress, tokenKey } from "@/lib/gmail";
 import { encryptToken } from "@/lib/gmail/crypto";
-import { OAUTH_COOKIE, OAUTH_COOKIE_PATH, decodeOAuthCookie, grantedReadonly } from "@/lib/gmail/oauth";
+import { OAUTH_COOKIE, OAUTH_COOKIE_PATH, decodeOAuthCookie, gmailCallbackUrl, grantedReadonly } from "@/lib/gmail/oauth";
 import { createClient } from "@/lib/supabase/server";
 
 // Google sends the owner back here. The connection is saved only if the
@@ -40,12 +40,13 @@ export async function GET(request: NextRequest) {
   if (!membership) return finish("/");
   if (membership.role !== "owner") return back("not_owner");
   const key = tokenKey();
-  if (gmailStatus() === "not_configured" || !key) return back("not_configured");
+  const redirectUri = gmailCallbackUrl(process.env, request.url);
+  if (gmailStatus() === "not_configured" || !key || !redirectUri) return back("not_configured");
 
   let address: string;
   let encrypted: string;
   try {
-    const tokens = await exchangeCode(code, saved.verifier, new URL("/api/gmail/callback", request.url).toString());
+    const tokens = await exchangeCode(code, saved.verifier, redirectUri);
     if (!grantedReadonly(tokens.scope)) return back("scope");
     if (!tokens.refreshToken) return back("no_refresh");
     address = await inboxAddress(tokens.accessToken);

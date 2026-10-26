@@ -1,4 +1,5 @@
 import { createHash, randomBytes } from "node:crypto";
+import { normaliseSiteUrl } from "@/lib/site-url";
 
 // Google sign-in for one Gmail inbox, read-only. Only gmail.readonly is asked
 // for: Buddy can read messages but can never send, delete or change email.
@@ -70,9 +71,21 @@ export const gmailResultMessages: Record<string, string> = {
   expired: "The Google sign-in took too long or was started in another browser. Please try again.",
   not_owner: "Only owners can connect or disconnect the inbox.",
   not_configured:
-    "Gmail is not set up on this server yet (add GOOGLE_CLIENT_ID, GOOGLE_CLIENT_SECRET and GMAIL_TOKEN_KEY to .env.local).",
+    "Gmail is not set up on this server yet (add GOOGLE_CLIENT_ID, GOOGLE_CLIENT_SECRET and GMAIL_TOKEN_KEY to .env.local; a live server also needs BUDDY_SITE_URL).",
   scope: "Gmail was not connected: Buddy needs permission to read email. Tick that box on Google's screen and try again.",
   no_refresh: "Google did not give Buddy lasting access. Remove Buddy at myaccount.google.com/permissions, then connect again.",
   google_failed: "Google could not complete the sign-in. Please try again in a minute.",
   save_failed: "Gmail could not be connected because the connection was not saved. Please try again.",
 };
+
+/**
+ * Where Google sends the owner back. On a live server it is built from
+ * BUDDY_SITE_URL, like every link that leaves the site (null when that is
+ * missing); on your computer, from the address you opened Buddy on. Either way
+ * it must also be listed in the Google Cloud project, or Google refuses it.
+ */
+export function gmailCallbackUrl(env: { BUDDY_SITE_URL?: string; NODE_ENV?: string }, requestUrl: string) {
+  if (env.NODE_ENV !== "production") return new URL("/api/gmail/callback", requestUrl).toString();
+  const site = normaliseSiteUrl(env.BUDDY_SITE_URL);
+  return site ? `${site}/api/gmail/callback` : null;
+}

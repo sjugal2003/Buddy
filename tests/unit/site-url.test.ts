@@ -1,5 +1,5 @@
 import { describe, expect, it } from "vitest";
-import { normaliseSiteUrl, resolveSiteUrl, SITE_URL_MISSING } from "@/lib/site-url";
+import { normaliseSiteUrl, resolveSiteUrl, runsOnThisComputer, SITE_URL_MISSING } from "@/lib/site-url";
 
 const headers = (values: Record<string, string>) => ({ get: (name: string) => values[name] ?? null });
 const attacker = headers({ origin: "https://evil.example", host: "evil.example" });
@@ -41,5 +41,24 @@ describe("resolveSiteUrl", () => {
     expect(resolveSiteUrl({ NODE_ENV: "development" }, headers({ host: "localhost:3100" }))).toEqual({
       url: "http://localhost:3100",
     });
+  });
+});
+
+describe("runsOnThisComputer", () => {
+  it("is true for the dev server and for tests", () => {
+    expect(runsOnThisComputer({ NODE_ENV: "development" })).toBe(true);
+    expect(runsOnThisComputer({ NODE_ENV: "test", BUDDY_SITE_URL: "https://buddy.example.com" })).toBe(true);
+  });
+
+  it("is true for a live build on localhost, as the browser tests run it", () => {
+    expect(runsOnThisComputer({ NODE_ENV: "production", BUDDY_SITE_URL: "http://localhost:3100" })).toBe(true);
+    expect(runsOnThisComputer({ NODE_ENV: "production", BUDDY_SITE_URL: "http://127.0.0.1:3000/" })).toBe(true);
+  });
+
+  it("is false on a live server, or when its address is missing or broken", () => {
+    expect(runsOnThisComputer({ NODE_ENV: "production", BUDDY_SITE_URL: "https://buddy.example.com" })).toBe(false);
+    expect(runsOnThisComputer({ NODE_ENV: "production", BUDDY_SITE_URL: "https://localhost.example.com" })).toBe(false);
+    expect(runsOnThisComputer({ NODE_ENV: "production" })).toBe(false);
+    expect(runsOnThisComputer({ NODE_ENV: "production", BUDDY_SITE_URL: "localhost" })).toBe(false);
   });
 });

@@ -28,6 +28,20 @@ export function normaliseSiteUrl(value: string | undefined) {
   }
 }
 
+/**
+ * True when Buddy runs on this computer: the dev server, or a live build whose
+ * BUDDY_SITE_URL is localhost (how the automated tests run it). The test-only
+ * stand-ins (BUDDY_AI_MODE=fake, BUDDY_GMAIL_MODE=fake) work only then, so
+ * they can't show made-up results as real on a live server (stage 39).
+ */
+export function runsOnThisComputer(env: { BUDDY_SITE_URL?: string; NODE_ENV?: string }) {
+  if (env.NODE_ENV !== "production") return true;
+  const url = normaliseSiteUrl(env.BUDDY_SITE_URL);
+  if (!url) return false;
+  const host = new URL(url).hostname;
+  return host === "localhost" || host === "127.0.0.1" || host === "[::1]";
+}
+
 /** Only for development: the address the browser used, from the request headers. */
 function devOrigin(headers: { get(name: string): string | null }) {
   const origin = headers.get("origin");

@@ -8,6 +8,7 @@ import {
   OAUTH_COOKIE_PATH,
   buildAuthUrl,
   encodeOAuthCookie,
+  gmailCallbackUrl,
   newOAuthSecrets,
 } from "@/lib/gmail/oauth";
 
@@ -28,8 +29,10 @@ export async function GET(request: NextRequest) {
   const status = gmailStatus();
   if (status === "not_configured") return back("not_configured");
 
+  const redirectUri = gmailCallbackUrl(process.env, request.url);
+  if (!redirectUri) return back("not_configured");
+
   const { state, verifier, challenge } = newOAuthSecrets();
-  const redirectUri = new URL("/api/gmail/callback", request.url).toString();
   const target =
     status === "fake"
       ? // The stand-in skips Google and comes straight back, as Google would.
