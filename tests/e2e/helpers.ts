@@ -4,6 +4,9 @@ import pg from "pg";
 /** The LOCAL test database (never the hosted project). */
 export const TEST_DB = "postgresql://postgres:postgres@127.0.0.1:54322/postgres";
 
+/** The test server's AI result key: a made-up value, used only with the local database. */
+export const TEST_AI_RESULT_KEY = "e2e-test-ai-result-key-not-a-real-secret";
+
 export const PASSWORD = "correct-horse-9";
 
 /** A short unique suffix, so each run uses fresh emails and web addresses. */

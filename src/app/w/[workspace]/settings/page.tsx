@@ -120,7 +120,7 @@ export default async function SettingsPage({ params }: { params: Promise<{ works
               <dt className="text-slate-500">AI service on this server</dt>
               <dd className="text-slate-900">
                 {aiService === "not_configured"
-                  ? "Not set up: add GEMINI_API_KEY or ANTHROPIC_API_KEY to .env.local"
+                  ? "Not set up: add GEMINI_API_KEY or ANTHROPIC_API_KEY, and BUDDY_AI_RESULT_KEY, to .env.local"
                   : aiService === "fake"
                     ? providerNames.fake
                     : `Set up: ${providerNames[aiService]}`}

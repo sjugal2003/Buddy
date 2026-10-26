@@ -1,10 +1,10 @@
 import Anthropic from "@anthropic-ai/sdk";
 import { ApiError } from "@google/genai";
-import { afterEach, describe, expect, it, vi } from "vitest";
+import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 import { AI_MODEL, MAX_OUTPUT_TOKENS, createClaudeAnalyser, type ParseClient } from "@/lib/ai/claude";
 import { fakeAnalyser } from "@/lib/ai/fake";
 import { GEMINI_MODEL, createGeminiAnalyser, type GenerateClient } from "@/lib/ai/gemini";
-import { getAnalyser } from "@/lib/ai";
+import { aiResultKey, aiServiceStatus, getAnalyser } from "@/lib/ai";
 import { checkAiAllowance, estimateCostUsd, monthStart } from "@/lib/ai/limits";
 import { MAX_MESSAGE_CHARS, buildUserPrompt } from "@/lib/ai/prompt";
 import { toSuggestion, type AiAnswer, type AnalysisInput } from "@/lib/ai/schema";
@@ -231,7 +231,20 @@ describe("Gemini analyser (with a stand-in client, no network)", () => {
 });
 
 describe("getAnalyser", () => {
+  // A stand-in for the server's AI result key (not a real one).
+  beforeEach(() => vi.stubEnv("BUDDY_AI_RESULT_KEY", "test-result-key-0123456789abcdefghij"));
   afterEach(() => vi.unstubAllEnvs());
+
+  it("says AI is not set up without the AI result key, even with an AI key", () => {
+    vi.stubEnv("BUDDY_AI_MODE", "");
+    vi.stubEnv("ANTHROPIC_API_KEY", "placeholder-not-a-real-key");
+    vi.stubEnv("BUDDY_AI_RESULT_KEY", "");
+    expect(aiServiceStatus()).toBe("not_configured");
+    expect(getAnalyser()).toBeNull();
+    vi.stubEnv("BUDDY_AI_RESULT_KEY", "too-short");
+    expect(aiResultKey()).toBeNull();
+    expect(getAnalyser()).toBeNull();
+  });
 
   it("uses the fake in test mode and nothing when no key is set", () => {
     vi.stubEnv("BUDDY_AI_MODE", "fake");
