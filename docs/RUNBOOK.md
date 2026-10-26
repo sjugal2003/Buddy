@@ -255,6 +255,19 @@ tool runs inside it)
 2. Restart Windows.
 3. Open **Docker Desktop** from the Start menu, accept the terms, skip the
    sign-in, and wait until the bottom left says **Engine running**.
+4. If Docker says **WSL is not installed** (or needs an update), Windows is
+   missing the small Linux layer Docker runs on. Right-click the Start button,
+   choose **Terminal (Admin)** or **Windows PowerShell (Admin)**, click
+   **Yes**, and run:
+
+   ```powershell
+   wsl --install
+   ```
+
+   Restart Windows when it finishes. If a window then asks for a Linux user
+   name and password, pick any (they're only for that Linux layer, not
+   Buddy). Open Docker Desktop again and wait for **Engine running**. If WSL
+   was already installed, `wsl --update` is enough.
 
 **Make a backup** (once a week while Buddy has only made-up data)
 

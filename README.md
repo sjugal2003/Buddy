@@ -494,7 +494,9 @@ winget install Docker.DockerDesktop
 ```
 
 Restart Windows, open Docker Desktop once and wait until it says it is
-running. Then, in the `Buddy` folder:
+running. If it says **WSL is not installed**, run `wsl --install` in an
+**admin** PowerShell (right-click Start, **Terminal (Admin)**), restart Windows
+and open Docker Desktop again (details in `docs/RUNBOOK.md`, section 8). Then, in the `Buddy` folder:
 
 ```powershell
 npx.cmd playwright install chromium
