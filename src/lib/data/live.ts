@@ -9,6 +9,7 @@ import { isNotificationKind, NOTIFICATION_LIST_LIMIT, type NotificationKind } fr
 import { friendlyError } from "@/lib/errors";
 import { issueReportSchema, type IssueReport } from "@/lib/reports";
 import type { DeletionKind, DeletionLogEntry } from "@/lib/data-retention";
+import type { ScheduledJob } from "@/lib/scheduled-jobs";
 import type { Channel, Intent, IssueSource, IssueStatus, RoutingRule, RuleCondition, Sentiment, Urgency } from "@/lib/types";
 
 // Reads for real (signed-in) workspaces. Every query runs as the signed-in
@@ -927,6 +928,34 @@ export async function getDataSettings(organizationId: string, logLimit = 20): Pr
       createdAt: row.created_at,
     })),
   };
+}
+
+/**
+ * Buddy's scheduled jobs and their latest run (owners and admins only). Null
+ * when they can't be read, so Settings still opens and says so instead.
+ */
+export async function getScheduledJobs(organizationId: string): Promise<ScheduledJob[] | null> {
+  const supabase = await createClient();
+  const { data, error } = await supabase.rpc("scheduled_job_status", { p_org: organizationId });
+  if (error) {
+    console.error("[getScheduledJobs]", error.code, error.message);
+    return null;
+  }
+  return (
+    (data ?? []) as {
+      job_name: string;
+      schedule: string;
+      active: boolean;
+      last_run_at: string | null;
+      last_status: string | null;
+    }[]
+  ).map((row) => ({
+    name: row.job_name,
+    schedule: row.schedule,
+    active: row.active,
+    lastRunAt: row.last_run_at,
+    lastStatus: row.last_status,
+  }));
 }
 
 export type AccountDeletionOutcome = "leave" | "delete" | "blocked_owner" | "blocked_gmail";

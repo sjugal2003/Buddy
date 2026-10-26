@@ -101,6 +101,7 @@ Demo details:
 | `/w/[workspace]/notifications` | `app/w/[workspace]/notifications/page.tsx` | Phase 6 stage 29. The signed-in person's own notifications for this company, newest first (up to 50): kind, time in the company time zone, a short title linking inside the workspace (the issue, Data sources or Settings; built by `notificationHref` in `src/lib/notifications.ts`, never a stored link), Unread marker, "Mark as read" (`markNotificationRead`) and "Mark all as read" (`markAllNotificationsRead`, `app/actions/notifications.ts`). Empty state "No notifications yet." Every workspace page's header has a bell (`components/notifications/notification-bell.tsx`) with the unread count ("99+" above 99; no number if the count cannot be loaded). From stage 30 the database notifies owners and admins (members get none) of escalations, open issues that become High or Critical, and CSV imports or Gmail fetches that fail or reject rows; more than 10 escalations in one check become one summary linking to the escalated-issues filter. Nothing is emailed | |
 | `/w/[workspace]/reports` | `app/w/[workspace]/reports/page.tsx` | Phase 6 stage 32. Company-wide figures for the last 7 days, the last 30 days (default) or a custom range of up to 366 days, as calendar days in the company's time zone (range in the address bar; an unusable custom range shows a message and the last 30 days). Counted by `public.issue_report` in the database: issues received (and still open), resolved in the period, median and average first-response and resolution times (for issues received in the period; past conversations imported as already resolved are counted as received but not timed), share that met the current first-response target (on time / late / missed), per-team workload and median times (team figures, never per person), breakdowns by urgency, sentiment, channel and category, escalations by reason, and CSV import / Gmail fetch results. Everyone in the company can see it. Pure helpers in `lib/reports.ts`. From stage 33, "Download CSV" (`reports/download/route.ts`, through the person's own session; members only, 404 otherwise; an unusable range gives a 400 instead of another range) saves the same figures for the range on screen, one per row, times in minutes, built by `lib/report-csv.ts` (typed-in names that start like a spreadsheet formula get a leading apostrophe) | Read only |
 | `/w/[workspace]/settings` | `components/settings/settings-forms.tsx` | Company name, industry, time zone, first-response and resolution targets; add/rename/delete teams (name, lead, email, colour) and categories; "AI analysis" card (on/off, monthly limit, analyses used this month and approximate cost, whether this server has an AI key). Owners and admins edit (`app/actions/settings.ts`); members see it read-only. "Apply routing automatically" (owners only). "Escalations" card: switch conditions on and set thresholds, "Check now" (`app/actions/escalations.ts`), last check, "Automatic checks" (judged only from the latest scheduled check actually logged: "Not running. Use Check now." until one is seen, "Running every 15 minutes." while they arrive, a warning after 45 minutes without one; from stage 31 also, in red, when the latest scheduled check failed, with its reason, "No automatic check has succeeded in the last hour" when that is so, and the last successful scheduled check) and a note that email and chat notifications are not set up (notifications appear in Buddy only) | Team email is display only |
+| `/api/health` | `app/api/health/route.ts` | Phase 7 stage 38. Calls `service_health()` with a 5-second limit; 200 `{"status":"ok","database":"ok"}` or 503 `{"status":"error","database":"unreachable"}`, `Cache-Control: no-store`. No sign-in; shows nothing private. For a free uptime checker after deployment | |
 
 Every `/w/[workspace]` page has a "Something went wrong, try again" screen
 (`error.tsx`). Forms show "Saving…" while they work; while a page loads, the
@@ -200,7 +201,8 @@ Files (`supabase/`):
 | `migrations/20261029090000_rate_limits.sql` | Phase 7 stage 37: `private.rate_limit_events` (RLS on, no grants) and trigger function `private.enforce_rate_limit(action, max, seconds, label)` under an advisory lock per person and action; triggers limit each signed-in person per hour to 30 invitations, 30 imports and Gmail fetches together, 200 issues added by hand (`source = 'manual'`) and 30 "Check now" escalation checks. Database jobs (no `auth.uid()`) are not counted |
 | `migrations/20261029120000_data_deletion.sql` | Phase 7 stage 37 PR 2: `deletion_log` (when, who, kind `issue`/`customer`/`retention`, count, issue reference; never customer details; owners read, nobody writes); `delete_issue(id)` and `delete_customer_data(org, email)` (owners only; the old owner/admin delete policy and grant on `issues` are removed); `organizations.retention_days` (30 to 3650 or empty) set by `set_retention_days` (owners); `private.apply_retention()` deletes resolved issues past the setting (5,000 per company per run), called from `private.run_daily_cleanup()`; trigger `issues_clear_analyses` clears the AI text of a deleted issue's analyses |
 | `migrations/20261029150000_account_deletion.sql` | Phase 7 stage 37 PR 3: `account_deletion_plan()` (for each of the caller's companies: `leave`, `delete` when they are its only member, `blocked_owner` when they are its only owner and others belong, `blocked_gmail` when it would be deleted with Gmail connected) and `delete_my_account(email)` (typed own email; deletes the solo companies, the company-creators entry, rate-limit counts and the `auth.users` row, which removes the profile and memberships and sets their name to empty elsewhere). `mailbox_token(uuid, text)` and `start_gmail_fetch(uuid, text)` replace the old versions and need the server key (`BUDDY_AI_RESULT_KEY`, checked by `private.check_server_key_for_gmail`) |
-| `tests/security_test.sql` | 503 checks of tenant isolation, roles, invitations, teams, categories, settings, routing rules, AI analysis, resolution tracking, escalations, routing history, scheduled checks, imports, the Gmail connection, fetching, notifications and reports; runs in one transaction and rolls back |
+| `migrations/20261030090000_health_and_job_status.sql` | Phase 7 stage 38 PR 2: `service_health()` (returns true; anon and signed-in may call it; used by `/api/health`); `scheduled_job_status(org)` (owners and admins of that company only): for the pg_cron jobs `buddy-daily-cleanup` and `buddy-escalation-check`, the name, schedule, whether active, and the latest run's start time and status from `cron.job_run_details`, never the command or error text |
+| `tests/security_test.sql` | 512 checks of tenant isolation, roles, invitations, teams, categories, settings, routing rules, AI analysis, resolution tracking, escalations, routing history, scheduled checks, imports, the Gmail connection, fetching, notifications and reports; runs in one transaction and rolls back |
 | `tests/local-supabase-stub.sql` | Minimal stand-in for Supabase's `auth` schema and roles, for plain PostgreSQL only. Never run on Supabase |
 
 Tables: `profiles`, `organizations`, `organization_members`,
@@ -388,7 +390,10 @@ It also runs `npm audit --audit-level=high`, so a high or critical advisory
 in any package turns the check red. Each action is pinned to an exact commit
 (version in the comment). Dependabot (`.github/dependabot.yml`) opens update
 PRs weekly for npm (minor and patch grouped, at most 3 open) and monthly for
-the actions; Claude reviews them before Jugal merges.
+the actions; Claude reviews them before Jugal merges. Major versions of
+Next.js, eslint-config-next, TypeScript, React (and its types) and ESLint are
+ignored: those need their own planned upgrade (Dependabot proposed Next 16 and
+TypeScript 7 on 2026-10-26; both closed).
 
 ## 11. Important technical decisions
 
@@ -453,7 +458,8 @@ the actions; Claude reviews them before Jugal merges.
   stages 38 to 40: the AI provider for real data, monitoring, backups, a
   runbook, deployment settings, a privacy notice. Stage 38 plan:
   https://claude.ai/artifact/V4RhX8cXG4hXexEez9ttaS; PR 1 closes F17 (audit
-  in CI, Dependabot, pinned actions).
+  in CI, Dependabot, pinned actions); PR 2 closes F8's health page part and
+  F18 (Settings shows whether the daily clean-up ran).
 - The Content-Security-Policy still allows inline scripts, because Next.js
   adds them to every page; moving to per-request nonces is a later change.
 - Demo pages load the whole workspace into the browser. Real workspaces
@@ -940,4 +946,15 @@ Phase 7 (security, reliability and deployment readiness).
 - Stage 38 PR 1: package safety checks (F17). `npm audit --audit-level=high`
   step in `.github/workflows/checks.yml`, actions pinned to commits,
   `.github/dependabot.yml` (npm weekly, actions monthly). No app or database
-  change.
+  change. PR #39, merged 2026-10-26; Jugal switched on Dependabot alerts and
+  security updates.
+- Stage 38 PR 2: noticing problems (F8, F18). Migration
+  `20261030090000_health_and_job_status.sql` (see §7). `/api/health` (see
+  §5). Settings > "Scheduled jobs" (owners and admins): the daily clean-up's
+  latest run from pg_cron's history (`getScheduledJobs` in `live.ts`, wording
+  in `src/lib/scheduled-jobs.ts`; red when the last run failed or the last
+  success is over 26 hours old; Settings still opens if it can't be read).
+  Server logs were checked: they already log `[where] code message`, never
+  customer names, emails or messages. 512 security checks; new
+  `tests/unit/scheduled-jobs.test.ts` and a second test in
+  `tests/e2e/scheduler-health.spec.ts`.

@@ -66,6 +66,10 @@ Router, React 19, TypeScript strict, Tailwind v4). Full background:
 - Links that leave the site (email confirmation, invitations) use
   `siteUrl()` from `src/lib/site-url.ts`, never the Host/Origin header.
 - Security headers live in `next.config.ts`; e2e tests check them.
+- `/api/health` is public: it may only say whether Buddy and the database
+  answer, never anything about companies, people or settings.
+  `scheduled_job_status` returns job names, schedules, times and statuses
+  only (never commands or error text), to owners and admins.
 - Reports: counted only by `public.issue_report` (members only, company time
   zone). No per-person figures.
 

@@ -20,11 +20,13 @@ import {
   getEscalationSettings,
   getMembershipBySlug,
   getOrganizationSettings,
+  getScheduledJobs,
   listCategories,
   listTeams,
 } from "@/lib/data/live";
 import { automaticCheckStatus, describeRun, escalationConditionLabels } from "@/lib/escalations";
 import { formatDateTimeIn } from "@/lib/format";
+import { dailyCleanupStatus } from "@/lib/scheduled-jobs";
 import { urgencyLabels, urgencyOrder } from "@/lib/labels";
 
 export const dynamic = "force-dynamic";
@@ -40,13 +42,14 @@ export default async function SettingsPage({ params }: { params: Promise<{ works
   // decision and refuses changes from members.
   const canEdit = membership.role === "owner" || membership.role === "admin";
   const isOwner = membership.role === "owner";
-  const [settings, ai, escalation, teams, categories, data] = await Promise.all([
+  const [settings, ai, escalation, teams, categories, data, jobs] = await Promise.all([
     getOrganizationSettings(orgId),
     getAiSettings(orgId),
     getEscalationSettings(orgId),
     listTeams(orgId),
     listCategories(orgId),
     getDataSettings(orgId),
+    canEdit ? getScheduledJobs(orgId) : Promise.resolve(null),
   ]);
   const aiService = aiServiceStatus();
   // Judged from the scheduled checks actually logged, with the server's clock.
@@ -54,6 +57,7 @@ export default async function SettingsPage({ params }: { params: Promise<{ works
     error: escalation.lastScheduledError,
     lastSuccessAt: escalation.lastScheduledSuccessAt,
   });
+  const cleanup = dailyCleanupStatus(jobs, new Date(), (iso) => formatDateTimeIn(iso, settings.timezone));
   const aiCost = ai.estimatedCostUsd;
   // Listed on the server so the page and the browser show the same options.
   const timeZones = Array.from(new Set(["UTC", settings.timezone, ...Intl.supportedValuesOf("timeZone")]));
@@ -208,6 +212,26 @@ export default async function SettingsPage({ params }: { params: Promise<{ works
             )}
           </div>
         </Card>
+
+        {canEdit && (
+          <Card
+            title="Scheduled jobs"
+            description="Work the database does by itself. Only owners and admins see this."
+          >
+            <dl className="grid grid-cols-[auto_1fr] gap-x-6 gap-y-2 text-sm">
+              <dt className="text-slate-500">Daily clean-up</dt>
+              <dd className={cleanup.failing ? "text-red-700" : "text-slate-900"} data-testid="daily-cleanup-status">
+                {cleanup.text}
+                <span className="block text-xs text-slate-500">
+                  Closes imports that never finished and removes old read notifications and check logs, plus issues
+                  past your &ldquo;keep issues for&rdquo; setting.
+                </span>
+              </dd>
+              <dt className="text-slate-500">Escalation checks</dt>
+              <dd className="text-slate-900">Shown under Escalations above.</dd>
+            </dl>
+          </Card>
+        )}
 
         <Card title="Teams" description={`${teams.length} ${teams.length === 1 ? "team" : "teams"}. Issues can be given to a team.`}>
           {teams.length === 0 && <p className="text-sm text-slate-500">No teams yet.</p>}

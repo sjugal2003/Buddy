@@ -189,6 +189,14 @@ Use made-up customers only until Phase 7.
    figures as a file for Excel (widen a column if it shows `########`).
 4. **Settings** > **Escalations** shows whether the automatic checks are
    running, and in red if the latest one failed.
+5. **Settings** > **Scheduled jobs** (owners and admins) shows whether the
+   daily clean-up ran: "Working. Last run ...", "It hasn't run yet" (it runs
+   at 03:30 UTC, 09:00 India time), or a red line if the last run failed or
+   it hasn't worked for more than a day.
+6. Open http://localhost:3000/api/health. It should show
+   `{"status":"ok","database":"ok"}`. If Supabase is unreachable (for example
+   the free project was paused) it shows `"status":"error"`. Later, a free
+   uptime checker can watch this address once Buddy is online.
 
 ## Invite-only and app-wide limits
 
@@ -479,8 +487,8 @@ copy of the app on port 3100):
 
 ```powershell
 npx.cmd supabase start     # first time downloads a few GB; later about 30 seconds
-npm.cmd run test:db        # should end with "503 security checks passed"
-npm.cmd run test:e2e       # should end with "29 passed"
+npm.cmd run test:db        # should end with "512 security checks passed"
+npm.cmd run test:e2e       # should end with "30 passed"
 npx.cmd supabase stop
 ```
 
@@ -544,7 +552,8 @@ which step failed, with a screenshot.
 | `/w/<company>/data-sources` | Import a CSV file (owners and admins: match columns, preview, open or past conversations), "Analyse with AI" for an import's issues (asks first, shows the month's remaining analyses), connect or disconnect one Gmail inbox read-only (owners), "Fetch new email" (owners and admins), and every import with its counts and rejected-row reasons |
 | `/w/<company>/notifications` | Your own in-app notifications for this company (owners and admins receive them): newest first, open the linked page, mark one or all as read. The bell in the header shows how many are unread |
 | `/w/<company>/reports` | Company-wide figures for the last 7 days, the last 30 days or your own dates (company time zone): received, resolved, response and resolution times, response target, teams, urgency, sentiment, channel, category, escalations and imports. **Download CSV** saves them. Everyone in the company can see it; no per-person figures |
-| `/w/<company>/settings` | Customer data (owners: how long resolved issues are kept, delete a customer's data, deletion log), company profile, first-response and resolution targets, AI analysis (on/off, monthly limit, automatic routing), escalation conditions with "Check now" and the automatic-check status (red when the latest one failed), teams, categories (owners and admins edit; automatic routing owners only) |
+| `/w/<company>/settings` | Customer data (owners: how long resolved issues are kept, delete a customer's data, deletion log), company profile, first-response and resolution targets, AI analysis (on/off, monthly limit, automatic routing), escalation conditions with "Check now" and the automatic-check status (red when the latest one failed), scheduled jobs (owners and admins: whether the daily clean-up ran), teams, categories (owners and admins edit; automatic routing owners only) |
+| `/api/health` | Health check for an uptime checker: `{"status":"ok","database":"ok"}`, or `"error"` with status 503 when the database can't be reached. No sign-in, nothing private |
 | `/demo/<company>/...` | The Phase 1 demo with fictional data (dashboard, inbox, intelligence, routing, data sources, reports, automation, settings) |
 
 ## Project layout
@@ -561,6 +570,7 @@ src/
   lib/csv-import.ts       reading and checking CSV files (runs in the browser)
   lib/gmail/              Gmail sign-in, token encryption and fetching (server only)
   app/api/gmail/          the Connect Gmail redirect and Google's return address
+  app/api/health/         health check for an uptime checker
   lib/notifications.ts    notification labels and links (notifications are created only by the database)
   lib/reports.ts          report date ranges and formatting; lib/report-csv.ts builds the CSV file
   lib/supabase/           Supabase clients (server, middleware)
