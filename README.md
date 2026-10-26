@@ -460,6 +460,13 @@ It saves `roles.sql`, `schema.sql` and `data.sql` into
 `backups\<date>_<time>\`. Git ignores that folder. The files hold customer
 data, so keep them private.
 
+## Putting Buddy online (not done yet)
+
+[docs/DEPLOYMENT.md](docs/DEPLOYMENT.md) lists every setting a live server
+needs, the Supabase and Google screens to change on launch day, and the checks
+afterwards. Going online needs the owner's go first. Its last section is a
+short checklist of Supabase settings you can look at today.
+
 ## Checks
 
 ```powershell

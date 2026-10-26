@@ -76,7 +76,8 @@ Router, React 19, TypeScript strict, Tailwind v4). Full background:
 - Backups: `npm run backup` (`scripts/backup.mjs`) writes to `backups/`,
   which must stay in `.gitignore`. Never commit, upload or print a backup.
   Recovery steps live in `docs/RUNBOOK.md`; keep it accurate when an error
-  message, key or job it names changes.
+  message, key or job it names changes. Going-online steps live in
+  `docs/DEPLOYMENT.md`; update its settings table with any new setting.
 - Reports: counted only by `public.issue_report` (members only, company time
   zone). No per-person figures.
 

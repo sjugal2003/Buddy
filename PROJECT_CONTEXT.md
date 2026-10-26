@@ -1006,3 +1006,13 @@ Phase 7 (security, reliability and deployment readiness).
   `--live` also a missing, non-https or localhost `BUDDY_SITE_URL` and any
   test mode. Warnings: half-set AI or Gmail, short AI result key, wrong-size
   `GMAIL_TOKEN_KEY`, test modes on this computer.
+- Stage 39 PR 2 = PR #50, merged; Jugal's `check-env` showed no problems
+  (2026-10-26).
+- Stage 39 PR 3: deployment guide (F21, F26, F15). New `docs/DEPLOYMENT.md`:
+  stage 40 decisions, the settings table, Vercel Hobby steps (only after the
+  Gate 1 go), Supabase URL Configuration and Google redirect URI for launch
+  day, checks after launch, rollback, and a checklist Jugal does now
+  (plan, Confirm email, Site URL, OAuth publishing status; set minimum
+  password length 8). Local `supabase/config.toml` minimum password is now 8
+  too. `.env.example` uses Node's `randomBytes` for `GMAIL_TOKEN_KEY`. README
+  links the guide. F29 needed nothing (stages 36 to 38 added those tests).
