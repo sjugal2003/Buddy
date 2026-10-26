@@ -1,6 +1,7 @@
 # Runs every check on each pull request and on main. Uses a throwaway local
 # Supabase inside GitHub's machine; it never touches the hosted project and
-# needs no secrets.
+# needs no secrets. Actions are pinned to an exact commit (the version is in
+# the comment); Dependabot proposes updates (.github/dependabot.yml).
 name: Checks
 
 on:
@@ -20,14 +21,20 @@ jobs:
     runs-on: ubuntu-latest
     timeout-minutes: 30
     steps:
-      - uses: actions/checkout@v4
+      - uses: actions/checkout@11d5960a326750d5838078e36cf38b85af677262 # v4.4.0
 
-      - uses: actions/setup-node@v4
+      - uses: actions/setup-node@49933ea5288caeca8642d1e84afbd3f7d6820020 # v4.4.0
         with:
           node-version: 20
           cache: npm
 
       - run: npm ci
+
+      # Fails when a package Buddy uses has a known high or critical security
+      # problem. Fix it by upgrading that package on its own, never with
+      # `npm audit fix --force` (PROJECT_CONTEXT.md §12).
+      - name: Package security check
+        run: npm audit --audit-level=high
 
       - name: Lint
         run: npm run lint
@@ -59,7 +66,7 @@ jobs:
 
       - name: Keep the browser test report
         if: failure()
-        uses: actions/upload-artifact@v4
+        uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02 # v4.6.2
         with:
           name: playwright-report
           path: |

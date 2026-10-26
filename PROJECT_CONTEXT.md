@@ -384,6 +384,11 @@ GitHub Actions (`.github/workflows/checks.yml`) runs lint, type check, unit
 tests, a local Supabase, the database tests, a production build and the
 browser tests on every pull request and on `main`, with no secrets. A failed
 run keeps the Playwright report for 7 days (Actions > the run > Artifacts).
+It also runs `npm audit --audit-level=high`, so a high or critical advisory
+in any package turns the check red. Each action is pinned to an exact commit
+(version in the comment). Dependabot (`.github/dependabot.yml`) opens update
+PRs weekly for npm (minor and patch grouped, at most 3 open) and monthly for
+the actions; Claude reviews them before Jugal merges.
 
 ## 11. Important technical decisions
 
@@ -446,7 +451,9 @@ run keeps the Playwright report for 7 days (Actions > the run > Artifacts).
   customer's data and a retention setting (F3). PR 3 adds Delete my account (F9; leaving a company already
   existed), F11 and F19, and records the F2 decision. Still open, planned for
   stages 38 to 40: the AI provider for real data, monitoring, backups, a
-  runbook, deployment settings, a privacy notice.
+  runbook, deployment settings, a privacy notice. Stage 38 plan:
+  https://claude.ai/artifact/V4RhX8cXG4hXexEez9ttaS; PR 1 closes F17 (audit
+  in CI, Dependabot, pinned actions).
 - The Content-Security-Policy still allows inline scripts, because Next.js
   adds them to every page; moving to per-request nonces is a later change.
 - Demo pages load the whole workspace into the browser. Real workspaces
@@ -928,3 +935,9 @@ Phase 7 (security, reliability and deployment readiness).
   `cancelInvitation` validates the id, asks for the row back and shows a
   message (`CancelInvitationButton`). F2 recorded in §11. 503 security
   checks; new tests in `tests/e2e/account.spec.ts`.
+  PR #38, merged 2026-10-26; pushed and checked on Jugal's PC. Stage 37
+  complete. F2 (AI for real data): Jugal chose to decide at launch (stage 40).
+- Stage 38 PR 1: package safety checks (F17). `npm audit --audit-level=high`
+  step in `.github/workflows/checks.yml`, actions pinned to commits,
+  `.github/dependabot.yml` (npm weekly, actions monthly). No app or database
+  change.
