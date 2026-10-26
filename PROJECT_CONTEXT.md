@@ -198,7 +198,8 @@ Files (`supabase/`):
 | `migrations/20261028090000_security_foundation.sql` | Phase 7 stage 36: `private.company_creators` (emails that may create a company; current owners copied in) checked by `create_organization` and `public.can_create_company()`; `private.platform_settings.ai_monthly_cap` (default 300 analyses a month for all companies together, checked in `start_issue_analysis` under an advisory lock); both private tables have RLS on and no grants; revokes the default grant on `private.create_escalation_settings` |
 | `migrations/20261028120000_ai_result_key.sql` | Phase 7 stage 36 part 2: `private.platform_settings.ai_result_key_hash`, `private.check_ai_result_key`; `start_issue_analysis(uuid, text)` and `finish_issue_analysis(uuid, jsonb, text)` replace the old versions and refuse without the server's key |
 | `migrations/20261029090000_rate_limits.sql` | Phase 7 stage 37: `private.rate_limit_events` (RLS on, no grants) and trigger function `private.enforce_rate_limit(action, max, seconds, label)` under an advisory lock per person and action; triggers limit each signed-in person per hour to 30 invitations, 30 imports and Gmail fetches together, 200 issues added by hand (`source = 'manual'`) and 30 "Check now" escalation checks. Database jobs (no `auth.uid()`) are not counted |
-| `tests/security_test.sql` | 450 checks of tenant isolation, roles, invitations, teams, categories, settings, routing rules, AI analysis, resolution tracking, escalations, routing history, scheduled checks, imports, the Gmail connection, fetching, notifications and reports; runs in one transaction and rolls back |
+| `migrations/20261029120000_data_deletion.sql` | Phase 7 stage 37 PR 2: `deletion_log` (when, who, kind `issue`/`customer`/`retention`, count, issue reference; never customer details; owners read, nobody writes); `delete_issue(id)` and `delete_customer_data(org, email)` (owners only; the old owner/admin delete policy and grant on `issues` are removed); `organizations.retention_days` (30 to 3650 or empty) set by `set_retention_days` (owners); `private.apply_retention()` deletes resolved issues past the setting (5,000 per company per run), called from `private.run_daily_cleanup()`; trigger `issues_clear_analyses` clears the AI text of a deleted issue's analyses |
+| `tests/security_test.sql` | 483 checks of tenant isolation, roles, invitations, teams, categories, settings, routing rules, AI analysis, resolution tracking, escalations, routing history, scheduled checks, imports, the Gmail connection, fetching, notifications and reports; runs in one transaction and rolls back |
 | `tests/local-supabase-stub.sql` | Minimal stand-in for Supabase's `auth` schema and roles, for plain PostgreSQL only. Never run on Supabase |
 
 Tables: `profiles`, `organizations`, `organization_members`,
@@ -218,7 +219,10 @@ How access works:
   recorded only through `record_first_response` (time set by the database,
   once per issue); reopen count and waiting time are set only by a trigger.
 - Owners/admins: also manage teams, categories, routing rules, automation
-  settings, company profile, invitations, and delete issues.
+  settings, company profile and invitations. Owners only (stage 37): delete
+  issues (`delete_issue`, `delete_customer_data`; direct deletes are closed)
+  and set how long resolved issues are kept (`set_retention_days`). Every
+  deletion is written to `deletion_log` (owners read it; nobody can change it).
 - Memberships change only through `create_organization`, `accept_invitation`
   (invited, confirmed email only), `set_member_role` (owners, never self) and
   `remove_member` (last owner cannot leave).
@@ -234,7 +238,8 @@ How access works:
   cannot both take the last one) and finished once by
   `finish_issue_analysis` (only by the person who started it, within 5
   minutes). Finished rows never change; deleting an issue keeps its
-  analyses (issue_id cleared) so the count cannot be reset.
+  analyses (issue_id cleared, and from stage 37 its summary, next step and
+  themes too) so the count cannot be reset.
 - Members still cannot set sentiment, type, urgency or summary directly;
   `accept_issue_analysis` is the only way, and only with the values of a
   finished analysis of the same issue.
@@ -353,7 +358,7 @@ npx.cmd supabase db push
 | Command | What it checks | Needs |
 |---|---|---|
 | `npm.cmd test` | Unit tests (`tests/unit/`): routing rule matching, conflicts and explanations, analytics, input rules, deadlines, escalations, CSV reading and checks, AI batches, token encryption and Google sign-in links, turning Gmail messages into issues, AI engine with stand-in clients | Nothing |
-| `npm.cmd run test:db` | `supabase/tests/security_test.sql` (450 checks); rolls itself back | Local Supabase |
+| `npm.cmd run test:db` | `supabase/tests/security_test.sql` (483 checks); rolls itself back | Local Supabase |
 | `npm.cmd run test:e2e` | Browser tests (`tests/e2e/`, Playwright): sign-up, invitations, roles, issues, settings, routing, AI analysis and automatic routing (free test analyser), deadlines and first response, escalations, dashboard counts, data sources, CSV import, AI for imports, Gmail connect, disconnect and fetch (pretend Google), cross-company access | Local Supabase, test browser |
 
 Local Supabase needs Docker Desktop. One-time setup, then each time:
@@ -432,8 +437,9 @@ run keeps the Playwright report for 7 days (Actions > the run > Artifacts).
   https://claude.ai/artifact/NYCfw1NtEYH6wLSK9jwe4P (findings F1 to F29).
   Stage 36 closes F1 (open sign-up with AI on the owner's key), F4 (security
   headers), F7 (links built from request headers), F12 and F13. Stage 37 PR 1 adds
-  rate limits (F6) and password reset (F8). Still open, planned for stages
-  37 to 40: deleting data and accounts, the AI provider for real data, monitoring, backups, a
+  rate limits (F6) and password reset (F8); PR 2 adds deleting an issue or a
+  customer's data and a retention setting (F3). Still open, planned for
+  stages 37 to 40: leaving a company and deleting an account, the AI provider for real data, monitoring, backups, a
   runbook, deployment settings, a privacy notice.
 - The Content-Security-Policy still allows inline scripts, because Next.js
   adds them to every page; moving to per-request nonces is a later change.
@@ -483,10 +489,10 @@ run keeps the Playwright report for 7 days (Actions > the run > Artifacts).
 - **CSV import (stage 23):** closing the page or losing the connection
   part-way leaves that import "Not finished" in the history; the rows already
   saved stay, and importing the same file again adds only the rest (repeats
-  are skipped). There is no way in the app to undo an import or delete an
-  issue yet (the database lets owners and admins delete, but no screen offers
-  it); for now unwanted imported issues are removed in the Supabase SQL
-  Editor (see the README's troubleshooting table). Rows without an ID column are
+  are skipped). There is no way in the app to undo a whole import. From stage 37 the owner
+  can delete one issue (issue page) or every issue from one customer email
+  (Settings > Customer data); other bulk removals are done in the Supabase
+  SQL Editor (see the README's troubleshooting table). Rows without an ID column are
   matched by customer name, received time and message, so editing any of
   those in the file makes the row new again.
 
@@ -893,3 +899,14 @@ Phase 7 (security, reliability and deployment readiness).
   has an account; the link goes through `/auth/confirm` to
   `/reset-password`) and `/reset-password` (`updatePassword`, signed-in
   only). 450 security checks; new `tests/e2e/account.spec.ts`.
+  PR #36, merged 2026-10-26; pushed and checked on Jugal's PC (Forgot
+  password worked).
+- Stage 37 PR 2: deleting data and how long it is kept (F3). Migration
+  `20261029120000_data_deletion.sql` (see §7). Issue page: "Delete issue"
+  card for owners (type the reference to confirm; `deleteIssue` in
+  `app/actions/data.ts`, then the list says "Issue ... was deleted.").
+  Settings > "Customer data": retention choice (`updateRetention`), "Delete a
+  customer's data" by email with a tick box (`deleteCustomerData`), and the
+  deletion log (owners only). Wording in `src/lib/data-retention.ts`.
+  483 security checks; new `tests/e2e/data-deletion.spec.ts` and
+  `tests/unit/data-retention.test.ts`.

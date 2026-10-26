@@ -1,4 +1,5 @@
 import { z } from "zod";
+import { RETENTION_DAYS } from "@/lib/data-retention";
 
 // Input rules for everything the browser sends to the server. The database
 // enforces the same limits; checking here gives clearer messages.
@@ -315,3 +316,26 @@ export const finishImportSchema = z.object({
   runId: z.string().uuid(),
   error: z.string().trim().max(500).nullable(),
 });
+
+// Deleting data (owners only; the database checks the role).
+export const deleteIssueSchema = z.object({
+  issueId: z.string().uuid(),
+  confirm: z.string().trim().toUpperCase().max(40),
+});
+
+export const deleteCustomerDataSchema = z.object({
+  organizationId: z.string().uuid(),
+  email: emailSchema,
+  confirm: z.literal("on", { message: "Tick the box to confirm." }),
+});
+
+export const retentionSchema = z.object({
+  organizationId: z.string().uuid(),
+  retentionDays: z.union([
+    z.literal("").transform(() => null),
+    z.coerce
+      .number()
+      .refine((n) => RETENTION_DAYS.includes(n), "Choose one of the options."),
+  ]),
+});
+

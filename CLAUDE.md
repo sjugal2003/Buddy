@@ -50,6 +50,9 @@ Router, React 19, TypeScript strict, Tailwind v4). Full background:
 - Limits on repeated actions (invitations, imports and fetches, issues added
   by hand, "Check now") are triggers using `private.enforce_rate_limit`. Add
   a trigger there for any new action a person can repeat many times.
+- Deleting issues: owners only, through `delete_issue` / `delete_customer_data`
+  (or the retention clean-up), which write `deletion_log`. Never add a direct
+  delete on `issues`, and never put customer details in the log.
 - Creating a company is invite-only (`private.company_creators`, checked in
   `create_organization`), and all companies together share an AI limit
   (`private.platform_settings.ai_monthly_cap`, checked in

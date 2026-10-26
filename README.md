@@ -1,6 +1,6 @@
 # Buddy: Customer Service Intelligence Hub
 
-**Status: Phases 1 to 6 complete (2026-10-25); Phase 7 (security, reliability and deployment readiness) in progress: stage 36 makes creating a company invite-only, adds an AI limit for the whole app and security headers; stage 37 adds limits on repeated actions and a Forgot password page.** Sign-in, company workspaces,
+**Status: Phases 1 to 6 complete (2026-10-25); Phase 7 (security, reliability and deployment readiness) in progress: stage 36 makes creating a company invite-only, adds an AI limit for the whole app and security headers; stage 37 adds limits on repeated actions, a Forgot password page, and deleting customer data.** Sign-in, company workspaces,
 invitations, roles, customer issues, teams, categories, company settings and
 routing rules work against a Supabase database protected by Row Level
 Security, with automated tests on every change. An optional AI (Gemini or
@@ -268,6 +268,25 @@ it to find out who has an account. The link opens a page to choose a new
 password. It needs the same Supabase redirect setting as sign-up
 (`http://localhost:3000/**` in Authentication > URL Configuration).
 
+**Deleting customer data (stage 37).** Only the company's **owner** can
+delete, and every deletion is listed in Settings > **Customer data** >
+**Deletion log** (when, who and how many issues, never the customer's name,
+email or message). Deleting can't be undone.
+
+- **One issue:** open it and use **Delete issue** at the bottom. Type the
+  issue's reference (for example `ISS-1A2B3C4D`) to confirm.
+- **Everything from one customer** (for example when they ask you to delete
+  their data): Settings > **Customer data** > **Delete a customer's data**.
+  Type their email and tick the box. It removes every issue in this company
+  with that customer email, with its history, escalations and the AI's notes.
+  Issues typed in without an email must be deleted one by one.
+- **How long resolved issues are kept:** Settings > **Customer data**. Choose
+  90 days, 180 days, 1, 2 or 5 years, or keep them. The daily clean-up
+  (03:30 UTC) then deletes resolved issues older than that. Open issues are
+  never deleted automatically.
+
+The AI's monthly count doesn't go down when issues are deleted.
+
 **Security headers.** Every page tells the browser not to let other sites
 show Buddy inside a frame, not to guess file types, and to load scripts and
 styles only from Buddy itself.
@@ -466,7 +485,7 @@ which step failed, with a screenshot.
 | Google says `redirect_uri_mismatch` | The client's redirect URI must be exactly `http://localhost:3000/api/gmail/callback` (no extra slash or space) |
 | Data sources says Gmail is not set up | One of `GOOGLE_CLIENT_ID`, `GOOGLE_CLIENT_SECRET`, `GMAIL_TOKEN_KEY` is missing from `.env.local`, or `npm.cmd run dev` wasn't restarted |
 | Fetch says Google's sign-in has ended | Normal after 7 days in Testing mode: **Disconnect Gmail**, then **Connect Gmail** again |
-| Fetch brought in real emails (the wrong inbox was connected) | Don't analyse them. Disconnect, then delete them: Supabase dashboard > **SQL Editor**, run `delete from public.issues where source = 'gmail' and organization_id = (select id from public.organizations where slug = 'your-company');` (run it as `select count(*) ...` first to check the number). Connect a brand-new test Gmail instead |
+| Fetch brought in real emails (the wrong inbox was connected) | Don't analyse them. Disconnect, then delete them: one by one with **Delete issue**, by sender with Settings > **Customer data**, or all at once in the Supabase dashboard > **SQL Editor**: run `delete from public.issues where source = 'gmail' and organization_id = (select id from public.organizations where slug = 'your-company');` (run it as `select count(*) ...` first to check the number). Connect a brand-new test Gmail instead |
 | `npx.cmd supabase db push` says "Remote database is up to date" right after a stage with a new migration | The new code isn't on your PC yet: run `git pull`, check `git log -1 --oneline` names the right PR, then `db push` again |
 | `supabase db push\` says `Unknown subcommand` | There's an extra character at the end of the command; type it again exactly |
 | The bell never shows a number | Notifications go to owners and admins only, and only for new events after the notifications migrations were pushed |
@@ -478,6 +497,7 @@ which step failed, with a screenshot.
 | An action says "Too many ... in the last hour" | That person reached a limit on repeated actions (see [Invite-only and app-wide limits](#invite-only-and-app-wide-limits)). Wait a while; other actions keep working |
 | No password reset email arrives | Check the spam folder. Supabase's free sender allows only a few emails per hour, so wait and try again. Buddy says the same thing whether or not the email has an account |
 | The reset link opens the sign-in page or says it expired | Open the newest link, in the same browser, within an hour. Or ask for a new one with **Forgot password?** |
+| There is no **Delete issue** card or **Customer data** form | Only the company's owner sees them. Admins and members can't delete |
 | The downloaded report shows `########` in Excel | The column is too narrow for a date: double-click the line between the column letters to widen it |
 | `git pull` says your local changes to `package-lock.json` would be overwritten | `npm.cmd install` rewrote that file. Run `git checkout -- package-lock.json`, then `git pull` and `npm.cmd ci`. Use `npm.cmd ci` from then on so it doesn't happen again |
 
@@ -497,7 +517,7 @@ which step failed, with a screenshot.
 | `/w/<company>/data-sources` | Import a CSV file (owners and admins: match columns, preview, open or past conversations), "Analyse with AI" for an import's issues (asks first, shows the month's remaining analyses), connect or disconnect one Gmail inbox read-only (owners), "Fetch new email" (owners and admins), and every import with its counts and rejected-row reasons |
 | `/w/<company>/notifications` | Your own in-app notifications for this company (owners and admins receive them): newest first, open the linked page, mark one or all as read. The bell in the header shows how many are unread |
 | `/w/<company>/reports` | Company-wide figures for the last 7 days, the last 30 days or your own dates (company time zone): received, resolved, response and resolution times, response target, teams, urgency, sentiment, channel, category, escalations and imports. **Download CSV** saves them. Everyone in the company can see it; no per-person figures |
-| `/w/<company>/settings` | Company profile, first-response and resolution targets, AI analysis (on/off, monthly limit, automatic routing), escalation conditions with "Check now" and the automatic-check status (red when the latest one failed), teams, categories (owners and admins edit; automatic routing owners only) |
+| `/w/<company>/settings` | Customer data (owners: how long resolved issues are kept, delete a customer's data, deletion log), company profile, first-response and resolution targets, AI analysis (on/off, monthly limit, automatic routing), escalation conditions with "Check now" and the automatic-check status (red when the latest one failed), teams, categories (owners and admins edit; automatic routing owners only) |
 | `/demo/<company>/...` | The Phase 1 demo with fictional data (dashboard, inbox, intelligence, routing, data sources, reports, automation, settings) |
 
 ## Project layout

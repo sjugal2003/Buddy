@@ -23,6 +23,7 @@ import {
 import { channelLabels, statusLabels, statusOrder, urgencyLabels, urgencyOrder } from "@/lib/labels";
 import { formatDateTime } from "@/lib/format";
 import { issueFiltersSchema } from "@/lib/validation";
+import { FormMessage } from "@/components/auth/auth-card";
 
 export const dynamic = "force-dynamic";
 
@@ -54,6 +55,8 @@ export default async function IssuesPage({
   if (!membership) notFound();
 
   const raw = await searchParams;
+  // Set by the Delete issue action after the database deleted it.
+  const deletedRef = typeof raw.deleted === "string" && /^[A-Za-z0-9-]{1,40}$/.test(raw.deleted) ? raw.deleted : null;
   const filters = issueFiltersSchema.parse({
     status: raw.status,
     urgency: raw.urgency,
@@ -110,6 +113,12 @@ export default async function IssuesPage({
           </Link>
         }
       />
+
+      {deletedRef && (
+        <div className="mb-4">
+          <FormMessage success={`Issue ${deletedRef} was deleted.`} />
+        </div>
+      )}
 
       <div className="rounded-xl border border-slate-200 bg-white shadow-sm">
         {/* A plain form: filters go in the address bar, so a filtered list can be bookmarked. */}

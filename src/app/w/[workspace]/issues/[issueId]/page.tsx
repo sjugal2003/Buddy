@@ -9,6 +9,7 @@ import { AiPanel } from "@/components/issues/ai-panel";
 import { DeadlineBadge } from "@/components/issues/deadline-badge";
 import { RecordFirstResponseButton } from "@/components/issues/record-response-button";
 import { AcknowledgeForm } from "@/components/escalations/escalation-forms";
+import { DeleteIssueForm } from "@/components/data/data-forms";
 import { EscalationBadge } from "@/components/escalations/escalation-badge";
 import { deadlines } from "@/lib/targets";
 import { escalationConditionLabels, openEscalationLevel } from "@/lib/escalations";
@@ -305,6 +306,16 @@ export default async function IssuePage({
               </ol>
             )}
           </Card>
+
+          {/* Only shown to owners; the database checks the role again and logs the deletion. */}
+          {membership.role === "owner" && (
+            <Card
+              title="Delete issue"
+              description="Removes the issue, its history, escalations and the AI's notes about it. This can't be undone."
+            >
+              <DeleteIssueForm issueId={issue.id} reference={issue.reference} />
+            </Card>
+          )}
         </div>
       </div>
     </>
