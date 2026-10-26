@@ -1,13 +1,14 @@
 # Dependabot (free, built into GitHub) looks for package updates once a week
 # and opens a pull request for them. Small updates come together in one pull
-# request; a big (major) update gets its own, because it can break things.
+# request.
 # Dependabot pull requests go through the same checks as any other. Ask
 # Claude to look at one before merging it.
 #
-# Big version jumps of the framework and language (Next.js 16, TypeScript 7,
-# a new React or ESLint generation) change how Buddy is built and need their
-# own planned upgrade, so Dependabot doesn't propose them. Security fixes for
-# the versions Buddy uses still come as small updates.
+# Big (major) version jumps of any package (for example Next.js 16,
+# TypeScript 7, Vitest 5, or Node types for a newer Node) can change how Buddy
+# is built or tested and need their own planned upgrade, so Dependabot doesn't
+# propose them. Security fixes for the versions Buddy uses still come as small
+# updates.
 version: 2
 updates:
   - package-ecosystem: npm
@@ -21,19 +22,7 @@ updates:
       small-updates:
         update-types: [minor, patch]
     ignore:
-      - dependency-name: next
-        update-types: [version-update:semver-major]
-      - dependency-name: eslint-config-next
-        update-types: [version-update:semver-major]
-      - dependency-name: typescript
-        update-types: [version-update:semver-major]
-      - dependency-name: react
-        update-types: [version-update:semver-major]
-      - dependency-name: react-dom
-        update-types: [version-update:semver-major]
-      - dependency-name: "@types/react*"
-        update-types: [version-update:semver-major]
-      - dependency-name: eslint
+      - dependency-name: "*"
         update-types: [version-update:semver-major]
 
   - package-ecosystem: github-actions
