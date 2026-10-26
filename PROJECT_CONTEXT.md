@@ -390,7 +390,10 @@ It also runs `npm audit --audit-level=high`, so a high or critical advisory
 in any package turns the check red. Each action is pinned to an exact commit
 (version in the comment). Dependabot (`.github/dependabot.yml`) opens update
 PRs weekly for npm (minor and patch grouped, at most 3 open) and monthly for
-the actions; Claude reviews them before Jugal merges.
+the actions; Claude reviews them before Jugal merges. Major versions of
+Next.js, eslint-config-next, TypeScript, React (and its types) and ESLint are
+ignored: those need their own planned upgrade (Dependabot proposed Next 16 and
+TypeScript 7 on 2026-10-26; both closed).
 
 ## 11. Important technical decisions
 
