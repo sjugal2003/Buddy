@@ -414,7 +414,7 @@ Make the `GMAIL_TOKEN_KEY` value on your own PC with this PowerShell command
 and paste what it prints (it encrypts the Gmail sign-in before it is saved):
 
 ```powershell
-[Convert]::ToBase64String((1..32 | ForEach-Object { Get-Random -Maximum 256 }))
+node -e "console.log(require('crypto').randomBytes(32).toString('base64'))"
 ```
 
 Never put these in a `NEXT_PUBLIC_` variable, a chat or Git. If you change
@@ -441,6 +441,24 @@ import history, and "Analyse with AI" asks first, as for CSV imports.
 
 In Testing mode Google ends the sign-in after **7 days**; then connect again.
 You can also remove Buddy any time at https://myaccount.google.com/permissions.
+
+## Backups and when something goes wrong
+
+[docs/RUNBOOK.md](docs/RUNBOOK.md) has numbered steps for a paused Supabase
+project, error pages, stopped scheduled jobs, AI or Gmail problems, a leaked
+key (including changing `GMAIL_TOKEN_KEY` safely), and restoring a backup.
+
+Free Supabase doesn't let you download its backups, so make your own copy
+once a week. It needs **Docker Desktop** running (one-time setup in the
+runbook):
+
+```powershell
+npm.cmd run backup
+```
+
+It saves `roles.sql`, `schema.sql` and `data.sql` into
+`backups\<date>_<time>\`. Git ignores that folder. The files hold customer
+data, so keep them private.
 
 ## Checks
 

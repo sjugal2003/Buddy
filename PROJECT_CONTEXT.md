@@ -329,7 +329,7 @@ never commit values. Without them the app runs in demo-only mode.
 | `BUDDY_AI_MODE` | No | `fake` swaps in the free keyword test analyser (automated tests and CI). Leave unset otherwise |
 | `GOOGLE_CLIENT_ID` | **Never** (server only) | Google OAuth client for connecting Gmail (stage 25). Read only in `src/lib/gmail/index.ts` |
 | `GOOGLE_CLIENT_SECRET` | **Never** (server only) | Secret of that OAuth client |
-| `GMAIL_TOKEN_KEY` | **Never** (server only) | 32 random bytes in base64 that encrypt the stored Gmail token. Changing it means reconnecting Gmail. All three must be set for Connect Gmail to appear |
+| `GMAIL_TOKEN_KEY` | **Never** (server only) | 32 random bytes in base64 that encrypt the stored Gmail token. Changing it means reconnecting Gmail (steps in docs/RUNBOOK.md §7). All three must be set for Connect Gmail to appear |
 | `BUDDY_AI_RESULT_KEY` | **Never** (server only) | Stage 36 part 2: random key (`npm run ai-key`) that `start_issue_analysis` and `finish_issue_analysis` require; the database stores only its SHA-256 hash in `private.platform_settings.ai_result_key_hash`. Without it AI shows as not set up. From stage 37 also required by `mailbox_token` and `start_gmail_fetch` (Gmail fetching). Read only in `src/lib/ai/index.ts` |
 | `BUDDY_SITE_URL` | Not secret (server only) | Buddy's own address for sign-up email links and invitation links (stage 36, `src/lib/site-url.ts`). Optional in development (the request's address is used); in production Buddy refuses to make those links without it, because Host/Origin headers can be faked |
 | `BUDDY_GMAIL_MODE` | No | `fake` swaps in a pretend Google for automated tests and CI. Leave unset otherwise |
@@ -391,9 +391,9 @@ in any package turns the check red. Each action is pinned to an exact commit
 (version in the comment). Dependabot (`.github/dependabot.yml`) opens update
 PRs weekly for npm (minor and patch grouped, at most 3 open) and monthly for
 the actions; Claude reviews them before Jugal merges. Major versions of
-Next.js, eslint-config-next, TypeScript, React (and its types) and ESLint are
-ignored: those need their own planned upgrade (Dependabot proposed Next 16 and
-TypeScript 7 on 2026-10-26; both closed).
+npm packages are ignored: those need their own planned upgrade (Dependabot
+proposed Next 16, TypeScript 7, Vitest 5 and @types/node 26 on 2026-10-26;
+all closed).
 
 ## 11. Important technical decisions
 
@@ -459,7 +459,10 @@ TypeScript 7 on 2026-10-26; both closed).
   runbook, deployment settings, a privacy notice. Stage 38 plan:
   https://claude.ai/artifact/V4RhX8cXG4hXexEez9ttaS; PR 1 closes F17 (audit
   in CI, Dependabot, pinned actions); PR 2 closes F8's health page part and
-  F18 (Settings shows whether the daily clean-up ran).
+  F18 (Settings shows whether the daily clean-up ran); PR 3 closes F16, F20,
+  F24 and F27 (`npm run backup`, docs/RUNBOOK.md with key changes and
+  restore). Still open for stages 39 and 40: an uptime checker once Buddy is
+  online, keeping the free project awake, and the AI provider for real data.
 - The Content-Security-Policy still allows inline scripts, because Next.js
   adds them to every page; moving to per-request nonces is a later change.
 - Demo pages load the whole workspace into the browser. Real workspaces
@@ -543,9 +546,9 @@ TypeScript 7 on 2026-10-26; both closed).
   the deadline" warning (escalations cover missed targets).
 - **Daily clean-up (Phase 6):** the `buddy-daily-cleanup` pg_cron job (03:30
   UTC) was confirmed to be scheduled on Jugal's hosted project on
-  2026-10-25, but has not yet been seen to run there; check
-  `cron.job_run_details` after its first run. Like the 15-minute job, it
-  stops while a free Supabase project is paused.
+  2026-10-25 and seen running successfully there on 2026-10-26 (09:00 IST,
+  in Settings > Scheduled jobs). Like the 15-minute job, it stops while a
+  free Supabase project is paused (docs/RUNBOOK.md §2).
 - **Reports (Phase 6):** times run around the clock from arrival (no
   business hours), and the response target uses the current targets in
   Settings, so changing a target changes past figures too. Response times
@@ -957,4 +960,22 @@ Phase 7 (security, reliability and deployment readiness).
   Server logs were checked: they already log `[where] code message`, never
   customer names, emails or messages. 512 security checks; new
   `tests/unit/scheduled-jobs.test.ts` and a second test in
-  `tests/e2e/scheduler-health.spec.ts`.
+  `tests/e2e/scheduler-health.spec.ts`. PR #44, merged 2026-10-26; Jugal
+  pushed it and saw `{"status":"ok"}` and "Daily clean-up: Working" on the
+  hosted project. Dependabot PRs #40 (actions v7) and #41 (React 19.3,
+  Playwright) merged after review; #42 (Next 16) and #43 (TypeScript 7)
+  closed.
+- Stage 38 PR 3: backups and recovery (F16, F20, F24, F27).
+  `npm run backup` (`scripts/backup.mjs`, steps in `scripts/backup-plan.mjs`)
+  runs `supabase db dump --linked` three times (roles, structure, data of
+  `auth`, `public` and `private` with COPY) into `backups/<date>_<time>/`,
+  which Git ignores. It needs Docker Desktop (Jugal chose to install it).
+  `docs/RUNBOOK.md`: health check, paused project, error pages, scheduled
+  jobs, AI, Gmail, leaked keys (each key, including `GMAIL_TOKEN_KEY`:
+  disconnect, new key, reconnect), backups and restore. Restore (new project,
+  `db push`, then `data.sql` through `psql` in Docker with
+  `session_replication_role = replica` after clearing the migration-made
+  `private.platform_settings` row) was rehearsed on the local database on
+  2026-10-26: all rows back and a restored user signed in. README's
+  `GMAIL_TOKEN_KEY` command now uses Node's crypto random bytes instead of
+  `Get-Random`. New `tests/unit/backup-plan.test.ts`.

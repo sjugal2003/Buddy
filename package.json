@@ -10,7 +10,8 @@
     "test": "vitest run",
     "test:db": "node scripts/test-db.mjs",
     "test:e2e": "playwright test",
-    "ai-key": "node scripts/ai-result-key.mjs"
+    "ai-key": "node scripts/ai-result-key.mjs",
+    "backup": "node scripts/backup.mjs"
   },
   "dependencies": {
     "@anthropic-ai/sdk": "^1.2.0",

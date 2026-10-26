@@ -48,3 +48,6 @@ next-env.d.ts
 # test results
 /test-results/
 /playwright-report/
+
+# database backups (npm run backup): private, never committed
+/backups/
