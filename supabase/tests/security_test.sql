@@ -1926,6 +1926,45 @@ set local role anon;
 select tests.expect_error($q$select public.delete_my_account('x@example.com')$q$, 'a signed-out visitor cannot delete anything');
 reset role;
 
+-- ---------------------------------------------------------------------------
+-- Stage 38: health check and scheduled job status
+-- ---------------------------------------------------------------------------
+
+set local role anon;
+select tests.act_as(null);
+select tests.expect_rows($q$select 1 where public.service_health()$q$, 1,
+  'a signed-out visitor can ask whether the database is reachable');
+select tests.expect_error(format('select * from public.scheduled_job_status(%L)', current_setting('t.org_a')),
+  'a signed-out visitor cannot see the scheduled jobs');
+reset role;
+
+set local role authenticated;
+select tests.act_as(current_setting('t.a_owner')::uuid);
+select tests.expect_rows(format($q$select 1 from public.scheduled_job_status(%L)
+  where job_name in ('buddy-daily-cleanup', 'buddy-escalation-check') and active$q$, current_setting('t.org_a')), 2,
+  'owner A sees both of Buddy''s scheduled jobs');
+select tests.expect_rows(format($q$select 1 from public.scheduled_job_status(%L) where schedule = '30 3 * * *'
+  and job_name = 'buddy-daily-cleanup'$q$, current_setting('t.org_a')), 1,
+  'the daily clean-up runs at 03:30 UTC');
+select public.set_member_role(current_setting('t.org_a')::uuid, current_setting('t.a_member')::uuid, 'admin');
+select tests.act_as(current_setting('t.a_member')::uuid);
+select tests.expect_rows(format('select 1 from public.scheduled_job_status(%L)', current_setting('t.org_a')), 2,
+  'an admin sees the scheduled jobs');
+select tests.act_as(current_setting('t.a_owner')::uuid);
+select public.set_member_role(current_setting('t.org_a')::uuid, current_setting('t.a_member')::uuid, 'member');
+select tests.act_as(current_setting('t.a_member')::uuid);
+select tests.expect_error(format('select * from public.scheduled_job_status(%L)', current_setting('t.org_a')),
+  'a member who is not an admin cannot see the scheduled jobs');
+select tests.act_as(current_setting('t.b_owner')::uuid);
+select tests.expect_error(format('select * from public.scheduled_job_status(%L)', current_setting('t.org_a')),
+  'owner B cannot ask about the jobs through company A');
+select tests.act_as(current_setting('t.outsider')::uuid);
+select tests.expect_error(format('select * from public.scheduled_job_status(%L)', current_setting('t.org_a')),
+  'someone in no company cannot see the scheduled jobs');
+select tests.expect_error($q$select * from cron.job_run_details$q$,
+  'nobody signed in can read the job history directly');
+reset role;
+
 reset role;
 select current_setting('tests.passed') || ' security checks passed' as result;
 
