@@ -8,6 +8,7 @@ import type { DashboardIssue } from "@/lib/dashboard";
 import { isNotificationKind, NOTIFICATION_LIST_LIMIT, type NotificationKind } from "@/lib/notifications";
 import { friendlyError } from "@/lib/errors";
 import { issueReportSchema, type IssueReport } from "@/lib/reports";
+import type { DeletionKind, DeletionLogEntry } from "@/lib/data-retention";
 import type { Channel, Intent, IssueSource, IssueStatus, RoutingRule, RuleCondition, Sentiment, Urgency } from "@/lib/types";
 
 // Reads for real (signed-in) workspaces. Every query runs as the signed-in
@@ -890,6 +891,42 @@ export async function listImportRuns(organizationId: string, limit = 50): Promis
     problems: Array.isArray(row.problems) ? (row.problems as ImportRun["problems"]) : [],
     error: row.error,
   }));
+}
+
+export interface DataSettings {
+  retentionDays: number | null;
+  /** Newest first. Owners only: the database returns nothing to anyone else. */
+  log: DeletionLogEntry[];
+}
+
+/** How long resolved issues are kept, and the latest deletions. */
+export async function getDataSettings(organizationId: string, logLimit = 20): Promise<DataSettings> {
+  const supabase = await createClient();
+  const [org, log] = await Promise.all([
+    supabase.from("organizations").select("retention_days").eq("id", organizationId).single(),
+    supabase
+      .from("deletion_log")
+      .select("id, kind, issue_count, reference, created_at, deleter:profiles (full_name)")
+      .eq("organization_id", organizationId)
+      .order("created_at", { ascending: false })
+      .limit(logLimit),
+  ]);
+  const error = org.error ?? log.error;
+  if (error || !org.data) {
+    console.error("[getDataSettings]", error?.code, error?.message);
+    throw new Error("Could not load the data settings.");
+  }
+  return {
+    retentionDays: org.data.retention_days,
+    log: (log.data ?? []).map((row) => ({
+      id: row.id,
+      kind: row.kind as DeletionKind,
+      issueCount: row.issue_count,
+      reference: row.reference,
+      deletedByName: (row.deleter as unknown as { full_name: string } | null)?.full_name || null,
+      createdAt: row.created_at,
+    })),
+  };
 }
 
 export interface MailboxConnection {

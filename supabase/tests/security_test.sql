@@ -235,7 +235,7 @@ select tests.expect_rows(format('select 1 from public.profiles where id = %L', c
 select tests.expect_affected(format(
   $q$update public.issues set status = 'resolved' where id = %L$q$, current_setting('t.issue_b')), 0,
   'member A cannot update company B issue');
-select tests.expect_affected(format('delete from public.issues where id = %L', current_setting('t.issue_b')), 0,
+select tests.expect_error(format('delete from public.issues where id = %L', current_setting('t.issue_b')),
   'member A cannot delete company B issue');
 select tests.expect_error(format(
   $q$insert into public.issues (organization_id, customer_name, channel, subject, message) values (%L, 'X', 'email', 'X', 'X')$q$,
@@ -317,7 +317,7 @@ select tests.expect_error(format(
   current_setting('t.org_a'), current_setting('t.issue_a')), 'member cannot write history directly');
 select tests.expect_error('delete from public.issue_activity', 'member cannot delete history');
 select tests.expect_error($q$update public.issue_activity set to_value = 'x'$q$, 'member cannot edit history');
-select tests.expect_affected(format('delete from public.issues where id = %L', current_setting('t.issue_a')), 0,
+select tests.expect_error(format('delete from public.issues where id = %L', current_setting('t.issue_a')),
   'member cannot delete issues');
 select tests.expect_error(format(
   $q$insert into public.teams (organization_id, name) values (%L, 'Rogue team')$q$, current_setting('t.org_a')),
@@ -519,7 +519,7 @@ select tests.expect_rows(format('select 1 from public.issue_activity where organ
   'owner B sees none of company A history');
 select tests.expect_rows(format('select 1 from public.organization_invitations where organization_id = %L', current_setting('t.org_a')), 0,
   'owner B sees none of company A invitations');
-select tests.expect_affected(format('delete from public.issues where organization_id = %L', current_setting('t.org_a')), 0,
+select tests.expect_error(format('delete from public.issues where organization_id = %L', current_setting('t.org_a')),
   'owner B cannot delete company A issues');
 
 -- ---------------------------------------------------------------------------
@@ -1673,7 +1673,7 @@ set local role authenticated;
 
 -- Deleting the issue keeps its analyses, so the monthly count cannot be reset.
 select tests.act_as(current_setting('t.a_owner')::uuid);
-select tests.expect_affected(format('delete from public.issues where id = %L', current_setting('t.issue_a')), 1,
+select tests.expect_rows(format('select public.delete_issue(%L)', current_setting('t.issue_a')), 1,
   'owner A deletes the analysed issue');
 select tests.expect_rows(format('select 1 from public.issue_analyses where organization_id = %L and issue_id is null',
   current_setting('t.org_a')), 2, 'its analyses still count towards the month');
@@ -1726,6 +1726,125 @@ select tests.expect_affected(format(
 reset role;
 select tests.expect_rows(format($q$select 1 from private.rate_limit_events where user_id = %L and action = 'invite'$q$,
   current_setting('t.b_owner')), 1, 'old counts are cleared as new ones are added');
+
+-- ---------------------------------------------------------------------------
+-- Deleting data and how long it is kept (Phase 7 stage 37): owner only,
+-- always logged, nothing of the customer's left in the AI's answers.
+-- ---------------------------------------------------------------------------
+
+reset role;
+select tests.act_as(null);
+update public.organization_members set role = 'admin'
+  where organization_id = current_setting('t.org_a')::uuid and user_id = current_setting('t.a_member')::uuid;
+insert into public.issues (organization_id, customer_name, customer_email, channel, subject, message, source, created_by)
+select current_setting('t.org_a')::uuid, 'Gone Customer', 'gone@example.com', 'email', 'Delete me ' || g, 'Private words', 'manual',
+  current_setting('t.a_owner')::uuid
+from generate_series(1, 3) g;
+insert into public.issues (organization_id, customer_name, customer_email, channel, subject, message, source, created_by)
+values (current_setting('t.org_b')::uuid, 'Gone Customer', 'gone@example.com', 'email', 'Company B keeps this', 'Words', 'manual',
+  current_setting('t.b_owner')::uuid);
+select set_config('t.del_one', (select id::text from public.issues
+  where organization_id = current_setting('t.org_a')::uuid and subject = 'Delete me 1'), true);
+select set_config('t.del_ref', (select reference from public.issues where id = current_setting('t.del_one')::uuid), true);
+with added as (
+  insert into public.issue_analyses (organization_id, issue_id, status, sentiment, intent, urgency, summary, suggested_action, themes)
+  values (current_setting('t.org_a')::uuid, current_setting('t.del_one')::uuid, 'done', 'negative', 'complaint', 'high',
+    'Private summary', 'Private next step', '{private}')
+  returning id
+)
+select set_config('t.del_an', id::text, true) from added;
+set local role authenticated;
+
+select tests.act_as(current_setting('t.a_member')::uuid);
+select tests.expect_error(format('select public.delete_issue(%L)', current_setting('t.del_one')),
+  'an admin cannot delete an issue');
+select tests.expect_error(format($q$select public.delete_customer_data(%L, 'gone@example.com')$q$, current_setting('t.org_a')),
+  'an admin cannot delete a customer''s data');
+select tests.expect_error(format('select public.set_retention_days(%L, 90)', current_setting('t.org_a')),
+  'an admin cannot change how long issues are kept');
+select tests.expect_rows('select 1 from public.deletion_log', 0, 'an admin cannot see the deletion log');
+select tests.expect_error(format('delete from public.issues where id = %L', current_setting('t.del_one')),
+  'an admin cannot delete issues directly any more');
+
+select tests.act_as(current_setting('t.b_owner')::uuid);
+select tests.expect_error(format('select public.delete_issue(%L)', current_setting('t.del_one')),
+  'owner B cannot delete a company A issue');
+select tests.expect_error(format($q$select public.delete_customer_data(%L, 'gone@example.com')$q$, current_setting('t.org_a')),
+  'owner B cannot delete company A customer data');
+select tests.expect_error(format('select public.set_retention_days(%L, 90)', current_setting('t.org_a')),
+  'owner B cannot change company A retention');
+
+select tests.act_as(current_setting('t.a_owner')::uuid);
+select tests.expect_error(format('delete from public.issues where id = %L', current_setting('t.del_one')),
+  'even the owner cannot delete issues without the log');
+select tests.expect_rows(format('select 1 where public.delete_issue(%L) = %L', current_setting('t.del_one'), current_setting('t.del_ref')), 1,
+  'owner A deletes one issue');
+select tests.expect_rows(format($q$select 1 from public.issue_analyses
+  where id = %L and issue_id is null and summary = '' and suggested_action = '' and themes = '{}' and status = 'done'$q$,
+  current_setting('t.del_an')), 1,
+  'the AI''s text about it is cleared but the analysis still counts');
+select tests.expect_rows(format($q$select 1 from public.issue_analyses where summary like 'Private%%' or suggested_action like 'Private%%'$q$), 0,
+  'no AI text about the deleted issue is left');
+select tests.expect_error(format('select public.delete_issue(%L)', current_setting('t.del_one')),
+  'a deleted issue cannot be deleted twice');
+select tests.expect_error(format($q$select public.delete_customer_data(%L, 'not an email')$q$, current_setting('t.org_a')),
+  'a customer deletion needs a real email address');
+select tests.expect_rows(format($q$select 1 where public.delete_customer_data(%L, ' GONE@example.com ') = 2$q$, current_setting('t.org_a')), 1,
+  'owner A deletes the rest of the customer''s issues (email case and spaces ignored)');
+select tests.expect_rows(format($q$select 1 where public.delete_customer_data(%L, 'nobody@example.com') = 0$q$, current_setting('t.org_a')), 1,
+  'deleting an email with no issues deletes nothing');
+select tests.expect_rows(format($q$select 1 from public.deletion_log where organization_id = %L and kind = 'issue'
+  and issue_count = 1 and reference = %L and deleted_by = %L$q$,
+  current_setting('t.org_a'), current_setting('t.del_ref'), current_setting('t.a_owner')), 1,
+  'the log records the single deletion, who did it and the issue reference');
+select tests.expect_rows(format($q$select 1 from public.deletion_log where organization_id = %L and kind = 'customer'
+  and issue_count = 2 and reference is null$q$, current_setting('t.org_a')), 1,
+  'the log records the customer deletion as a count only');
+select tests.expect_rows('select 1 from public.deletion_log', 3,
+  'owner A sees three deletions (the earlier one too), and nothing is logged when nothing was deleted');
+select tests.expect_error(format($q$insert into public.deletion_log (organization_id, kind, issue_count) values (%L, 'issue', 1)$q$,
+  current_setting('t.org_a')), 'nobody can add to the log');
+select tests.expect_error('delete from public.deletion_log', 'nobody can delete the log');
+select tests.expect_error('update public.deletion_log set issue_count = 0', 'nobody can change the log');
+select tests.expect_error(format('update public.organizations set retention_days = 30 where id = %L', current_setting('t.org_a')),
+  'retention can only be changed through its function');
+select tests.expect_error(format('select public.set_retention_days(%L, 7)', current_setting('t.org_a')),
+  'retention shorter than 30 days is refused');
+select tests.expect_rows(format('select 1 where public.set_retention_days(%L, 90) = 90', current_setting('t.org_a')), 1,
+  'owner A keeps resolved issues for 90 days');
+select tests.expect_error('select private.apply_retention()', 'users cannot run the retention clean-up');
+
+select tests.act_as(current_setting('t.b_owner')::uuid);
+select tests.expect_rows(format($q$select 1 from public.issues where organization_id = %L and customer_email = 'gone@example.com'$q$,
+  current_setting('t.org_b')), 1, 'company B''s issue from the same email is untouched');
+select tests.expect_rows('select 1 from public.deletion_log', 0, 'owner B sees none of company A''s log');
+
+-- The daily clean-up deletes only resolved issues past the company's setting.
+reset role;
+select tests.act_as(null);
+insert into public.issues (organization_id, customer_name, channel, subject, message, source, created_by, status, resolved_at)
+values
+  (current_setting('t.org_a')::uuid, 'Old', 'email', 'Old resolved', 'x', 'manual', current_setting('t.a_owner')::uuid, 'resolved', now() - interval '91 days'),
+  (current_setting('t.org_a')::uuid, 'Recent', 'email', 'Recent resolved', 'x', 'manual', current_setting('t.a_owner')::uuid, 'resolved', now() - interval '89 days'),
+  (current_setting('t.org_a')::uuid, 'Open', 'email', 'Old but open', 'x', 'manual', current_setting('t.a_owner')::uuid, 'open', null),
+  (current_setting('t.org_b')::uuid, 'Old B', 'email', 'Old resolved B', 'x', 'manual', current_setting('t.b_owner')::uuid, 'resolved', now() - interval '400 days');
+-- Set the resolved times afterwards: adding an issue as resolved stamps it with now.
+update public.issues set resolved_at = now() - interval '91 days' where subject = 'Old resolved';
+update public.issues set resolved_at = now() - interval '89 days' where subject = 'Recent resolved';
+update public.issues set resolved_at = now() - interval '400 days' where subject = 'Old resolved B';
+update public.issues set received_at = now() - interval '200 days', created_at = now() - interval '200 days'
+  where subject = 'Old but open';
+select tests.expect_rows($q$select 1 where (private.run_daily_cleanup() ->> 'issues_past_retention_deleted')::int >= 1$q$, 1,
+  'the daily clean-up applies retention');
+select tests.expect_rows($q$select 1 from public.issues where subject = 'Old resolved'$q$, 0,
+  'a resolved issue past 90 days is deleted');
+select tests.expect_rows($q$select 1 from public.issues where subject in ('Recent resolved', 'Old but open')$q$, 2,
+  'recently resolved and open issues are kept');
+select tests.expect_rows($q$select 1 from public.issues where subject = 'Old resolved B'$q$, 1,
+  'a company without a setting keeps everything');
+select tests.expect_rows(format($q$select 1 from public.deletion_log where organization_id = %L and kind = 'retention'
+  and deleted_by is null and issue_count >= 1$q$, current_setting('t.org_a')), 1,
+  'the clean-up logs what it deleted');
 
 reset role;
 select current_setting('tests.passed') || ' security checks passed' as result;

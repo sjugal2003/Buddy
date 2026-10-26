@@ -10,10 +10,13 @@ import {
   TeamRow,
 } from "@/components/settings/settings-forms";
 import { CheckNowButton, EscalationSettingsForm } from "@/components/escalations/escalation-forms";
+import { DeleteCustomerDataForm, RetentionForm } from "@/components/data/data-forms";
+import { describeDeletion, retentionLabel } from "@/lib/data-retention";
 import { requireUser } from "@/lib/auth";
 import { aiServiceStatus, providerNames } from "@/lib/ai";
 import {
   getAiSettings,
+  getDataSettings,
   getEscalationSettings,
   getMembershipBySlug,
   getOrganizationSettings,
@@ -36,12 +39,14 @@ export default async function SettingsPage({ params }: { params: Promise<{ works
   // These only decide which forms to show. The database makes the real
   // decision and refuses changes from members.
   const canEdit = membership.role === "owner" || membership.role === "admin";
-  const [settings, ai, escalation, teams, categories] = await Promise.all([
+  const isOwner = membership.role === "owner";
+  const [settings, ai, escalation, teams, categories, data] = await Promise.all([
     getOrganizationSettings(orgId),
     getAiSettings(orgId),
     getEscalationSettings(orgId),
     listTeams(orgId),
     listCategories(orgId),
+    getDataSettings(orgId),
   ]);
   const aiService = aiServiceStatus();
   // Judged from the scheduled checks actually logged, with the server's clock.
@@ -261,6 +266,58 @@ export default async function SettingsPage({ params }: { params: Promise<{ works
               ))}
             </ul>
           )}
+        </Card>
+
+        <Card
+          title="Customer data"
+          description="How long resolved issues are kept, and deleting a customer's data when they ask. Only the owner can change these."
+        >
+          <div className="space-y-4">
+            <dl className="grid grid-cols-[auto_1fr] gap-x-6 gap-y-2 text-sm">
+              <dt className="text-slate-500">Resolved issues</dt>
+              <dd className="text-slate-900" data-testid="retention-status">
+                {retentionLabel(data.retentionDays)}
+              </dd>
+            </dl>
+            {isOwner ? (
+              <>
+                <div className="border-t border-slate-100 pt-4">
+                  <p className="mb-2 text-xs text-slate-500">
+                    The daily clean-up (03:30 UTC) deletes resolved issues older than this. Open issues are never
+                    deleted automatically.
+                  </p>
+                  <RetentionForm organizationId={orgId} retentionDays={data.retentionDays} />
+                </div>
+                <div className="border-t border-slate-100 pt-4">
+                  <h3 className="mb-3 text-xs font-medium uppercase tracking-wide text-slate-500">
+                    Delete a customer&rsquo;s data
+                  </h3>
+                  <DeleteCustomerDataForm organizationId={orgId} />
+                  <p className="mt-2 text-xs text-slate-500">
+                    Issues typed in without an email aren&rsquo;t found this way: open each one and use Delete issue.
+                  </p>
+                </div>
+                <div className="border-t border-slate-100 pt-4">
+                  <h3 className="mb-3 text-xs font-medium uppercase tracking-wide text-slate-500">Deletion log</h3>
+                  {data.log.length === 0 ? (
+                    <p className="text-sm text-slate-500">Nothing has been deleted yet.</p>
+                  ) : (
+                    <ul className="divide-y divide-slate-100" data-testid="deletion-log">
+                      {data.log.map((entry) => (
+                        <li key={entry.id} className="py-2 text-sm">
+                          <p className="text-slate-800">{describeDeletion(entry)}</p>
+                          <p className="text-xs text-slate-500">{formatDateTimeIn(entry.createdAt, settings.timezone)}</p>
+                        </li>
+                      ))}
+                    </ul>
+                  )}
+                  <p className="mt-2 text-xs text-slate-500">The log never shows the customer&rsquo;s name, email or message.</p>
+                </div>
+              </>
+            ) : (
+              <p className="text-xs text-slate-500">Only the owner can delete data or change how long it is kept.</p>
+            )}
+          </div>
         </Card>
       </div>
     </>
