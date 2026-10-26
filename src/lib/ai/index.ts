@@ -5,6 +5,7 @@ import { createClaudeAnalyser } from "@/lib/ai/claude";
 import { fakeAnalyser } from "@/lib/ai/fake";
 import { createGeminiAnalyser } from "@/lib/ai/gemini";
 import type { AiProvider, Analyser } from "@/lib/ai/schema";
+import { runsOnThisComputer } from "@/lib/site-url";
 
 const TIMEOUT_MS = 30_000;
 
@@ -25,7 +26,8 @@ export function aiResultKey(): string | null {
 
 /**
  * Which AI service this server uses:
- * - BUDDY_AI_MODE=fake: the free keyword stand-in (automated tests and CI).
+ * - BUDDY_AI_MODE=fake: the free keyword stand-in (automated tests and CI),
+ *   only when Buddy runs on this computer; on a live server it is refused.
  * - ANTHROPIC_API_KEY: Claude.
  * - GEMINI_API_KEY: Gemini (used when there is no Anthropic key).
  * - Neither, or no BUDDY_AI_RESULT_KEY: the app says AI is not set up.
@@ -33,7 +35,11 @@ export function aiResultKey(): string | null {
  */
 export function aiServiceStatus(): AiProvider | "not_configured" {
   if (!aiResultKey()) return "not_configured";
-  if (process.env.BUDDY_AI_MODE === "fake") return "fake";
+  if (process.env.BUDDY_AI_MODE === "fake") {
+    if (runsOnThisComputer(process.env)) return "fake";
+    console.error("[ai] BUDDY_AI_MODE=fake is for tests only and is ignored on a live server");
+    return "not_configured";
+  }
   if (process.env.ANTHROPIC_API_KEY?.trim()) return "claude";
   if (process.env.GEMINI_API_KEY?.trim()) return "gemini";
   return "not_configured";

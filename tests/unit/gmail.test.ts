@@ -1,11 +1,13 @@
 import { randomBytes } from "node:crypto";
-import { describe, expect, it } from "vitest";
+import { afterEach, describe, expect, it, vi } from "vitest";
+import { gmailStatus } from "@/lib/gmail";
 import { decryptToken, encryptToken, parseTokenKey } from "@/lib/gmail/crypto";
 import {
   GMAIL_SCOPE,
   buildAuthUrl,
   decodeOAuthCookie,
   encodeOAuthCookie,
+  gmailCallbackUrl,
   grantedReadonly,
   newOAuthSecrets,
 } from "@/lib/gmail/oauth";
@@ -68,5 +70,39 @@ describe("Google sign-in", () => {
     expect(grantedReadonly(`openid ${GMAIL_SCOPE}`)).toBe(true);
     expect(grantedReadonly("openid email")).toBe(false);
     expect(grantedReadonly(undefined)).toBe(false);
+  });
+});
+
+describe("Google's return address", () => {
+  const request = "https://evil.example/api/gmail/connect?workspace=acme";
+
+  it("on a live server comes from BUDDY_SITE_URL, never the request", () => {
+    expect(gmailCallbackUrl({ NODE_ENV: "production", BUDDY_SITE_URL: "https://buddy.example.com/" }, request)).toBe(
+      "https://buddy.example.com/api/gmail/callback",
+    );
+    expect(gmailCallbackUrl({ NODE_ENV: "production" }, request)).toBeNull();
+    expect(gmailCallbackUrl({ NODE_ENV: "production", BUDDY_SITE_URL: "not a web address" }, request)).toBeNull();
+  });
+
+  it("on your computer uses the address Buddy was opened on", () => {
+    expect(gmailCallbackUrl({ NODE_ENV: "development" }, "http://localhost:3000/api/gmail/connect")).toBe(
+      "http://localhost:3000/api/gmail/callback",
+    );
+  });
+});
+
+describe("Gmail test mode", () => {
+  afterEach(() => vi.unstubAllEnvs());
+
+  it("works on this computer and is refused on a live server", () => {
+    vi.stubEnv("BUDDY_GMAIL_MODE", "fake");
+    expect(gmailStatus()).toBe("fake");
+    vi.stubEnv("NODE_ENV", "production");
+    vi.stubEnv("BUDDY_SITE_URL", "https://buddy.example.com");
+    vi.stubEnv("GOOGLE_CLIENT_ID", "");
+    const log = vi.spyOn(console, "error").mockImplementation(() => {});
+    expect(gmailStatus()).toBe("not_configured");
+    expect(log).toHaveBeenCalledWith(expect.stringContaining("BUDDY_GMAIL_MODE=fake"));
+    log.mockRestore();
   });
 });

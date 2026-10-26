@@ -255,6 +255,20 @@ describe("getAnalyser", () => {
     expect(getAnalyser()).toBeNull();
   });
 
+  it("refuses the fake on a live server, even next to a real key", () => {
+    vi.stubEnv("BUDDY_AI_MODE", "fake");
+    vi.stubEnv("NODE_ENV", "production");
+    vi.stubEnv("BUDDY_SITE_URL", "https://buddy.example.com");
+    vi.stubEnv("ANTHROPIC_API_KEY", "placeholder-not-a-real-key");
+    const log = vi.spyOn(console, "error").mockImplementation(() => {});
+    expect(aiServiceStatus()).toBe("not_configured");
+    expect(getAnalyser()).toBeNull();
+    expect(log).toHaveBeenCalledWith(expect.stringContaining("BUDDY_AI_MODE=fake"));
+    log.mockRestore();
+    vi.stubEnv("BUDDY_SITE_URL", "http://localhost:3100");
+    expect(aiServiceStatus()).toBe("fake");
+  });
+
   it("uses Claude when a key is set, without calling it", () => {
     vi.stubEnv("BUDDY_AI_MODE", "");
     vi.stubEnv("ANTHROPIC_API_KEY", "placeholder-not-a-real-key");
