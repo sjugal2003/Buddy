@@ -1,7 +1,7 @@
 "use server";
 
 import { revalidatePath } from "next/cache";
-import { getAnalyser } from "@/lib/ai";
+import { AI_NOT_SET_UP, aiResultKey, getAnalyser } from "@/lib/ai";
 import type { AnalyseResult } from "@/lib/ai/schema";
 import { getCurrentUser } from "@/lib/auth";
 import { friendlyError } from "@/lib/errors";
@@ -15,11 +15,11 @@ import type { FormState } from "./types";
 // start_issue_analysis checks membership, the on/off switch, the monthly
 // limit and the 30-second wait before anything is sent to the AI, and
 // finish_issue_analysis records the answer (or the failure) exactly once.
+// Both also need BUDDY_AI_RESULT_KEY, which only this server has.
 // If an owner switched on automatic routing, an issue without a team then
 // gets the team its matching rules agree on (never when they disagree).
 
 const SIGNED_OUT: FormState = { error: "Your session has ended. Please sign in again." };
-const NOT_SET_UP = "AI is not set up on this server yet (add GEMINI_API_KEY or ANTHROPIC_API_KEY to .env.local).";
 
 function refresh() {
   revalidatePath("/w/[workspace]", "layout");
@@ -32,10 +32,11 @@ export async function analyseIssue(issueId: string, fill: AiField[]): Promise<Fo
   if (!parsed.success) return { error: "Something went wrong. Reload the page and try again." };
 
   const analyser = getAnalyser();
-  if (!analyser) return { error: NOT_SET_UP };
+  const serverKey = aiResultKey();
+  if (!analyser || !serverKey) return { error: AI_NOT_SET_UP };
 
   const supabase = await createClient();
-  const started = await supabase.rpc("start_issue_analysis", { p_issue_id: parsed.data.issueId });
+  const started = await supabase.rpc("start_issue_analysis", { p_issue_id: parsed.data.issueId, p_server_key: serverKey });
   if (started.error) {
     return { error: friendlyError(started.error, "We couldn't start the analysis. Please try again.", "analyseIssue") };
   }
@@ -81,7 +82,11 @@ export async function analyseIssue(issueId: string, fill: AiField[]): Promise<Fo
         output_tokens: result.usage.outputTokens,
       }
     : { ok: false, reason: result.message };
-  const finished = await supabase.rpc("finish_issue_analysis", { p_analysis_id: analysisId, p_result: record });
+  const finished = await supabase.rpc("finish_issue_analysis", {
+    p_analysis_id: analysisId,
+    p_result: record,
+    p_server_key: serverKey,
+  });
   refresh();
   if (finished.error) {
     return { error: friendlyError(finished.error, "We couldn't save the AI's answer. Please try again.", "analyseIssue") };

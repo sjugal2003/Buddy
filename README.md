@@ -231,6 +231,21 @@ send those links until it is set, for example
 `BUDDY_SITE_URL=https://your-buddy-address`, because the address a request
 claims to come from can be faked.
 
+**AI result key (`BUDDY_AI_RESULT_KEY`).** Only Buddy's own server can
+record an AI answer, so nobody can make up an "AI" result by calling the
+database directly. The server proves it with a random key in `.env.local`;
+the database keeps only a fingerprint (hash) of it. Without the key, or if
+the two don't match, AI says it isn't set up and nothing is sent to the AI.
+Set it up once:
+
+```powershell
+npm.cmd run ai-key
+```
+
+It prints a line to add to `.env.local` and one SQL line to run in the SQL
+Editor, then restart `npm.cmd run dev`. Never share the key, not even with
+Claude. Running it again makes a new key; then do both steps again.
+
 **Security headers.** Every page tells the browser not to let other sites
 show Buddy inside a frame, not to guess file types, and to load scripts and
 styles only from Buddy itself.
@@ -255,8 +270,10 @@ If both keys are set, Claude is used.
    prepaid credit and set a monthly spend limit under **Settings > Limits**.
 2. Add it to `.env.local` on its own line, for example
    `GEMINI_API_KEY=...`, and restart `npm.cmd run dev`. Never put it in a
-   `NEXT_PUBLIC_` variable, a chat or Git. Settings should then say
-   "AI service on this server: Set up: ...".
+   `NEXT_PUBLIC_` variable, a chat or Git. Also run `npm.cmd run ai-key`
+   once and follow what it prints (see
+   [Invite-only and app-wide limits](#invite-only-and-app-wide-limits)).
+   Settings should then say "AI service on this server: Set up: ...".
 3. Settings shows "about $... at paid prices": on Gemini's free tier the real
    cost is $0.
 4. In Buddy, **Settings > AI analysis**: tick the box and choose a monthly
@@ -433,6 +450,8 @@ which step failed, with a screenshot.
 | The bell never shows a number | Notifications go to owners and admins only, and only for new events after the notifications migrations were pushed |
 | Onboarding says "You need an invitation" | Creating a company is invite-only. Add the email to the list (see [Invite-only and app-wide limits](#invite-only-and-app-wide-limits)), then reload the page |
 | The AI panel says "Buddy has used all of this month's AI analyses" | The limit for the whole app is used up. Raise it in the SQL Editor (see [Invite-only and app-wide limits](#invite-only-and-app-wide-limits)) or wait until the 1st |
+| Settings says AI is "Not set up" although your Gemini or Claude key is in `.env.local` | `BUDDY_AI_RESULT_KEY` is missing: run `npm.cmd run ai-key` and follow what it prints (see [Invite-only and app-wide limits](#invite-only-and-app-wide-limits)) |
+| The AI panel says the AI result key "is not set up in the database" or "does not match" | Run the SQL line that `npm.cmd run ai-key` printed. If you ran the command twice, use the newest key **and** the newest SQL line, then restart `npm.cmd run dev` |
 | Sign-up or an invitation says "Buddy's web address is not set up yet" | Only on a live server: set `BUDDY_SITE_URL` to Buddy's address and restart it |
 | The downloaded report shows `########` in Excel | The column is too narrow for a date: double-click the line between the column letters to widen it |
 | `git pull` says your local changes to `package-lock.json` would be overwritten | `npm.cmd install` rewrote that file. Run `git checkout -- package-lock.json`, then `git pull` and `npm.cmd ci`. Use `npm.cmd ci` from then on so it doesn't happen again |

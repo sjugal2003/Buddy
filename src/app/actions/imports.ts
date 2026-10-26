@@ -4,7 +4,7 @@ import { revalidatePath } from "next/cache";
 import { createClient } from "@/lib/supabase/server";
 import { getCurrentUser } from "@/lib/auth";
 import { friendlyError } from "@/lib/errors";
-import { aiServiceStatus } from "@/lib/ai";
+import { AI_NOT_SET_UP, aiServiceStatus } from "@/lib/ai";
 import { MAX_IMPORT_ROWS, type ImportRow } from "@/lib/csv-import";
 import { getAiSettings } from "@/lib/data/live";
 import { aiPauseMs, planAiBatch } from "@/lib/import-ai";
@@ -123,7 +123,7 @@ export async function planImportAnalysis(runId: string): Promise<ImportAiPlan> {
 
   const service = aiServiceStatus();
   if (service === "not_configured") {
-    return { error: "AI is not set up on this server yet (add GEMINI_API_KEY or ANTHROPIC_API_KEY to .env.local)." };
+    return { error: AI_NOT_SET_UP };
   }
   let settings;
   try {

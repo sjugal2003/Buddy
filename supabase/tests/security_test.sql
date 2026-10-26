@@ -527,10 +527,16 @@ select tests.expect_affected(format('delete from public.issues where organizatio
 -- (the invitee is a plain member of company A; Arjun was made an admin above)
 -- ---------------------------------------------------------------------------
 
+-- Only Buddy's server knows the AI result key (stage 36 part 2); the database
+-- holds its hash. These checks use a made-up key.
+reset role;
+update private.platform_settings set ai_result_key_hash = encode(sha256(convert_to('security-test-ai-result-key', 'UTF8')), 'hex');
+set local role authenticated;
+
 select tests.act_as(current_setting('t.invitee')::uuid);
 select tests.expect_affected(format('update public.organizations set ai_enabled = true where id = %L',
   current_setting('t.org_a')), 0, 'a member cannot switch AI on');
-select tests.expect_error(format('select public.start_issue_analysis(%L)', current_setting('t.issue_a')),
+select tests.expect_error(format('select public.start_issue_analysis(%L, ''security-test-ai-result-key'')', current_setting('t.issue_a')),
   'no analysis while AI is off');
 
 select tests.act_as(current_setting('t.a_owner')::uuid);
@@ -543,49 +549,74 @@ select tests.expect_affected(format($q$insert into public.categories (organizati
 select set_config('t.cat_a2', (select id::text from public.categories where name = 'A Billing'), true);
 
 select tests.act_as(current_setting('t.b_owner')::uuid);
-select tests.expect_error(format('select public.start_issue_analysis(%L)', current_setting('t.issue_a')),
+select tests.expect_error(format('select public.start_issue_analysis(%L, ''security-test-ai-result-key'')', current_setting('t.issue_a')),
   'owner B cannot start an analysis of a company A issue');
 select tests.act_as(current_setting('t.outsider')::uuid);
-select tests.expect_error(format('select public.start_issue_analysis(%L)', current_setting('t.issue_a')),
+select tests.expect_error(format('select public.start_issue_analysis(%L, ''security-test-ai-result-key'')', current_setting('t.issue_a')),
   'an outsider cannot start an analysis');
 
 select tests.act_as(current_setting('t.invitee')::uuid);
-select set_config('t.an1', public.start_issue_analysis(current_setting('t.issue_a')::uuid)::text, true);
+select tests.expect_error(format('select public.start_issue_analysis(%L, ''guessed-key'')', current_setting('t.issue_a')),
+  'a member cannot start an analysis without the server''s AI result key');
+select tests.expect_error(format('select public.start_issue_analysis(%L, null)', current_setting('t.issue_a')),
+  'a member cannot start an analysis with no key');
+reset role;
+update private.platform_settings set ai_result_key_hash = null;
+set local role authenticated;
+select tests.act_as(current_setting('t.invitee')::uuid);
+select tests.expect_error(format('select public.start_issue_analysis(%L, ''security-test-ai-result-key'')', current_setting('t.issue_a')),
+  'no analysis at all until the AI result key is set up in the database');
+reset role;
+update private.platform_settings set ai_result_key_hash = encode(sha256(convert_to('security-test-ai-result-key', 'UTF8')), 'hex');
+set local role authenticated;
+select tests.act_as(current_setting('t.invitee')::uuid);
+select tests.expect_error('select private.check_ai_result_key(''x'')', 'users cannot call the key check directly');
+select tests.expect_error('select ai_result_key_hash from private.platform_settings', 'users cannot read the key hash');
+select set_config('t.an1', public.start_issue_analysis(current_setting('t.issue_a')::uuid, 'security-test-ai-result-key')::text, true);
 select tests.expect_rows(format($q$select 1 from public.issue_analyses where id = %L and status = 'pending'$q$,
   current_setting('t.an1')), 1, 'a member starts an analysis');
-select tests.expect_error(format('select public.start_issue_analysis(%L)', current_setting('t.issue_a')),
+select tests.expect_error(format('select public.start_issue_analysis(%L, ''security-test-ai-result-key'')', current_setting('t.issue_a')),
   'the same issue cannot be analysed again within 30 seconds');
+select tests.expect_error(format(
+  $q$select public.finish_issue_analysis(%L, jsonb_build_object('ok', true, 'sentiment', 'positive',
+     'sentiment_score', 1, 'intent', 'praise', 'urgency', 'low', 'summary', 'Made up.'), 'guessed-key')$q$,
+  current_setting('t.an1')), 'the member who started it cannot record a made-up answer without the server''s key');
+select tests.expect_error(format(
+  $q$select public.finish_issue_analysis(%L, '{"ok": false, "reason": "x"}', null)$q$,
+  current_setting('t.an1')), 'nor with no key');
+select tests.expect_rows(format($q$select 1 from public.issue_analyses where id = %L and status = 'pending'$q$,
+  current_setting('t.an1')), 1, 'the analysis is still waiting for the real answer');
 select tests.expect_error(format(
   $q$insert into public.issue_analyses (organization_id, issue_id, status, summary) values (%L, %L, 'done', 'x')$q$,
   current_setting('t.org_a'), current_setting('t.issue_a')), 'nobody can add analyses directly');
 
 select tests.act_as(current_setting('t.b_owner')::uuid);
-select tests.expect_error(format($q$select public.finish_issue_analysis(%L, '{"ok": false, "reason": "x"}')$q$,
+select tests.expect_error(format($q$select public.finish_issue_analysis(%L, '{"ok": false, "reason": "x"}', 'security-test-ai-result-key')$q$,
   current_setting('t.an1')), 'owner B cannot finish a company A analysis');
 select tests.act_as(current_setting('t.a_owner')::uuid);
-select tests.expect_error(format($q$select public.finish_issue_analysis(%L, '{"ok": false, "reason": "x"}')$q$,
+select tests.expect_error(format($q$select public.finish_issue_analysis(%L, '{"ok": false, "reason": "x"}', 'security-test-ai-result-key')$q$,
   current_setting('t.an1')), 'only the person who started an analysis can finish it');
 
 select tests.act_as(current_setting('t.invitee')::uuid);
 select tests.expect_error(format(
   $q$select public.finish_issue_analysis(%L, jsonb_build_object('ok', true, 'sentiment', 'negative',
-     'sentiment_score', -0.5, 'intent', 'complaint', 'urgency', 'high', 'category_id', %L, 'summary', 'x'))$q$,
+     'sentiment_score', -0.5, 'intent', 'complaint', 'urgency', 'high', 'category_id', %L, 'summary', 'x'), 'security-test-ai-result-key')$q$,
   current_setting('t.an1'), current_setting('t.cat_b')), 'an analysis cannot use another company''s category');
 select tests.expect_error(format(
   $q$select public.finish_issue_analysis(%L, jsonb_build_object('ok', true, 'sentiment', 'negative',
-     'sentiment_score', -0.5, 'intent', 'complaint', 'urgency', 'extreme', 'summary', 'x'))$q$,
+     'sentiment_score', -0.5, 'intent', 'complaint', 'urgency', 'extreme', 'summary', 'x'), 'security-test-ai-result-key')$q$,
   current_setting('t.an1')), 'an analysis cannot use an unknown urgency');
 select tests.expect_rows(format(
   $q$select public.finish_issue_analysis(%L, jsonb_build_object('ok', true, 'sentiment', 'negative',
      'sentiment_score', -0.5, 'intent', 'complaint', 'urgency', 'high', 'category_id', %L,
      'themes', jsonb_build_array('refund'), 'summary', 'Charged twice.', 'suggested_action', 'Refund it.',
-     'confidence', 0.9, 'model', 'fake', 'input_tokens', 0, 'output_tokens', 0))$q$,
+     'confidence', 0.9, 'model', 'fake', 'input_tokens', 0, 'output_tokens', 0), 'security-test-ai-result-key')$q$,
   current_setting('t.an1'), current_setting('t.cat_a2')), 1, 'the member records the answer');
 select tests.expect_rows(format($q$select 1 from public.issue_analyses where id = %L and status = 'done' and urgency = 'high'$q$,
   current_setting('t.an1')), 1, 'the analysis is saved as done');
 select tests.expect_rows(format($q$select 1 from public.issue_activity where issue_id = %L and kind = 'ai_analysed'$q$,
   current_setting('t.issue_a')), 1, 'the issue history records the analysis');
-select tests.expect_error(format($q$select public.finish_issue_analysis(%L, '{"ok": false, "reason": "x"}')$q$,
+select tests.expect_error(format($q$select public.finish_issue_analysis(%L, '{"ok": false, "reason": "x"}', 'security-test-ai-result-key')$q$,
   current_setting('t.an1')), 'a finished analysis cannot be changed');
 select tests.expect_error(format($q$update public.issue_analyses set urgency = 'low' where id = %L$q$,
   current_setting('t.an1')), 'nobody can edit analyses directly');
@@ -600,8 +631,8 @@ reset role;
 update public.issue_analyses set created_at = now() - interval '1 minute' where id = current_setting('t.an1')::uuid;
 set local role authenticated;
 select tests.act_as(current_setting('t.invitee')::uuid);
-select set_config('t.an2', public.start_issue_analysis(current_setting('t.issue_a')::uuid)::text, true);
-select tests.expect_rows(format($q$select public.finish_issue_analysis(%L, '{"ok": false, "reason": "unavailable"}')$q$,
+select set_config('t.an2', public.start_issue_analysis(current_setting('t.issue_a')::uuid, 'security-test-ai-result-key')::text, true);
+select tests.expect_rows(format($q$select public.finish_issue_analysis(%L, '{"ok": false, "reason": "unavailable"}', 'security-test-ai-result-key')$q$,
   current_setting('t.an2')), 1, 'a failed analysis is recorded');
 select tests.expect_rows(format($q$select 1 from public.issue_analyses where id = %L and status = 'failed'$q$,
   current_setting('t.an2')), 1, 'it is saved as failed');
@@ -609,7 +640,7 @@ reset role;
 update public.issue_analyses set created_at = now() - interval '1 minute' where id = current_setting('t.an2')::uuid;
 set local role authenticated;
 select tests.act_as(current_setting('t.invitee')::uuid);
-select tests.expect_error(format('select public.start_issue_analysis(%L)', current_setting('t.issue_a')),
+select tests.expect_error(format('select public.start_issue_analysis(%L, ''security-test-ai-result-key'')', current_setting('t.issue_a')),
   'no more analyses once the monthly limit is used (failed ones count too)');
 
 -- The AI limit for the whole app (stage 36) applies even when the company has
@@ -622,7 +653,7 @@ set local role authenticated;
 select tests.act_as(current_setting('t.invitee')::uuid);
 do $$
 begin
-  perform public.start_issue_analysis(current_setting('t.issue_a')::uuid);
+  perform public.start_issue_analysis(current_setting('t.issue_a')::uuid, 'security-test-ai-result-key');
   raise exception 'FAIL: an analysis started although the whole-app limit was used';
 exception when others then
   if sqlerrm not like 'Buddy has used all of this month%' then

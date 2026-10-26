@@ -52,6 +52,10 @@ Router, React 19, TypeScript strict, Tailwind v4). Full background:
   (`private.platform_settings.ai_monthly_cap`, checked in
   `start_issue_analysis`). Keep both checks in the database; never add a way
   for the app to change them.
+- Starting or finishing an AI analysis needs `aiResultKey()`
+  (`BUDDY_AI_RESULT_KEY`, server only); the database checks its hash. Never
+  log it, send it to the browser, or put it in a `NEXT_PUBLIC_` variable.
+  Tests use the made-up key in `tests/e2e/helpers.ts`.
 - Links that leave the site (email confirmation, invitations) use
   `siteUrl()` from `src/lib/site-url.ts`, never the Host/Origin header.
 - Security headers live in `next.config.ts`; e2e tests check them.

@@ -195,6 +195,7 @@ Files (`supabase/`):
 | `migrations/20261027150000_scheduler_reliability.sql` | Phase 6 stage 31: trigger `escalation_runs_notify_failure` (a scheduled check that fails notifies owners and admins, at most once a day per company; a failed Check now does not); `private.run_daily_cleanup()` (database owner only) closes imports left running for over an hour as failed "Did not finish." (which notifies), deletes notifications read more than 90 days ago (unread ones are kept) and escalation check logs older than 90 days; cron job `buddy-daily-cleanup` at 03:30 UTC daily |
 | `migrations/20261027180000_reports.sql` | Phase 6 stage 32: `public.issue_report(org, from, to)` (members only; security definer, read only; dates are inclusive calendar days in the company's time zone, at most 366; returns one JSON object with totals, times, the response target, escalations, team and other breakdowns and import results; no per-person figures) |
 | `migrations/20261028090000_security_foundation.sql` | Phase 7 stage 36: `private.company_creators` (emails that may create a company; current owners copied in) checked by `create_organization` and `public.can_create_company()`; `private.platform_settings.ai_monthly_cap` (default 300 analyses a month for all companies together, checked in `start_issue_analysis` under an advisory lock); both private tables have RLS on and no grants; revokes the default grant on `private.create_escalation_settings` |
+| `migrations/20261028120000_ai_result_key.sql` | Phase 7 stage 36 part 2: `private.platform_settings.ai_result_key_hash`, `private.check_ai_result_key`; `start_issue_analysis(uuid, text)` and `finish_issue_analysis(uuid, jsonb, text)` replace the old versions and refuse without the server's key |
 | `tests/security_test.sql` | 426 checks of tenant isolation, roles, invitations, teams, categories, settings, routing rules, AI analysis, resolution tracking, escalations, routing history, scheduled checks, imports, the Gmail connection, fetching, notifications and reports; runs in one transaction and rolls back |
 | `tests/local-supabase-stub.sql` | Minimal stand-in for Supabase's `auth` schema and roles, for plain PostgreSQL only. Never run on Supabase |
 
@@ -319,6 +320,7 @@ never commit values. Without them the app runs in demo-only mode.
 | `GOOGLE_CLIENT_ID` | **Never** (server only) | Google OAuth client for connecting Gmail (stage 25). Read only in `src/lib/gmail/index.ts` |
 | `GOOGLE_CLIENT_SECRET` | **Never** (server only) | Secret of that OAuth client |
 | `GMAIL_TOKEN_KEY` | **Never** (server only) | 32 random bytes in base64 that encrypt the stored Gmail token. Changing it means reconnecting Gmail. All three must be set for Connect Gmail to appear |
+| `BUDDY_AI_RESULT_KEY` | **Never** (server only) | Stage 36 part 2: random key (`npm run ai-key`) that `start_issue_analysis` and `finish_issue_analysis` require; the database stores only its SHA-256 hash in `private.platform_settings.ai_result_key_hash`. Without it AI shows as not set up. Read only in `src/lib/ai/index.ts` |
 | `BUDDY_SITE_URL` | Not secret (server only) | Buddy's own address for sign-up email links and invitation links (stage 36, `src/lib/site-url.ts`). Optional in development (the request's address is used); in production Buddy refuses to make those links without it, because Host/Origin headers can be faked |
 | `BUDDY_GMAIL_MODE` | No | `fake` swaps in a pretend Google for automated tests and CI. Leave unset otherwise |
 
@@ -463,12 +465,11 @@ run keeps the Playwright report for 7 days (Actions > the run > Artifacts).
 - Browser tests cover the main flows, not every error message; the demo
   pages have no automated tests beyond "all 8 load".
 - Running the database and browser tests on Windows needs Docker Desktop.
-- AI results are recorded with the user's own session (no secret key), so a
-  member could call `finish_issue_analysis` themselves and record a made-up
-  "AI" answer for an issue in their own company. It can't touch another
-  company, raise the limit, or change anything a member couldn't already
-  edit by hand. Closing this needs a server-only credential; planned as a
-  separate pull request in Phase 7 stage 36 (finding F5).
+- Closed in Phase 7 stage 36 part 2 (finding F5): a member used to be able
+  to call `finish_issue_analysis` directly and record a made-up "AI" answer.
+  Starting and finishing an analysis now need `BUDDY_AI_RESULT_KEY`, which
+  only the server has. A member who calls `start_issue_analysis` with the
+  right key could still only reserve an analysis, never fill it in.
 - Automatic routing only happens right after an AI analysis (on save or
   "Analyse again"); issues added while AI is off still need the buttons.
 - AI cost per message has not been measured on real traffic yet: Settings
@@ -874,3 +875,11 @@ Phase 7 (security, reliability and deployment readiness).
   revoking, tidied grant. Migration `20261028090000_security_foundation.sql`.
   Tests: `security_test.sql` (436 checks), new
   `tests/e2e/security-foundation.spec.ts`, new `tests/unit/site-url.test.ts`.
+  PR #34, merged 2026-10-25; pushed and checked on Jugal's PC (own email on
+  the list, limit 300, a new account sees "You need an invitation").
+- Stage 36 part 2: only Buddy's server can record AI results (F5).
+  Migration `20261028120000_ai_result_key.sql` replaces
+  `start_issue_analysis(uuid)` and `finish_issue_analysis(uuid, jsonb)` with
+  versions that take `p_server_key`, checked against
+  `private.platform_settings.ai_result_key_hash`. `npm run ai-key` makes a
+  key and prints its SQL line. 444 security checks.

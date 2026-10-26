@@ -1,9 +1,10 @@
 import { expect, request, test } from "@playwright/test";
 import pg from "pg";
+import globalSetup from "./global-setup";
 import { acceptInvite, createOrg, hidden, inviteLink, shows, signUpAndConfirm, stamp, TEST_DB } from "./helpers";
 
-// Phase 7 stage 36: security headers, invite-only company creation and the
-// AI limit for the whole app (rules in supabase/tests/security_test.sql).
+// Phase 7 stage 36: security headers, invite-only company creation, the AI
+// limit for the whole app and the AI result key (rules in supabase/tests/security_test.sql).
 
 test("every page sends the security headers", async ({ baseURL }) => {
   const visitor = await request.newContext({ baseURL });
@@ -89,5 +90,35 @@ test("the AI limit for the whole app stops analyses even when the company has so
   } finally {
     // Back to the local value from supabase/seed.sql, for the tests that follow.
     await setAppAiLimit(100000);
+  }
+});
+
+test("AI results are refused when the server's key doesn't match the database", async ({ browser, baseURL }) => {
+  const id = stamp();
+  const slug = `ai-key-${id}`;
+  const p = await signUpAndConfirm(browser, baseURL!, "Alice Owner", `ai-key${id}@example.com`);
+  await createOrg(p, "AI Key Co", slug);
+  await p.goto(`/w/${slug}/settings`);
+  await p.check("input[name=enabled]");
+  await p.click('button:has-text("Save AI settings")');
+  await shows(p, "text=AI analysis switched on.");
+
+  // As if the database were set up with another server's key.
+  const client = new pg.Client({ connectionString: TEST_DB });
+  await client.connect();
+  await client.query("update private.platform_settings set ai_result_key_hash = $1", ["0".repeat(64)]);
+  await client.end();
+  try {
+    await p.goto(`/w/${slug}/issues/new`);
+    await p.fill("input[name=customerName]", "Sam Key");
+    await p.fill("input[name=subject]", "Charged twice");
+    await p.fill("textarea[name=message]", "I was charged twice. Please refund one.");
+    await p.click("main button[type=submit]");
+    await p.waitForURL(/created=1/);
+    await shows(p, "text=BUDDY_AI_RESULT_KEY does not match");
+    await hidden(p, "text=Analysed by AI");
+  } finally {
+    // Back to the test server's key, for the tests that follow.
+    await globalSetup();
   }
 });

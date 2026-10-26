@@ -1,5 +1,6 @@
 import { execSync } from "node:child_process";
 import { defineConfig, devices } from "@playwright/test";
+import { TEST_AI_RESULT_KEY } from "./tests/e2e/helpers";
 
 // Browser tests run against the LOCAL Supabase started with
 // `npx supabase start`, never the hosted project: the settings below replace
@@ -36,6 +37,7 @@ pointAtLocalSupabase();
 
 export default defineConfig({
   testDir: "tests/e2e",
+  globalSetup: "./tests/e2e/global-setup.ts",
   // One company per test file, and one file at a time: the local email
   // catcher and sign-up limits are shared.
   workers: 1,
@@ -65,6 +67,7 @@ export default defineConfig({
       // Tests use the free keyword analyser and never the paid AI, even when
       // .env.local on this computer has a real key.
       BUDDY_AI_MODE: "fake",
+      BUDDY_AI_RESULT_KEY: TEST_AI_RESULT_KEY,
       ANTHROPIC_API_KEY: "",
       GEMINI_API_KEY: "",
       // A stand-in for Google: tests never contact Gmail, even when .env.local has real Google settings.

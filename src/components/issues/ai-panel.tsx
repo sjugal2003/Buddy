@@ -91,7 +91,7 @@ export function AiPanel({
     return <p className="text-sm text-slate-500">AI analysis is off for this company. Owners and admins can switch it on in Settings.</p>;
   }
   if (!aiConfigured) {
-    return <p className="text-sm text-slate-500">AI is not set up on this server yet (add GEMINI_API_KEY or ANTHROPIC_API_KEY to .env.local).</p>;
+    return <p className="text-sm text-slate-500">AI is not set up on this server yet (add GEMINI_API_KEY or ANTHROPIC_API_KEY, and BUDDY_AI_RESULT_KEY, to .env.local).</p>;
   }
 
   const stuck = analysis?.status === "pending" && openedAt - new Date(analysis.createdAt).getTime() > STUCK_AFTER_MS;
