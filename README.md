@@ -23,7 +23,7 @@ email addresses on Buddy's own list can create a company (see
 
 ## Run it on Windows
 
-You need **Node.js 22** (20.19 or newer also works) and **Git**. In PowerShell:
+You need **Node.js 24** (the version GitHub's checks and a future host use; `node -v` should start with `v24`) and **Git**. In PowerShell:
 
 ```powershell
 node -v
@@ -467,7 +467,14 @@ npm.cmd run lint        # code style and common mistakes
 npx.cmd tsc --noEmit    # type errors
 npm.cmd run build       # full production build
 npm.cmd test            # unit tests (no setup needed)
+npm.cmd run check-env   # which settings are set or missing (never shows values)
 ```
+
+`check-env` lists each setting in `.env.local` as `set` or `missing` and
+flags mistakes, such as a key given a `NEXT_PUBLIC_` name (which would send it
+to every browser). Its output never contains a value, so it's safe to share.
+Add `-- --live` to check the settings as a live server needs them
+(`npm.cmd run check-env -- --live`).
 
 GitHub runs all of these, plus the database and browser tests below and a
 package security check (`npm audit`), on every pull request: the **Checks**

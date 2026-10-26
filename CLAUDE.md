@@ -101,6 +101,8 @@ Router, React 19, TypeScript strict, Tailwind v4). Full background:
 - Do not claim the app is secure or production-ready until policies and
   cross-tenant tests have actually been run.
 - Do not print values from `.env*` files; report only whether a variable exists.
+  `npm run check-env` does exactly that; keep it value-free and add any new
+  setting to `scripts/check-env-plan.mjs`.
 
 ## Checks before calling anything done
 
