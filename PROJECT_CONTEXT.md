@@ -461,8 +461,22 @@ all closed).
   in CI, Dependabot, pinned actions); PR 2 closes F8's health page part and
   F18 (Settings shows whether the daily clean-up ran); PR 3 closes F16, F20,
   F24 and F27 (`npm run backup`, docs/RUNBOOK.md with key changes and
-  restore). Still open for stages 39 and 40: an uptime checker once Buddy is
-  online, keeping the free project awake, and the AI provider for real data.
+  restore). Stage 39 closes F14, F21, F26, F28 (PRs #49 to #51) and F15
+  (Jugal set minimum password 8 on the hosted project).
+- Phase 7 final report (stage 40, 2026-10-27):
+  https://claude.ai/artifact/XvYVHKnsDwr2g1ZHWPi3rV. Of F1 to F29: 19 fixed
+  in code, 3 done by the owner (F15, F18, F24), 2 partly (F8: an uptime
+  checker needs a live server; F16: the free project still pauses when
+  idle, no keep-awake by the owner's choice), 3 decisions (F2, F22, F25),
+  1 open (F23, a customer-data export, goes with F22), F29 needed nothing.
+  New low findings: N1 CSP inline scripts, N2 200-issue cap without paging,
+  N3 npm 11 install-script warnings (`@google/genai`, `protobufjs`,
+  `unrs-resolver`), N4 Supabase's built-in email limit. Never tested on a
+  live server; restore rehearsed only locally.
+- Hosted project as reported by the owner on 2026-10-26: Free plan, Confirm
+  email on, minimum password 8, Site URL `http://localhost:3000`, Redirect
+  URL `http://localhost:3000/**`, Google OAuth app in Testing, daily
+  clean-up running, two backups made.
 - The Content-Security-Policy still allows inline scripts, because Next.js
   adds them to every page; moving to per-request nonces is a later change.
 - Demo pages load the whole workspace into the browser. Real workspaces
