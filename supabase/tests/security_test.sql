@@ -1965,6 +1965,155 @@ select tests.expect_error($q$select * from cron.job_run_details$q$,
   'nobody signed in can read the job history directly');
 reset role;
 
+-- ---------------------------------------------------------------------------
+-- Team members and team notifications (improvement F)
+-- ---------------------------------------------------------------------------
+
+reset role;
+-- The limit tests above used up owner A's hand-typed issues for this hour.
+delete from private.rate_limit_events where user_id = current_setting('t.a_owner')::uuid and action = 'issue';
+insert into public.teams (organization_id, name) values (current_setting('t.org_a')::uuid, 'A Team F');
+select set_config('t.team_f', (select id::text from public.teams where name = 'A Team F'), true);
+set local role authenticated;
+
+-- Who can add and remove team members.
+select tests.act_as(current_setting('t.a_member')::uuid);
+select tests.expect_error(format($q$insert into public.team_members (organization_id, team_id, user_id) values (%L, %L, %L)$q$,
+  current_setting('t.org_a'), current_setting('t.team_f'), current_setting('t.a_member')),
+  'a member cannot add themselves to a team');
+select tests.act_as(current_setting('t.b_owner')::uuid);
+select tests.expect_error(format($q$insert into public.team_members (organization_id, team_id, user_id) values (%L, %L, %L)$q$,
+  current_setting('t.org_a'), current_setting('t.team_f'), current_setting('t.b_owner')),
+  'owner B cannot add themselves to company A''s team');
+select tests.expect_error(format($q$insert into public.team_members (organization_id, team_id, user_id) values (%L, %L, %L)$q$,
+  current_setting('t.org_b'), current_setting('t.team_f'), current_setting('t.b_owner')),
+  'company A''s team cannot be linked under company B');
+select tests.act_as(current_setting('t.a_owner')::uuid);
+select tests.expect_error(format($q$insert into public.team_members (organization_id, team_id, user_id) values (%L, %L, %L)$q$,
+  current_setting('t.org_a'), current_setting('t.team_f'), current_setting('t.b_owner')),
+  'owner A cannot add someone from another company to a team');
+select tests.expect_error(format($q$insert into public.team_members (organization_id, team_id, user_id) values (%L, %L, %L)$q$,
+  current_setting('t.org_a'), current_setting('t.team_b'), current_setting('t.a_member')),
+  'owner A cannot add people to company B''s team');
+select tests.expect_error(format($q$insert into public.team_members (organization_id, team_id, user_id, added_by) values (%L, %L, %L, %L)$q$,
+  current_setting('t.org_a'), current_setting('t.team_f'), current_setting('t.a_member'), current_setting('t.b_owner')),
+  'nobody can choose who is recorded as having added a team member');
+select tests.expect_affected(format($q$insert into public.team_members (organization_id, team_id, user_id) values (%L, %L, %L)$q$,
+  current_setting('t.org_a'), current_setting('t.team_f'), current_setting('t.a_member')), 1,
+  'owner A adds the member to a team');
+select tests.expect_rows(format($q$select 1 from public.team_members where team_id = %L and added_by = %L$q$,
+  current_setting('t.team_f'), current_setting('t.a_owner')), 1, 'the team member records who added them');
+select tests.expect_error(format($q$update public.team_members set user_id = %L where team_id = %L$q$,
+  current_setting('t.a_owner'), current_setting('t.team_f')), 'team members cannot be changed in place');
+
+select tests.act_as(current_setting('t.a_member')::uuid);
+select tests.expect_rows(format($q$select 1 from public.team_members where team_id = %L$q$, current_setting('t.team_f')), 1,
+  'a member of company A sees who is in its teams');
+select tests.expect_affected(format($q$delete from public.team_members where team_id = %L$q$, current_setting('t.team_f')), 0,
+  'a member cannot remove anyone from a team');
+select tests.act_as(current_setting('t.b_owner')::uuid);
+select tests.expect_rows('select 1 from public.team_members where organization_id = ''' || current_setting('t.org_a') || '''', 0,
+  'owner B sees none of company A''s team members');
+select tests.expect_affected(format($q$delete from public.team_members where team_id = %L$q$, current_setting('t.team_f')), 0,
+  'owner B cannot remove company A''s team members');
+select tests.act_as(current_setting('t.outsider')::uuid);
+select tests.expect_rows('select 1 from public.team_members', 0, 'outsider sees no team members');
+reset role;
+set local role anon;
+select tests.act_as(null);
+select tests.expect_error('select * from public.team_members', 'a signed-out visitor cannot read team members');
+reset role;
+
+-- Giving an issue to a team notifies that team's members, but not the person who did it.
+set local role authenticated;
+select tests.act_as(current_setting('t.a_owner')::uuid);
+select tests.expect_affected(format(
+  $q$insert into public.issues (organization_id, reference, customer_name, channel, subject, message, team_id)
+     values (%L, 'TF-1', 'Secret Customer', 'email', 'Secret subject', 'Secret message text.', %L)$q$,
+  current_setting('t.org_a'), current_setting('t.team_f')), 1, 'owner A creates an issue for the team');
+reset role;
+select set_config('t.issue_tf1', (select id::text from public.issues where reference = 'TF-1'), true);
+select tests.expect_rows(format($q$select 1 from public.notifications where issue_id = %L and kind = 'team_issue'
+  and recipient_id = %L and title = 'New issue for A Team F: TF-1'$q$, current_setting('t.issue_tf1'),
+  current_setting('t.a_member')), 1, 'the team''s member is told about a new issue for their team');
+select tests.expect_rows(format($q$select 1 from public.notifications where issue_id = %L and kind = 'team_issue'$q$,
+  current_setting('t.issue_tf1')), 1, 'only the team''s members are told (not other people in the company)');
+select tests.expect_rows(format($q$select 1 from public.notifications where issue_id = %L
+  and (title ilike '%%secret%%' or title ilike '%%@%%')$q$, current_setting('t.issue_tf1')), 0,
+  'the team notification holds none of the customer''s words');
+
+-- Moving away and back does not notify again; the person making the change is skipped.
+update public.issues set team_id = current_setting('t.team_a_support')::uuid where id = current_setting('t.issue_tf1')::uuid;
+update public.issues set team_id = current_setting('t.team_f')::uuid where id = current_setting('t.issue_tf1')::uuid;
+select tests.expect_rows(format($q$select 1 from public.notifications where issue_id = %L and kind = 'team_issue'$q$,
+  current_setting('t.issue_tf1')), 1, 'moving an issue away and back to the same team does not notify twice');
+insert into public.team_members (organization_id, team_id, user_id)
+values (current_setting('t.org_a')::uuid, current_setting('t.team_a_support')::uuid, current_setting('t.a_owner')::uuid);
+set local role authenticated;
+select tests.act_as(current_setting('t.a_owner')::uuid);
+insert into public.issues (organization_id, reference, customer_name, channel, subject, message, team_id)
+values (current_setting('t.org_a')::uuid, 'TF-2', 'Customer', 'email', 'Subject', 'Message.', current_setting('t.team_a_support')::uuid);
+reset role;
+select tests.expect_rows($q$select 1 from public.notifications n join public.issues i on i.id = n.issue_id
+  where i.reference = 'TF-2' and n.kind = 'team_issue'$q$, 0, 'the person who gave the issue to their own team is not notified');
+
+-- Resolved issues and issues without a team notify no team.
+insert into public.issues (organization_id, reference, customer_name, channel, subject, message, team_id, status)
+values (current_setting('t.org_a')::uuid, 'TF-3', 'Customer', 'email', 'Subject', 'Message.', current_setting('t.team_f')::uuid, 'resolved');
+select tests.expect_rows($q$select 1 from public.notifications n join public.issues i on i.id = n.issue_id
+  where i.reference = 'TF-3' and n.kind = 'team_issue'$q$, 0, 'a resolved issue does not notify its team');
+
+-- Many issues at once become one summary for each member.
+insert into public.issues (organization_id, reference, customer_name, channel, subject, message, team_id)
+select current_setting('t.org_a')::uuid, 'TF-BULK-' || g, 'Customer', 'email', 'Subject', 'Message.', current_setting('t.team_f')::uuid
+from generate_series(1, 11) g;
+select tests.expect_rows(format($q$select 1 from public.notifications where recipient_id = %L and kind = 'team_issue'
+  and issue_id is null and title = '11 new issues for A Team F. See the Issues list.'$q$, current_setting('t.a_member')), 1,
+  'more than 10 issues for a team at once become one summary');
+select tests.expect_rows($q$select 1 from public.notifications n join public.issues i on i.id = n.issue_id
+  where i.reference like 'TF-BULK-%' and n.kind = 'team_issue'$q$, 0, 'the summary replaces one notification per issue');
+
+-- Company B's team members never hear about company A's issues.
+insert into public.team_members (organization_id, team_id, user_id)
+values (current_setting('t.org_b')::uuid, current_setting('t.team_b')::uuid, current_setting('t.b_owner')::uuid);
+select tests.expect_rows(format($q$select 1 from public.notifications where recipient_id = %L and organization_id = %L$q$,
+  current_setting('t.b_owner'), current_setting('t.org_a')), 0, 'company B''s people get none of company A''s team notifications');
+
+-- Escalations reach the issue's team as well as owners and admins, once each.
+insert into public.escalations (organization_id, issue_id, condition, level, reason, spell)
+values (current_setting('t.org_a')::uuid, current_setting('t.issue_tf1')::uuid, 'first_response_breached', 1, 'Test.', 0);
+select tests.expect_rows(format($q$select 1 from public.notifications where issue_id = %L and kind = 'escalation'
+  and recipient_id = %L$q$, current_setting('t.issue_tf1'), current_setting('t.a_member')), 1,
+  'an escalation notifies the issue''s team member');
+select tests.expect_rows(format($q$select 1 from public.notifications where issue_id = %L and kind = 'escalation'
+  and recipient_id = %L$q$, current_setting('t.issue_tf1'), current_setting('t.a_owner')), 1,
+  'the owner is still told about the escalation, once');
+
+-- Members see their own team notifications in the app.
+set local role authenticated;
+select tests.act_as(current_setting('t.a_member')::uuid);
+select tests.expect_rows($q$select 1 from public.notifications where kind = 'team_issue'$q$, 2,
+  'the team member sees their own team notifications');
+select tests.act_as(current_setting('t.a_owner')::uuid);
+select tests.expect_rows(format($q$select 1 from public.notifications where recipient_id = %L$q$, current_setting('t.a_member')), 0,
+  'owner A cannot see the member''s notifications');
+select tests.expect_error(format($q$select private.notify_team(%L, %L, 'team_issue', 'Fake', 'fake:team')$q$,
+  current_setting('t.org_a'), current_setting('t.team_f')), 'a signed-in user cannot send team notifications');
+
+-- Removing someone from the team, or from the company, ends their team membership.
+select tests.expect_affected(format($q$delete from public.team_members where team_id = %L and user_id = %L$q$,
+  current_setting('t.team_f'), current_setting('t.a_member')), 1, 'owner A removes the member from the team');
+reset role;
+insert into public.team_members (organization_id, team_id, user_id)
+values (current_setting('t.org_a')::uuid, current_setting('t.team_f')::uuid, current_setting('t.a_member')::uuid);
+delete from public.organization_members where organization_id = current_setting('t.org_a')::uuid
+  and user_id = current_setting('t.a_member')::uuid;
+select tests.expect_rows(format($q$select 1 from public.team_members where user_id = %L$q$, current_setting('t.a_member')), 0,
+  'leaving the company removes a person from its teams');
+delete from public.teams where id = current_setting('t.team_a_support')::uuid;
+select tests.expect_rows(format($q$select 1 from public.team_members where team_id = %L$q$, current_setting('t.team_a_support')), 0,
+  'deleting a team removes its member list');
+
 reset role;
 select current_setting('tests.passed') || ' security checks passed' as result;
 

@@ -13,8 +13,9 @@ and resolution deadlines; escalations flag issues that need attention (with
 shows live counts. Issues are typed in by hand, imported from a CSV file, or
 fetched from one connected Gmail inbox with a button. Owners and admins get
 **in-app notifications** (the bell) for escalations, new urgent issues,
-import problems and failed automatic checks; nothing is emailed or sent
-outside Buddy. A **Reports** tab shows company-wide figures for a date range
+import problems and failed automatic checks, and the members of a team
+(Settings > Teams) are told when an issue is given to their team or one of
+its issues escalates; nothing is emailed or sent outside Buddy. A **Reports** tab shows company-wide figures for a date range
 (no figures for individual people) and downloads them as a CSV file.
 It is **not production-ready** and must not hold real customer data yet.
 Creating a company is **invite-only**: anyone can make an account, but only
@@ -179,7 +180,10 @@ Use made-up customers only until Phase 7.
 1. As an owner or admin, add an issue with urgency **Critical**. The bell at
    the top shows **1**; click it to open **Notifications**, then click the
    notification to open the issue. **Mark all as read** clears the number.
-   Members get no notifications.
+   Members get notifications only for teams they are in (next step).
+1. In **Settings > Teams**, use **Add to team** to put a colleague in a team.
+   When an issue is given to that team, they see "New issue for <team>" in
+   their bell (you don't, if you made the change).
 2. Import a CSV file with a rejected row (for example `samples/test-import.csv`
    into a company that hasn't imported it yet): the bell says the import
    finished with rows that could not be saved.
@@ -554,7 +558,7 @@ which step failed, with a screenshot.
 | Fetch brought in real emails (the wrong inbox was connected) | Don't analyse them. Disconnect, then delete them: one by one with **Delete issue**, by sender with Settings > **Customer data**, or all at once in the Supabase dashboard > **SQL Editor**: run `delete from public.issues where source = 'gmail' and organization_id = (select id from public.organizations where slug = 'your-company');` (run it as `select count(*) ...` first to check the number). Connect a brand-new test Gmail instead |
 | `npx.cmd supabase db push` says "Remote database is up to date" right after a stage with a new migration | The new code isn't on your PC yet: run `git pull`, check `git log -1 --oneline` names the right PR, then `db push` again |
 | `supabase db push\` says `Unknown subcommand` | There's an extra character at the end of the command; type it again exactly |
-| The bell never shows a number | Notifications go to owners and admins only, and only for new events after the notifications migrations were pushed |
+| The bell never shows a number | Notifications go to owners and admins, and to team members for their team's issues (Settings > Teams), and only for new events after the notifications migrations were pushed (`npx.cmd supabase db push`) |
 | Onboarding says "You need an invitation" | Creating a company is invite-only. Add the email to the list (see [Invite-only and app-wide limits](#invite-only-and-app-wide-limits)), then reload the page |
 | The AI panel says "Buddy has used all of this month's AI analyses" | The limit for the whole app is used up. Raise it in the SQL Editor (see [Invite-only and app-wide limits](#invite-only-and-app-wide-limits)) or wait until the 1st |
 | Settings says AI is "Not set up" although your Gemini or Claude key is in `.env.local` | `BUDDY_AI_RESULT_KEY` is missing: run `npm.cmd run ai-key` and follow what it prints (see [Invite-only and app-wide limits](#invite-only-and-app-wide-limits)) |
@@ -584,7 +588,7 @@ which step failed, with a screenshot.
 | `/w/<company>/issues` | Customer issues: search, filters (including deadlines and escalations), add, status, assignee, team, category, history, deadlines, "Record first response", escalations with Acknowledge; AI analysis panel and "AI suggested" marks when AI is on |
 | `/w/<company>/routing` | Routing rules: add, edit, reorder, switch off, delete (owners and admins); route open issues that have no team |
 | `/w/<company>/data-sources` | Import a CSV file (owners and admins: match columns, preview, open or past conversations), "Analyse with AI" for an import's issues (asks first, shows the month's remaining analyses), connect or disconnect one Gmail inbox read-only (owners), "Fetch new email" (owners and admins), and every import with its counts and rejected-row reasons |
-| `/w/<company>/notifications` | Your own in-app notifications for this company (owners and admins receive them): newest first, open the linked page, mark one or all as read. The bell in the header shows how many are unread |
+| `/w/<company>/notifications` | Your own in-app notifications for this company (owners and admins receive them, and team members for their team's issues): newest first, open the linked page, mark one or all as read. The bell in the header shows how many are unread |
 | `/w/<company>/reports` | Company-wide figures for the last 7 days, the last 30 days or your own dates (company time zone): received, resolved, response and resolution times, response target, teams, urgency, sentiment, channel, category, escalations and imports. **Download CSV** saves them. Everyone in the company can see it; no per-person figures |
 | `/w/<company>/settings` | Customer data (owners: how long resolved issues are kept, delete a customer's data, deletion log), company profile, first-response and resolution targets, AI analysis (on/off, monthly limit, automatic routing), escalation conditions with "Check now" and the automatic-check status (red when the latest one failed), scheduled jobs (owners and admins: whether the daily clean-up ran), teams, categories (owners and admins edit; automatic routing owners only) |
 | `/api/health` | Health check for an uptime checker: `{"status":"ok","database":"ok"}`, or `"error"` with status 503 when the database can't be reached. No sign-in, nothing private |
