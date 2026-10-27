@@ -217,6 +217,13 @@ export const updateCategorySchema = z.object({ categoryId: z.string().uuid(), na
 
 export const idSchema = z.string().uuid();
 
+// Adding or removing one person in one team (improvement F).
+export const teamMemberSchema = z.object({
+  organizationId: z.string().uuid(),
+  teamId: z.string().uuid(),
+  userId: z.string().uuid("Choose a person."),
+});
+
 // Routing rules. The database checks the same shape (private.valid_rule_conditions).
 export const ruleConditionSchema = z.discriminatedUnion("field", [
   z.object({ field: z.literal("category"), value: z.string().uuid("Choose a category.") }),

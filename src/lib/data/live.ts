@@ -513,6 +513,12 @@ export interface LiveTeam {
   color: string;
 }
 
+/** One person in one team (improvement F). */
+export interface LiveTeamMember {
+  teamId: string;
+  userId: string;
+}
+
 export interface LiveCategory {
   id: string;
   name: string;
@@ -598,6 +604,20 @@ export async function listTeams(organizationId: string): Promise<LiveTeam[]> {
     email: row.email,
     color: row.color,
   }));
+}
+
+/** Who is in which team. Every member of the company may read this. */
+export async function listTeamMembers(organizationId: string): Promise<LiveTeamMember[]> {
+  const supabase = await createClient();
+  const { data, error } = await supabase
+    .from("team_members")
+    .select("team_id, user_id")
+    .eq("organization_id", organizationId);
+  if (error) {
+    console.error("[listTeamMembers]", error.code, error.message);
+    throw new Error("Could not load team members.");
+  }
+  return (data ?? []).map((row) => ({ teamId: row.team_id, userId: row.user_id }));
 }
 
 export async function listCategories(organizationId: string): Promise<LiveCategory[]> {

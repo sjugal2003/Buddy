@@ -9,6 +9,7 @@ import {
   createTeamSchema,
   fieldErrors,
   idSchema,
+  teamMemberSchema,
   updateAiSettingsSchema,
   updateCategorySchema,
   updateOrganizationSchema,
@@ -161,6 +162,54 @@ export async function deleteTeam(_prev: FormState, formData: FormData): Promise<
   if (error) return { error: friendlyError(error, "We couldn't delete the team. Please try again.", "deleteTeam") };
   if (!data?.length) return NOT_ALLOWED;
   return done("Team deleted. Its issues are now unassigned.");
+}
+
+function teamMemberFields(formData: FormData) {
+  return teamMemberSchema.safeParse({
+    organizationId: formData.get("organizationId"),
+    teamId: formData.get("teamId"),
+    userId: formData.get("userId"),
+  });
+}
+
+export async function addTeamMember(_prev: FormState, formData: FormData): Promise<FormState> {
+  if (!(await getCurrentUser())) return SIGNED_OUT;
+  const parsed = teamMemberFields(formData);
+  if (!parsed.success) return { fieldErrors: fieldErrors(parsed.error) };
+
+  const supabase = await createClient();
+  const { data, error } = await supabase
+    .from("team_members")
+    .insert({
+      organization_id: parsed.data.organizationId,
+      team_id: parsed.data.teamId,
+      user_id: parsed.data.userId,
+    })
+    .select("user_id");
+  if (error?.code === "23505") return { error: "That person is already in this team." };
+  // The person or the team no longer belongs to this company.
+  if (error?.code === "23503") return { error: "That person or team is no longer in this company. Reload the page." };
+  if (error) return { error: friendlyError(error, "We couldn't add the team member. Please try again.", "addTeamMember") };
+  if (!data?.length) return NOT_ALLOWED;
+  return done("Team member added.");
+}
+
+export async function removeTeamMember(_prev: FormState, formData: FormData): Promise<FormState> {
+  if (!(await getCurrentUser())) return SIGNED_OUT;
+  const parsed = teamMemberFields(formData);
+  if (!parsed.success) return { error: "Something went wrong. Reload the page and try again." };
+
+  const supabase = await createClient();
+  const { data, error } = await supabase
+    .from("team_members")
+    .delete()
+    .eq("organization_id", parsed.data.organizationId)
+    .eq("team_id", parsed.data.teamId)
+    .eq("user_id", parsed.data.userId)
+    .select("user_id");
+  if (error) return { error: friendlyError(error, "We couldn't remove the team member. Please try again.", "removeTeamMember") };
+  if (!data?.length) return NOT_ALLOWED;
+  return done("Team member removed.");
 }
 
 const CATEGORY_NAME_TAKEN: FormState = { fieldErrors: { name: "There is already a category with this name." } };

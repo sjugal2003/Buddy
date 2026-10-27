@@ -1,11 +1,13 @@
 "use client";
 
-import { useActionState } from "react";
+import { useActionState, type ReactNode } from "react";
 import {
+  addTeamMember,
   createCategory,
   createTeam,
   deleteCategory,
   deleteTeam,
+  removeTeamMember,
   updateAiSettings,
   updateCategory,
   updateOrganization,
@@ -223,7 +225,7 @@ function TeamFields({ team, errors }: { team?: LiveTeam; errors?: Record<string,
   );
 }
 
-export function TeamRow({ team }: { team: LiveTeam }) {
+export function TeamRow({ team, children }: { team: LiveTeam; children?: ReactNode }) {
   const [saveState, saveAction, saving] = useActionState<FormState, FormData>(updateTeam, {});
   const [deleteState, deleteAction, deleting] = useActionState<FormState, FormData>(deleteTeam, {});
   return (
@@ -249,7 +251,91 @@ export function TeamRow({ team }: { team: LiveTeam }) {
         </div>
       </form>
       <FormMessage error={saveState.error ?? deleteState.error} success={saveState.success} />
+      {children}
     </li>
+  );
+}
+
+/** A person shown in a team's member list (improvement F). */
+export interface TeamPerson {
+  userId: string;
+  fullName: string;
+}
+
+/**
+ * Who is in a team, with add and remove for owners and admins. Team members
+ * get in-app notifications for issues given to the team and its escalations.
+ */
+export function TeamMembers({
+  organizationId,
+  teamId,
+  teamName,
+  members,
+  candidates,
+}: {
+  organizationId: string;
+  teamId: string;
+  teamName: string;
+  members: TeamPerson[];
+  candidates: TeamPerson[];
+}) {
+  const [addState, addAction, adding] = useActionState<FormState, FormData>(addTeamMember, {});
+  const [removeState, removeAction, removing] = useActionState<FormState, FormData>(removeTeamMember, {});
+  const selectId = `team-member-${teamId}`;
+  return (
+    <div className="space-y-2 rounded-lg bg-slate-50 px-3 py-2">
+      <p className="text-xs font-medium text-slate-600">Members (notified about this team&rsquo;s issues)</p>
+      {members.length === 0 ? (
+        <p className="text-xs text-slate-500">Nobody yet.</p>
+      ) : (
+        <ul className="flex flex-wrap gap-2">
+          {members.map((m) => (
+            <li key={m.userId}>
+              <form action={removeAction} className="flex items-center gap-1 rounded-full bg-white px-2.5 py-1 text-xs text-slate-700 ring-1 ring-slate-200">
+                <input type="hidden" name="organizationId" value={organizationId} />
+                <input type="hidden" name="teamId" value={teamId} />
+                <input type="hidden" name="userId" value={m.userId} />
+                <span>{m.fullName}</span>
+                <button
+                  type="submit"
+                  disabled={removing}
+                  aria-label={`Remove ${m.fullName} from ${teamName}`}
+                  className="ml-1 text-slate-400 hover:text-red-700"
+                >
+                  ×
+                </button>
+              </form>
+            </li>
+          ))}
+        </ul>
+      )}
+      {candidates.length > 0 && (
+        <form key={addState.success} action={addAction} className="flex flex-wrap items-start gap-2" noValidate>
+          <input type="hidden" name="organizationId" value={organizationId} />
+          <input type="hidden" name="teamId" value={teamId} />
+          <div className="min-w-0 flex-1">
+            <label className="sr-only" htmlFor={selectId}>
+              Add a member to {teamName}
+            </label>
+            <select id={selectId} name="userId" defaultValue="" className={`${inputClass} py-1.5`}>
+              <option value="" disabled>
+                Add a person…
+              </option>
+              {candidates.map((c) => (
+                <option key={c.userId} value={c.userId}>
+                  {c.fullName}
+                </option>
+              ))}
+            </select>
+            <FieldError message={addState.fieldErrors?.userId} />
+          </div>
+          <button type="submit" disabled={adding} className={`${secondaryButton} py-1.5`}>
+            {adding ? "Adding…" : "Add to team"}
+          </button>
+        </form>
+      )}
+      <FormMessage error={addState.error ?? removeState.error} success={addState.success ?? removeState.success} />
+    </div>
   );
 }
 

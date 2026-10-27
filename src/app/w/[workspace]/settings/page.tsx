@@ -7,6 +7,7 @@ import {
   AiSettingsForm,
   CategoryRow,
   OrganizationForm,
+  TeamMembers,
   TeamRow,
 } from "@/components/settings/settings-forms";
 import { CheckNowButton, EscalationSettingsForm } from "@/components/escalations/escalation-forms";
@@ -22,6 +23,8 @@ import {
   getOrganizationSettings,
   getScheduledJobs,
   listCategories,
+  listMembers,
+  listTeamMembers,
   listTeams,
 } from "@/lib/data/live";
 import { automaticCheckStatus, describeRun, escalationConditionLabels } from "@/lib/escalations";
@@ -42,7 +45,7 @@ export default async function SettingsPage({ params }: { params: Promise<{ works
   // decision and refuses changes from members.
   const canEdit = membership.role === "owner" || membership.role === "admin";
   const isOwner = membership.role === "owner";
-  const [settings, ai, escalation, teams, categories, data, jobs] = await Promise.all([
+  const [settings, ai, escalation, teams, categories, data, jobs, people, teamMembers] = await Promise.all([
     getOrganizationSettings(orgId),
     getAiSettings(orgId),
     getEscalationSettings(orgId),
@@ -50,7 +53,15 @@ export default async function SettingsPage({ params }: { params: Promise<{ works
     listCategories(orgId),
     getDataSettings(orgId),
     canEdit ? getScheduledJobs(orgId) : Promise.resolve(null),
+    listMembers(orgId),
+    listTeamMembers(orgId),
   ]);
+  const nameOf = new Map(people.map((p) => [p.userId, p.fullName]));
+  const membersOf = (teamId: string) =>
+    teamMembers
+      .filter((m) => m.teamId === teamId && nameOf.has(m.userId))
+      .map((m) => ({ userId: m.userId, fullName: nameOf.get(m.userId)! }))
+      .sort((a, b) => a.fullName.localeCompare(b.fullName));
   const aiService = aiServiceStatus();
   // Judged from the scheduled checks actually logged, with the server's clock.
   const automatic = automaticCheckStatus(escalation.lastScheduledAt, new Date(), {
@@ -239,9 +250,23 @@ export default async function SettingsPage({ params }: { params: Promise<{ works
             <>
               {teams.length > 0 && (
                 <ul className="-mt-4 divide-y divide-slate-100">
-                  {teams.map((t) => (
-                    <TeamRow key={t.id} team={t} />
-                  ))}
+                  {teams.map((t) => {
+                    const members = membersOf(t.id);
+                    const inTeam = new Set(members.map((m) => m.userId));
+                    return (
+                      <TeamRow key={t.id} team={t}>
+                        <TeamMembers
+                          organizationId={orgId}
+                          teamId={t.id}
+                          teamName={t.name}
+                          members={members}
+                          candidates={people
+                            .filter((p) => !inTeam.has(p.userId))
+                            .map((p) => ({ userId: p.userId, fullName: p.fullName }))}
+                        />
+                      </TeamRow>
+                    );
+                  })}
                 </ul>
               )}
               <div className="mt-4 border-t border-slate-100 pt-4">
@@ -252,14 +277,19 @@ export default async function SettingsPage({ params }: { params: Promise<{ works
           ) : (
             <ul className="divide-y divide-slate-100">
               {teams.map((t) => (
-                <li key={t.id} className="flex min-w-0 items-center justify-between gap-3 py-2 text-sm">
-                  <span className="flex shrink-0 items-center gap-2">
-                    <span className="h-2.5 w-2.5 rounded-full" style={{ background: t.color }} aria-hidden />
-                    {t.name}
-                  </span>
-                  <span className="min-w-0 truncate text-xs text-slate-500">
-                    {[t.leadName, t.email].filter(Boolean).join(" · ")}
-                  </span>
+                <li key={t.id} className="py-2 text-sm">
+                  <div className="flex min-w-0 items-center justify-between gap-3">
+                    <span className="flex shrink-0 items-center gap-2">
+                      <span className="h-2.5 w-2.5 rounded-full" style={{ background: t.color }} aria-hidden />
+                      {t.name}
+                    </span>
+                    <span className="min-w-0 truncate text-xs text-slate-500">
+                      {[t.leadName, t.email].filter(Boolean).join(" · ")}
+                    </span>
+                  </div>
+                  <p className="mt-1 text-xs text-slate-500">
+                    Members: {membersOf(t.id).map((m) => m.fullName).join(", ") || "nobody yet"}
+                  </p>
                 </li>
               ))}
             </ul>
