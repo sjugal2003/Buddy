@@ -75,6 +75,9 @@ export default defineConfig({
       GOOGLE_CLIENT_ID: "",
       GOOGLE_CLIENT_SECRET: "",
       GMAIL_TOKEN_KEY: "",
+      // A pretend Google Play with made-up reviews (improvement B); real connections stay off.
+      BUDDY_PLAY_MODE: "fake",
+      BUDDY_PLAY_REAL: "",
     },
   },
 });

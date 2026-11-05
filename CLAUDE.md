@@ -47,6 +47,15 @@ Router, React 19, TypeScript strict, Tailwind v4). Full background:
   comes from `gmailCallbackUrl()` (`BUDDY_SITE_URL` on a live server). Tests and CI use
   `BUDDY_GMAIL_MODE=fake`; no test may contact Google.
 
+- Google Play reviews: only through `src/lib/play/` (server only), read-only
+  (`androidpublisher` scope, `reviews.list` only). Each company's own service
+  account key is encrypted with `GMAIL_TOKEN_KEY`, kept in
+  `source_credentials` (no grants), and handed back only by
+  `start_source_fetch` with `BUDDY_AI_RESULT_KEY`. Sign-in always goes to
+  Google's fixed token address, never one from the key file. Real use needs
+  `BUDDY_PLAY_REAL=on`, which stays unset until real data is approved. Tests
+  and CI use `BUDDY_PLAY_MODE=fake` (same `runsOnThisComputer()` guard); no
+  test may contact Google.
 - Notifications: created only in the database (`private.notify_staff`,
   `private.notify_team` / `private.create_notification`, from triggers), in
   Buddy only, for owners and admins, plus a team's members (`team_members`)

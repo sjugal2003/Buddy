@@ -61,7 +61,8 @@ address again.)
 | `BUDDY_AI_RESULT_KEY` | **Yes** | For AI and Gmail fetching | `npm.cmd run ai-key` (make a new one for production and run its SQL line in that Supabase project) |
 | `GEMINI_API_KEY` or `ANTHROPIC_API_KEY` | **Yes** | For AI | Your AI provider (decision F2 above) |
 | `GOOGLE_CLIENT_ID`, `GOOGLE_CLIENT_SECRET` | **Yes** | For Gmail | Google Cloud > APIs & Services > Credentials |
-| `GMAIL_TOKEN_KEY` | **Yes** | For Gmail | `node -e "console.log(require('crypto').randomBytes(32).toString('base64'))"`. Changing it later means connecting Gmail again. |
+| `GMAIL_TOKEN_KEY` | **Yes** | For Gmail and Google Play | `node -e "console.log(require('crypto').randomBytes(32).toString('base64'))"`. Changing it later means connecting Gmail and Google Play again. |
+| `BUDDY_PLAY_REAL` | No | **Not yet** | `on` lets owners connect a real Google Play app, which brings in real customer reviews. Leave it unset until real data is approved (Gate 3). |
 
 Never add on a live server:
 
@@ -69,9 +70,10 @@ Never add on a live server:
   visitor's browser. Secret settings must never have it.
 - **The Supabase secret key** (`sb_secret_...`) or a `service_role` key.
   Buddy never uses one. `check-env` refuses both.
-- **`BUDDY_AI_MODE` or `BUDDY_GMAIL_MODE`.** They are for automated tests only.
-  Since stage 39 a live server ignores them anyway (AI and Gmail then show as
-  not set up), and `check-env -- --live` refuses them.
+- **`BUDDY_AI_MODE`, `BUDDY_GMAIL_MODE` or `BUDDY_PLAY_MODE`.** They are for
+  automated tests only. Since stage 39 a live server ignores them anyway (AI,
+  Gmail and Google Play then show as not set up or switched off), and
+  `check-env -- --live` refuses them.
 
 ---
 

@@ -154,6 +154,23 @@ Everything else in Buddy keeps working without AI.
    again. Nothing is lost; the next fetch carries on from where the last one
    stopped.
 
+### Google Play reviews stop fetching
+
+The Google Play card on **Data sources** says what went wrong:
+
+- **"switched off on this server"**: expected until real data is approved
+  (`BUDDY_PLAY_REAL` isn't `on`).
+- **"Google didn't accept this service account key"**: the key was deleted
+  in Google Cloud. Make a new JSON key, then **Disconnect** and **Connect
+  Google Play** again.
+- **"Google Play refused access"**: the service account lost its access in
+  Play Console (Users and permissions). Give it **View app information** for
+  the app again.
+- **"Buddy can't read the saved key"**: `GMAIL_TOKEN_KEY` changed. Put the old
+  value back, or disconnect and connect again.
+- **"... BUDDY_AI_RESULT_KEY is missing or does not match ..."**: as for Gmail,
+  step 3 above.
+
 ## 7. A key or password might have leaked
 
 If a key appeared somewhere it shouldn't (a chat, a screenshot, GitHub, an
@@ -205,9 +222,11 @@ secret key and delete the old one.
 3. Until both are done, AI and Gmail fetching say the key doesn't match.
    Nothing else is affected.
 
-**`GMAIL_TOKEN_KEY`** (encrypts the saved Gmail sign-in)
+**`GMAIL_TOKEN_KEY`** (encrypts the saved Gmail sign-in and Google Play key)
 
-Changing it makes the saved Gmail sign-in unreadable, so do it in this order:
+Changing it makes the saved Gmail sign-in and Google Play key unreadable, so
+do it in this order (if Google Play is connected, also click **Disconnect
+Google Play** in step 1 and connect it again in step 4 with a new JSON key):
 
 1. In Buddy, as owner, open **Data sources** and click **Disconnect** on the
    Gmail card. (This also cancels Buddy's access at Google.) Do this in every

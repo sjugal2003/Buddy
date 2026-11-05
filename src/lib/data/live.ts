@@ -890,7 +890,7 @@ export async function openEscalationLevels(organizationId: string, issueIds: str
 
 export interface ImportRun {
   id: string;
-  source: "csv" | "gmail";
+  source: "csv" | "gmail" | "google_play";
   fileName: string;
   startedByName: string | null;
   startedAt: string;
@@ -1023,6 +1023,37 @@ export async function getAccountDeletionPlan(): Promise<AccountDeletionStep[]> {
     slug: row.slug,
     outcome: row.outcome as AccountDeletionOutcome,
   }));
+}
+
+export interface PlayConnection {
+  packageName: string;
+  accountEmail: string;
+  connectedByName: string | null;
+  connectedAt: string;
+  lastFetchedAt: string | null;
+}
+
+/** The company's connected Google Play app, if any. The key stays in the database, out of reach. */
+export async function getPlayConnection(organizationId: string): Promise<PlayConnection | null> {
+  const supabase = await createClient();
+  const { data, error } = await supabase
+    .from("source_connections")
+    .select("package_name, account_email, connected_at, last_fetched_at, connector:profiles (full_name)")
+    .eq("organization_id", organizationId)
+    .eq("kind", "google_play")
+    .maybeSingle();
+  if (error) {
+    console.error("[getPlayConnection]", error.code, error.message);
+    throw new Error("Could not load the Google Play connection.");
+  }
+  if (!data) return null;
+  return {
+    packageName: data.package_name,
+    accountEmail: data.account_email,
+    connectedByName: (data.connector as unknown as { full_name: string } | null)?.full_name || null,
+    connectedAt: data.connected_at,
+    lastFetchedAt: data.last_fetched_at,
+  };
 }
 
 export interface MailboxConnection {

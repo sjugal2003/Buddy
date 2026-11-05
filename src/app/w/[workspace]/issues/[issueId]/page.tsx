@@ -130,7 +130,7 @@ export default async function IssuePage({
                   <>
                     <dt className="text-slate-500">Imported from</dt>
                     <dd className="text-slate-800">
-                      {issue.source === "csv" ? "Spreadsheet (CSV)" : "Gmail"}
+                      {issue.source === "csv" ? "Spreadsheet (CSV)" : issue.source === "google_play" ? "Google Play review" : "Gmail"}
                       {issue.source === "csv" && issue.sourceRecordId && !issue.sourceRecordId.startsWith("fp:") && (
                         <span className="text-slate-500"> (ID {issue.sourceRecordId})</span>
                       )}

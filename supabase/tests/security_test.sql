@@ -2114,6 +2114,136 @@ delete from public.teams where id = current_setting('t.team_a_support')::uuid;
 select tests.expect_rows(format($q$select 1 from public.team_members where team_id = %L$q$, current_setting('t.team_a_support')), 0,
   'deleting a team removes its member list');
 
+-- ---------------------------------------------------------------------------
+-- Google Play reviews connection (improvement B, step 1)
+-- ---------------------------------------------------------------------------
+
+reset role;
+select tests.act_as(null);
+-- In company A from here: the member as an admin, the outsider as a plain member.
+insert into public.organization_members (organization_id, user_id, role)
+values (current_setting('t.org_a')::uuid, current_setting('t.a_member')::uuid, 'admin'),
+       (current_setting('t.org_a')::uuid, current_setting('t.outsider')::uuid, 'member')
+on conflict (organization_id, user_id) do update set role = excluded.role;
+delete from private.rate_limit_events where action in ('import', 'source_connect');
+set local role authenticated;
+
+select tests.act_as(current_setting('t.a_member')::uuid);
+select tests.expect_error(format($q$select public.save_source_connection(%L, 'google_play', 'com.example.shop',
+  'reader@made-up.iam.gserviceaccount.com', 'v1:aaaa:bbbb:cccc')$q$, current_setting('t.org_a')), 'an admin cannot connect Google Play');
+select tests.act_as(current_setting('t.b_owner')::uuid);
+select tests.expect_error(format($q$select public.save_source_connection(%L, 'google_play', 'com.example.shop',
+  'reader@made-up.iam.gserviceaccount.com', 'v1:aaaa:bbbb:cccc')$q$, current_setting('t.org_a')),
+  'owner B cannot connect Google Play for company A');
+
+select tests.act_as(current_setting('t.a_owner')::uuid);
+select tests.expect_error(format($q$select public.save_source_connection(%L, 'app_store', 'com.example.shop',
+  'reader@made-up.iam.gserviceaccount.com', 'v1:aaaa:bbbb:cccc')$q$, current_setting('t.org_a')), 'only Google Play can be connected');
+select tests.expect_error(format($q$select public.save_source_connection(%L, 'google_play', 'not a package',
+  'reader@made-up.iam.gserviceaccount.com', 'v1:aaaa:bbbb:cccc')$q$, current_setting('t.org_a')), 'a package name must look like one');
+select tests.expect_error(format($q$select public.save_source_connection(%L, 'google_play', 'com.example.shop',
+  'reader@made-up.iam.gserviceaccount.com', '{"private_key":"plain"}')$q$, current_setting('t.org_a')),
+  'a key that was not encrypted by the server is refused');
+select public.save_source_connection(current_setting('t.org_a')::uuid, 'google_play', 'com.example.shop',
+  'Reader@Made-Up.iam.gserviceaccount.com', 'v1:aaaa:bbbb:cccc');
+select tests.expect_rows(format($q$select 1 from public.source_connections where organization_id = %L and kind = 'google_play'
+  and package_name = 'com.example.shop' and account_email = 'reader@made-up.iam.gserviceaccount.com' and connected_by = %L$q$,
+  current_setting('t.org_a'), current_setting('t.a_owner')), 1, 'owner A connects Google Play');
+
+-- Who can see what.
+select tests.act_as(current_setting('t.outsider')::uuid);
+select tests.expect_rows(format($q$select 1 from public.source_connections where organization_id = %L$q$, current_setting('t.org_a')), 1,
+  'a member sees that Google Play is connected');
+select tests.expect_error('select * from public.source_credentials', 'nobody can read the key table directly');
+select tests.expect_error(format($q$update public.source_connections set package_name = 'com.evil.app' where organization_id = %L$q$,
+  current_setting('t.org_a')), 'a member cannot change the connection directly');
+select tests.expect_error(format($q$insert into public.source_connections (organization_id, kind, package_name, account_email)
+  values (%L, 'google_play', 'com.evil.app', 'x@y.iam.gserviceaccount.com')$q$, current_setting('t.org_b')),
+  'nobody inserts connections directly');
+select tests.expect_error(format($q$select * from public.start_source_fetch(%L, 'google_play', 'security-test-ai-result-key')$q$,
+  current_setting('t.org_a')), 'a plain member cannot fetch reviews');
+select tests.expect_error(format($q$select public.disconnect_source(%L, 'google_play')$q$, current_setting('t.org_a')),
+  'a plain member cannot disconnect Google Play');
+select tests.act_as(current_setting('t.b_owner')::uuid);
+select tests.expect_rows(format($q$select 1 from public.source_connections where organization_id = %L$q$, current_setting('t.org_a')), 0,
+  'owner B cannot see company A''s connection');
+select tests.expect_error(format($q$select * from public.start_source_fetch(%L, 'google_play', 'security-test-ai-result-key')$q$,
+  current_setting('t.org_a')), 'owner B cannot fetch company A''s reviews');
+select tests.expect_error(format($q$select * from public.start_source_fetch(%L, 'google_play', 'security-test-ai-result-key')$q$,
+  current_setting('t.org_b')), 'company B has nothing connected to fetch');
+select tests.expect_error(format($q$select public.disconnect_source(%L, 'google_play')$q$, current_setting('t.org_a')),
+  'owner B cannot disconnect company A''s Google Play');
+
+-- Fetching: owners and admins, only with Buddy's server key, one at a time.
+select tests.act_as(current_setting('t.a_member')::uuid);
+select tests.expect_error(format($q$select * from public.start_source_fetch(%L, 'google_play', null)$q$, current_setting('t.org_a')),
+  'fetching needs the server key');
+select tests.expect_error(format($q$select * from public.start_source_fetch(%L, 'google_play', 'a-wrong-key')$q$, current_setting('t.org_a')),
+  'fetching refuses a wrong server key');
+select set_config('t.play_run', (select run_id::text from public.start_source_fetch(current_setting('t.org_a')::uuid, 'google_play',
+  'security-test-ai-result-key')), true);
+select tests.expect_rows(format($q$select 1 from public.import_runs where id = %L and source = 'google_play'
+  and file_name = 'com.example.shop' and started_by = %L and status = 'running'$q$, current_setting('t.play_run'),
+  current_setting('t.a_member')), 1, 'an admin starts a fetch, logged as a Google Play import');
+select tests.expect_error(format($q$select * from public.start_source_fetch(%L, 'google_play', 'security-test-ai-result-key')$q$,
+  current_setting('t.org_a')), 'only one fetch runs at a time');
+select tests.expect_rows(format($q$select 1 where (public.import_issues(%L, '[{"row":1,"customer_name":"Asha","channel":"app_review",
+  "subject":"Review: slow","message":"Made-up review.","received_at":"2026-11-01T10:00:00Z","record_id":"gp:test-1"},
+  {"row":2,"customer_name":"Asha","channel":"app_review","subject":"Review: slow","message":"Made-up review.",
+  "received_at":"2026-11-01T10:00:00Z","record_id":"gp:test-1"}]'::jsonb) -> 1 ->> 'outcome') = 'duplicate'$q$,
+  current_setting('t.play_run')), 1, 'a review already saved is not saved twice');
+select tests.expect_rows(format($q$select 1 from public.issues where organization_id = %L and source = 'google_play'
+  and source_record_id = 'gp:test-1' and channel = 'app_review'$q$, current_setting('t.org_a')), 1,
+  'a fetched review becomes one App review issue from Google Play');
+select tests.act_as(current_setting('t.a_owner')::uuid);
+select tests.expect_error(format($q$select public.finish_source_fetch(%L)$q$, current_setting('t.play_run')),
+  'only the person who started a fetch can finish it');
+select tests.act_as(current_setting('t.a_member')::uuid);
+select public.finish_source_fetch(current_setting('t.play_run')::uuid);
+select tests.expect_rows(format($q$select 1 from public.import_runs where id = %L and status = 'finished' and imported = 1
+  and skipped_duplicate = 1$q$, current_setting('t.play_run')), 1, 'the fetch is closed with its counts');
+select tests.expect_rows(format($q$select 1 from public.source_connections where organization_id = %L and last_fetched_at is not null$q$,
+  current_setting('t.org_a')), 1, 'the connection records the last fetch');
+select tests.expect_error(format($q$select public.finish_source_fetch(%L)$q$, current_setting('t.play_run')),
+  'a finished fetch cannot be finished again');
+select tests.expect_error(format($q$select public.finish_source_fetch(%L)$q$,
+  (select id from public.import_runs where organization_id = current_setting('t.org_a')::uuid and source = 'csv' limit 1)),
+  'finish_source_fetch cannot close a CSV import');
+
+-- A failed fetch notifies owners and admins, naming Google Play.
+select set_config('t.play_run2', (select run_id::text from public.start_source_fetch(current_setting('t.org_a')::uuid, 'google_play',
+  'security-test-ai-result-key')), true);
+select public.finish_source_fetch(current_setting('t.play_run2')::uuid, 'Google Play could not be reached.');
+select tests.expect_rows(format($q$select 1 from public.import_runs where id = %L and status = 'failed'$q$,
+  current_setting('t.play_run2')), 1, 'a fetch can stop with an error');
+reset role;
+select tests.expect_rows(format($q$select 1 from public.notifications where dedupe_key = 'import:' || %L
+  and title = 'Google Play fetch stopped with an error. See the import history.'$q$, current_setting('t.play_run2')), 2,
+  'the owner and the admin are told the Google Play fetch stopped');
+set local role authenticated;
+
+-- Reconnecting another app starts afresh; disconnecting deletes the key.
+select tests.act_as(current_setting('t.a_owner')::uuid);
+select public.save_source_connection(current_setting('t.org_a')::uuid, 'google_play', 'com.example.other',
+  'reader@made-up.iam.gserviceaccount.com', 'v1:dddd:eeee:ffff');
+select tests.expect_rows(format($q$select 1 from public.source_connections where organization_id = %L
+  and package_name = 'com.example.other' and last_fetched_at is null$q$, current_setting('t.org_a')), 1,
+  'connecting another app replaces the first and starts afresh');
+reset role;
+select tests.expect_rows(format($q$select 1 from public.source_credentials where organization_id = %L
+  and encrypted_credential = 'v1:dddd:eeee:ffff'$q$, current_setting('t.org_a')), 1, 'the new key replaces the old one');
+set local role authenticated;
+select tests.expect_rows(format($q$select 1 where public.disconnect_source(%L, 'google_play')$q$, current_setting('t.org_a')), 1,
+  'owner A disconnects Google Play');
+reset role;
+select tests.expect_rows(format($q$select 1 from public.source_credentials where organization_id = %L$q$, current_setting('t.org_a')), 0,
+  'disconnecting deletes the saved key');
+select tests.expect_rows(format($q$select 1 from public.issues where organization_id = %L and source = 'google_play'$q$,
+  current_setting('t.org_a')), 1, 'issues already fetched stay');
+set local role authenticated;
+select tests.expect_error(format($q$select * from public.start_source_fetch(%L, 'google_play', 'security-test-ai-result-key')$q$,
+  current_setting('t.org_a')), 'nothing to fetch after disconnecting');
+
 reset role;
 select current_setting('tests.passed') || ' security checks passed' as result;
 

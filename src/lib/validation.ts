@@ -222,6 +222,19 @@ export const updateCategorySchema = z.object({ categoryId: z.string().uuid(), na
 
 export const idSchema = z.string().uuid();
 
+// Connecting a company's Google Play app (improvement B, step 1). The key file
+// itself is checked by parseServiceAccount (src/lib/play/review.ts).
+export const playConnectSchema = z.object({
+  organizationId: z.string().uuid(),
+  slug: z.string().regex(/^[a-z0-9-]{1,63}$/),
+  packageName: z
+    .string()
+    .trim()
+    .max(150, "Use the app's package name, for example com.example.shop.")
+    .regex(/^[A-Za-z][A-Za-z0-9_]*(\.[A-Za-z][A-Za-z0-9_]*)+$/, "Use the app's package name, for example com.example.shop."),
+  serviceAccountKey: z.string().max(20_000, "That file is too large to be a service account key.").min(1, "Paste the service account key."),
+});
+
 // Adding or removing one person in one team (improvement F).
 export const teamMemberSchema = z.object({
   organizationId: z.string().uuid(),
