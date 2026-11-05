@@ -11,6 +11,8 @@ import { RecordFirstResponseButton } from "@/components/issues/record-response-b
 import { AcknowledgeForm } from "@/components/escalations/escalation-forms";
 import { DeleteIssueForm } from "@/components/data/data-forms";
 import { EscalationBadge } from "@/components/escalations/escalation-badge";
+import { SameProblemButton, UnlinkButton } from "@/components/issues/similar-issues";
+import { reportedTimes, similarityLabel } from "@/lib/similar";
 import { deadlines } from "@/lib/targets";
 import { escalationConditionLabels, openEscalationLevel } from "@/lib/escalations";
 import { aiServiceStatus } from "@/lib/ai";
@@ -18,6 +20,7 @@ import { requireUser } from "@/lib/auth";
 import {
   getAiEnabled,
   getIssue,
+  getIssueLinks,
   getLatestAnalysis,
   getMembershipBySlug,
   getOrganizationSettings,
@@ -25,6 +28,7 @@ import {
   listIssueActivity,
   listIssueEscalations,
   listMembers,
+  listSimilarIssues,
   listRoutingRules,
   listTeams,
   toRoutable,
@@ -54,7 +58,7 @@ export default async function IssuePage({
   const orgId = membership.organization.id;
   const issue = await getIssue(orgId, issueId);
   if (!issue) notFound();
-  const [activity, members, teams, categories, analysis, aiEnabled, settings, escalations] = await Promise.all([
+  const [activity, members, teams, categories, analysis, aiEnabled, settings, escalations, links, similar] = await Promise.all([
     listIssueActivity(orgId, issueId),
     listMembers(orgId),
     listTeams(orgId),
@@ -63,6 +67,10 @@ export default async function IssuePage({
     getAiEnabled(orgId),
     getOrganizationSettings(orgId),
     listIssueEscalations(orgId, issueId),
+    // Null when the database change for similar issues isn't applied yet: the
+    // rest of the page still loads.
+    getIssueLinks(orgId, issueId).catch(() => null),
+    listSimilarIssues(issueId).catch(() => null),
   ]);
   const escalationLevel = openEscalationLevel(escalations);
   // Worked out on the server with the server's clock, never the browser's.
@@ -216,6 +224,82 @@ export default async function IssuePage({
                 </div>
               )}
             </div>
+          </Card>
+          <Card
+            title="Similar issues"
+            description="Issues from your company whose subject and message look alike: open, or resolved in the last 30 days. Matched by words, not meaning."
+          >
+            {!links || !similar ? (
+              <p className="text-sm text-slate-500" data-testid="similar-unavailable">
+                Similar issues will appear after the database update.
+              </p>
+            ) : (
+              <div className="space-y-4 text-sm">
+                {links.main && (
+                  <div className="flex flex-wrap items-center justify-between gap-2 rounded-lg bg-slate-50 p-3" data-testid="duplicate-of">
+                    <p className="text-slate-700">
+                      Same problem as{" "}
+                      <Link href={`/w/${slug}/issues/${links.main.id}`} className="font-medium text-brand-700 hover:underline">
+                        {links.main.reference}
+                      </Link>
+                      : {links.main.subject}
+                    </p>
+                    <UnlinkButton issueId={issue.id} />
+                  </div>
+                )}
+                {links.reports.length > 0 && (
+                  <div data-testid="linked-reports">
+                    <p className="font-medium text-slate-900">{reportedTimes(links.reports.length)}</p>
+                    <ul className="mt-1 space-y-1">
+                      {links.reports.map((r) => (
+                        <li key={r.id} className="text-slate-600">
+                          <Link href={`/w/${slug}/issues/${r.id}`} className="font-medium text-brand-700 hover:underline">
+                            {r.reference}
+                          </Link>{" "}
+                          · {r.subject} · {formatDateTime(r.receivedAt)}
+                        </li>
+                      ))}
+                    </ul>
+                  </div>
+                )}
+                {similar.length === 0 ? (
+                  <p className="text-slate-500" data-testid="similar-none">
+                    No similar issues found.
+                  </p>
+                ) : (
+                  <>
+                    {links.reports.length > 0 && (
+                      <p className="text-xs text-slate-500">
+                        Other reports are linked to this issue, so it can&apos;t be linked to another one. Open a match below to
+                        link it to this issue instead.
+                      </p>
+                    )}
+                    <ul className="divide-y divide-slate-100" data-testid="similar-issues">
+                      {similar.map((m) => (
+                        <li key={m.id} className="flex flex-wrap items-center gap-3 py-2" data-testid="similar-issue">
+                          <div className="min-w-0 flex-1">
+                            <p className="truncate text-slate-800">
+                              <Link href={`/w/${slug}/issues/${m.id}`} className="font-medium text-brand-700 hover:underline">
+                                {m.reference}
+                              </Link>{" "}
+                              · {m.subject}
+                            </p>
+                            <p className="text-xs text-slate-500">
+                              {similarityLabel(m.score)} · received {formatDateTime(m.receivedAt)}
+                              {m.duplicateOf && " · a report of another issue"}
+                            </p>
+                          </div>
+                          <StatusBadge status={m.status} />
+                          {links.reports.length === 0 && (
+                            <SameProblemButton issueId={issue.id} mainId={m.id} mainReference={m.reference} />
+                          )}
+                        </li>
+                      ))}
+                    </ul>
+                  </>
+                )}
+              </div>
+            )}
           </Card>
         </div>
 

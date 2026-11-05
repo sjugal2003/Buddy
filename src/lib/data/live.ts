@@ -158,7 +158,9 @@ export interface IssueActivity {
     | "reopened"
     | "escalation_acknowledged"
     | "routing_applied"
-    | "routing_dismissed";
+    | "routing_dismissed"
+    | "duplicate_linked"
+    | "duplicate_unlinked";
   fromValue: string | null;
   toValue: string | null;
   actorName: string | null;
@@ -1152,4 +1154,109 @@ export async function getIssueReport(
     return { error: "Could not count the report. Please try again." };
   }
   return { report: parsed.data };
+}
+
+// ---------------------------------------------------------------------------
+// Similar issues and "same problem" links (improvement D, step 1)
+// ---------------------------------------------------------------------------
+// Read apart from the issue itself, so the issue page and the Issues list
+// still load when the database change (20261107090000) is not applied yet:
+// these throw, and the pages catch it.
+
+export interface IssueLinkSummary {
+  id: string;
+  reference: string;
+  subject: string;
+  status: IssueStatus;
+  receivedAt: string;
+}
+
+export interface IssueLinks {
+  /** The main issue this one is another report of, or null. */
+  main: IssueLinkSummary | null;
+  /** The issues linked to this one as other reports of the same problem, oldest first. */
+  reports: IssueLinkSummary[];
+}
+
+export interface SimilarIssue extends IssueLinkSummary {
+  /** Between 0 and 1. */
+  score: number;
+  /** Set when the match is itself a report of another issue. */
+  duplicateOf: string | null;
+}
+
+const LINK_COLUMNS = "id, reference, subject, status, received_at";
+
+function toLinkSummary(row: { id: string; reference: string; subject: string; status: string; received_at: string }): IssueLinkSummary {
+  return { id: row.id, reference: row.reference, subject: row.subject, status: row.status as IssueStatus, receivedAt: row.received_at };
+}
+
+export async function getIssueLinks(organizationId: string, issueId: string): Promise<IssueLinks> {
+  const supabase = await createClient();
+  const [own, reports] = await Promise.all([
+    supabase.from("issues").select("duplicate_of").eq("organization_id", organizationId).eq("id", issueId).maybeSingle(),
+    supabase
+      .from("issues")
+      .select(LINK_COLUMNS)
+      .eq("organization_id", organizationId)
+      .eq("duplicate_of", issueId)
+      .order("received_at", { ascending: true })
+      .order("id", { ascending: true })
+      .limit(200),
+  ]);
+  const error = own.error ?? reports.error;
+  if (error) {
+    console.error("[getIssueLinks]", error.code, error.message);
+    throw new Error("Could not load the issue's links.");
+  }
+  let main: IssueLinkSummary | null = null;
+  const mainId = (own.data as { duplicate_of: string | null } | null)?.duplicate_of;
+  if (mainId) {
+    const { data, error: mainError } = await supabase
+      .from("issues")
+      .select(LINK_COLUMNS)
+      .eq("organization_id", organizationId)
+      .eq("id", mainId)
+      .maybeSingle();
+    if (mainError) {
+      console.error("[getIssueLinks]", mainError.code, mainError.message);
+      throw new Error("Could not load the issue's links.");
+    }
+    if (data) main = toLinkSummary(data);
+  }
+  return { main, reports: (reports.data ?? []).map(toLinkSummary) };
+}
+
+export async function listSimilarIssues(issueId: string): Promise<SimilarIssue[]> {
+  const supabase = await createClient();
+  const { data, error } = await supabase.rpc("similar_issues", { p_issue_id: issueId });
+  if (error) {
+    console.error("[listSimilarIssues]", error.code, error.message);
+    throw new Error("Could not look for similar issues.");
+  }
+  return ((data ?? []) as { id: string; reference: string; subject: string; status: string; received_at: string; duplicate_of: string | null; score: number }[]).map(
+    (row) => ({ ...toLinkSummary(row), score: Number(row.score), duplicateOf: row.duplicate_of }),
+  );
+}
+
+/** How many reports are linked to each of the given issues (only those with any). */
+export async function countLinkedReports(organizationId: string, issueIds: string[]): Promise<Map<string, number>> {
+  const counts = new Map<string, number>();
+  if (issueIds.length === 0) return counts;
+  const supabase = await createClient();
+  const batches = [];
+  for (let i = 0; i < issueIds.length; i += 100) batches.push(issueIds.slice(i, i + 100));
+  const results = await Promise.all(
+    batches.map((ids) =>
+      supabase.from("issues").select("duplicate_of").eq("organization_id", organizationId).in("duplicate_of", ids).limit(10000),
+    ),
+  );
+  for (const { data, error } of results) {
+    if (error) {
+      console.error("[countLinkedReports]", error.code, error.message);
+      throw new Error("Could not load linked reports.");
+    }
+    for (const row of (data ?? []) as { duplicate_of: string }[]) counts.set(row.duplicate_of, (counts.get(row.duplicate_of) ?? 0) + 1);
+  }
+  return counts;
 }

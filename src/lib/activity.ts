@@ -41,6 +41,13 @@ export function describeActivity(event: Pick<IssueActivity, "kind" | "fromValue"
       return `Moved to team ${event.toValue ?? ""} by routing rule “${event.fromValue ?? ""}”`;
     case "routing_dismissed":
       return "Routing suggestion dismissed";
+    case "duplicate_linked":
+      // to_value is the main issue's reference, from_value the previous one (if any).
+      return event.fromValue
+        ? `Linked to ${event.toValue ?? ""} as the same problem (was ${event.fromValue})`
+        : `Linked to ${event.toValue ?? ""} as the same problem`;
+    case "duplicate_unlinked":
+      return event.fromValue ? `Unlinked from ${event.fromValue}` : "Unlinked from its main issue";
     case "escalation_acknowledged": {
       const what = isEscalationCondition(event.fromValue) ? ` (${escalationConditionLabels[event.fromValue]})` : "";
       return `Escalation acknowledged${what}${event.toValue ? `: “${event.toValue}”` : ""}`;

@@ -17,6 +17,7 @@ import {
   ISSUE_PAGE_SIZE,
   listIssues,
   listTeams,
+  countLinkedReports,
   listUnacknowledgedEscalationIssueIds,
   needsDeadlineScan,
   openEscalationLevels,
@@ -26,6 +27,7 @@ import { channelLabels, statusLabels, statusOrder, urgencyLabels, urgencyOrder }
 import { formatDateTime } from "@/lib/format";
 import { issueFiltersSchema } from "@/lib/validation";
 import { FormMessage } from "@/components/auth/auth-card";
+import { reportsBadge } from "@/lib/similar";
 
 export const dynamic = "force-dynamic";
 
@@ -114,10 +116,12 @@ export default async function IssuesPage({
   const hasPrevious = filters.page > 1;
   const base = `/w/${slug}/issues`;
   const range = pageRange(filters.page, ISSUE_PAGE_SIZE, issues.length);
-  const escalationLevels = await openEscalationLevels(
-    membership.organization.id,
-    issues.map((x) => x.issue.id),
-  );
+  const pageIds = issues.map((x) => x.issue.id);
+  const [escalationLevels, linkedReports] = await Promise.all([
+    openEscalationLevels(membership.organization.id, pageIds),
+    // Empty when the database change for similar issues isn't applied yet.
+    countLinkedReports(membership.organization.id, pageIds).catch(() => new Map<string, number>()),
+  ]);
 
   return (
     <>
@@ -241,6 +245,14 @@ export default async function IssuesPage({
                     <div className="flex items-center gap-2">
                       <p className="truncate text-sm font-medium text-slate-900">{issue.subject}</p>
                       {issue.analysisSource === "ai" && <AiBadge />}
+                      {reportsBadge(linkedReports.get(issue.id) ?? 0) && (
+                        <span
+                          className="shrink-0 rounded-full bg-amber-50 px-2 py-0.5 text-xs font-medium text-amber-800"
+                          data-testid="reports-badge"
+                        >
+                          {reportsBadge(linkedReports.get(issue.id) ?? 0)}
+                        </span>
+                      )}
                     </div>
                     {/* The AI's summary is usually quicker to scan than the message itself. */}
                     <p className="mt-0.5 line-clamp-1 text-xs text-slate-500">

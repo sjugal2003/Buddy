@@ -56,6 +56,12 @@ Router, React 19, TypeScript strict, Tailwind v4). Full background:
   `BUDDY_PLAY_REAL=on`, which stays unset until real data is approved. Tests
   and CI use `BUDDY_PLAY_MODE=fake` (same `runsOnThisComputer()` guard); no
   test may contact Google.
+- Similar issues: matched only in the database (`public.similar_issues`,
+  `pg_trgm`, security invoker so RLS applies), never with AI. Only
+  `link_duplicate` / `unlink_duplicate` change `issues.duplicate_of` (one
+  level deep, same company, writes the history). Linking never changes an
+  issue's status, team or deadlines. The issue page and Issues list read links
+  and matches separately and must keep loading if the migration is missing.
 - Notifications: created only in the database (`private.notify_staff`,
   `private.notify_team` / `private.create_notification`, from triggers), in
   Buddy only, for owners and admins, plus a team's members (`team_members`)

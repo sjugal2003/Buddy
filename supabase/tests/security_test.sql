@@ -2244,6 +2244,131 @@ set local role authenticated;
 select tests.expect_error(format($q$select * from public.start_source_fetch(%L, 'google_play', 'security-test-ai-result-key')$q$,
   current_setting('t.org_a')), 'nothing to fetch after disconnecting');
 
+-- ---------------------------------------------------------------------------
+-- Similar issues and "same problem" links (improvement D, step 1)
+-- ---------------------------------------------------------------------------
+
+reset role;
+-- Made-up issues: look-alike payment problems and an unrelated one in A, an
+-- old resolved look-alike in A, and a look-alike in B.
+with x as (insert into public.issues (organization_id, reference, customer_name, channel, subject, message)
+  values (current_setting('t.org_a')::uuid, 'SIM-1', 'Made-up One', 'email', 'Payment failed but I was charged',
+          'My card was charged but the order never went through.') returning id)
+select set_config('t.sim1', id::text, true) from x;
+with x as (insert into public.issues (organization_id, reference, customer_name, channel, subject, message)
+  values (current_setting('t.org_a')::uuid, 'SIM-2', 'Made-up Two', 'live_chat', 'Payment failed, charged twice',
+          'Payment failed and I was charged, but there is no order.') returning id)
+select set_config('t.sim2', id::text, true) from x;
+with x as (insert into public.issues (organization_id, reference, customer_name, channel, subject, message)
+  values (current_setting('t.org_a')::uuid, 'SIM-3', 'Made-up Three', 'email', 'Payment failed and I was charged',
+          'I was charged but my order did not go through.') returning id)
+select set_config('t.sim3', id::text, true) from x;
+with x as (insert into public.issues (organization_id, reference, customer_name, channel, subject, message)
+  values (current_setting('t.org_a')::uuid, 'SIM-4', 'Made-up Four', 'email', 'Search is very slow',
+          'Looking for products takes ages.') returning id)
+select set_config('t.sim4', id::text, true) from x;
+with x as (insert into public.issues (organization_id, reference, customer_name, channel, subject, message, status)
+  values (current_setting('t.org_a')::uuid, 'SIM-OLD', 'Made-up Old', 'email', 'Payment failed but I was charged',
+          'My card was charged but the order never went through.', 'resolved') returning id)
+select set_config('t.sim_old', id::text, true) from x;
+update public.issues set resolved_at = now() - interval '40 days' where id = current_setting('t.sim_old')::uuid;
+with x as (insert into public.issues (organization_id, reference, customer_name, channel, subject, message)
+  values (current_setting('t.org_b')::uuid, 'SIM-B', 'Made-up B', 'email', 'Payment failed but I was charged',
+          'My card was charged but the order never went through.') returning id)
+select set_config('t.sim_b', id::text, true) from x;
+set local role authenticated;
+
+select tests.act_as(current_setting('t.a_member')::uuid);
+select tests.expect_rows(format($q$select 1 from public.similar_issues(%L) where id in (%L, %L)$q$,
+  current_setting('t.sim1'), current_setting('t.sim2'), current_setting('t.sim3')), 2,
+  'a member of A sees the look-alike issues of their company');
+select tests.expect_rows(format($q$select 1 from public.similar_issues(%L) where id = %L$q$,
+  current_setting('t.sim1'), current_setting('t.sim4')), 0, 'an unrelated issue is not similar');
+select tests.expect_rows(format($q$select 1 from public.similar_issues(%L) where id = %L$q$,
+  current_setting('t.sim1'), current_setting('t.sim1')), 0, 'an issue is not similar to itself');
+select tests.expect_rows(format($q$select 1 from public.similar_issues(%L) where id = %L$q$,
+  current_setting('t.sim1'), current_setting('t.sim_old')), 0, 'issues resolved over 30 days ago are left out');
+select tests.expect_rows(format($q$select 1 from public.similar_issues(%L) where id = %L$q$,
+  current_setting('t.sim1'), current_setting('t.sim_b')), 0, 'another company''s look-alike issue is never shown');
+select tests.expect_rows(format($q$select 1 from public.similar_issues(%L) where not (score > 0 and score <= 1)$q$,
+  current_setting('t.sim1')), 0, 'each match has a score between 0 and 1');
+
+select tests.act_as(current_setting('t.b_owner')::uuid);
+select tests.expect_rows(format($q$select 1 from public.similar_issues(%L)$q$, current_setting('t.sim1')), 0,
+  'owner B sees no matches for company A''s issue');
+select tests.expect_error(format($q$select public.link_duplicate(%L, %L)$q$, current_setting('t.sim2'), current_setting('t.sim1')),
+  'owner B cannot link company A''s issues');
+select tests.expect_error(format($q$select public.link_duplicate(%L, %L)$q$, current_setting('t.sim_b'), current_setting('t.sim1')),
+  'owner B cannot link their issue to company A''s');
+select tests.expect_error(format($q$select public.unlink_duplicate(%L)$q$, current_setting('t.sim1')),
+  'owner B cannot unlink company A''s issues');
+
+select tests.act_as(null);
+set local role anon;
+select tests.expect_error(format($q$select * from public.similar_issues(%L)$q$, current_setting('t.sim1')),
+  'signed-out visitors cannot look for similar issues');
+select tests.expect_error(format($q$select public.link_duplicate(%L, %L)$q$, current_setting('t.sim2'), current_setting('t.sim1')),
+  'signed-out visitors cannot link issues');
+set local role authenticated;
+
+select tests.act_as(current_setting('t.a_member')::uuid);
+select tests.expect_error(format($q$update public.issues set duplicate_of = %L where id = %L$q$,
+  current_setting('t.sim1'), current_setting('t.sim2')), 'nobody can set duplicate_of directly');
+select tests.expect_error(format($q$select public.link_duplicate(%L, %L)$q$, current_setting('t.sim1'), current_setting('t.sim1')),
+  'an issue cannot be linked to itself');
+select tests.expect_error(format($q$select public.link_duplicate(%L, %L)$q$, current_setting('t.sim1'), current_setting('t.sim_b')),
+  'an issue cannot be linked to another company''s issue');
+select tests.expect_rows(format($q$select 1 where public.link_duplicate(%L, %L) = 'SIM-1'$q$,
+  current_setting('t.sim2'), current_setting('t.sim1')), 1, 'a member of A links SIM-2 to SIM-1');
+select tests.expect_rows(format($q$select 1 from public.issue_activity where issue_id = %L and kind = 'duplicate_linked'
+  and to_value = 'SIM-1' and actor_id = %L$q$, current_setting('t.sim2'), current_setting('t.a_member')), 1,
+  'the link is written to the issue''s history');
+select tests.expect_rows(format($q$select 1 from public.issues where id = %L and status = 'new' and team_id is null$q$,
+  current_setting('t.sim2')), 1, 'linking does not change the status or team');
+select tests.expect_error(format($q$select public.link_duplicate(%L, %L)$q$, current_setting('t.sim2'), current_setting('t.sim1')),
+  'linking the same pair again is refused');
+select tests.expect_error(format($q$select public.link_duplicate(%L, %L)$q$, current_setting('t.sim1'), current_setting('t.sim2')),
+  'the main issue cannot be linked back to its own report (no loops)');
+-- Linking to a report goes to its main issue instead (one level, no chains).
+select tests.expect_rows(format($q$select 1 where public.link_duplicate(%L, %L) = 'SIM-1'$q$,
+  current_setting('t.sim3'), current_setting('t.sim2')), 1, 'linking to a report links to its main issue');
+select tests.expect_rows(format($q$select 1 from public.issues where id = %L and duplicate_of = %L$q$,
+  current_setting('t.sim3'), current_setting('t.sim1')), 1, 'so links stay one level deep');
+select tests.expect_error(format($q$select public.link_duplicate(%L, %L)$q$, current_setting('t.sim1'), current_setting('t.sim4')),
+  'an issue with reports linked to it cannot become a report itself');
+select tests.expect_rows(format($q$select 1 from public.similar_issues(%L) where id in (%L, %L)$q$,
+  current_setting('t.sim1'), current_setting('t.sim2'), current_setting('t.sim3')), 0,
+  'issues already linked are not suggested again');
+
+select tests.act_as(current_setting('t.b_owner')::uuid);
+select tests.expect_rows(format($q$select 1 from public.issues where duplicate_of = %L$q$, current_setting('t.sim1')), 0,
+  'owner B cannot see company A''s links');
+
+select tests.act_as(current_setting('t.a_member')::uuid);
+select tests.expect_rows(format($q$select 1 where public.unlink_duplicate(%L)$q$, current_setting('t.sim3')), 1,
+  'a member unlinks SIM-3');
+select tests.expect_rows(format($q$select 1 from public.issue_activity where issue_id = %L and kind = 'duplicate_unlinked'
+  and from_value = 'SIM-1'$q$, current_setting('t.sim3')), 1, 'the unlink is written to the history');
+select tests.expect_rows(format($q$select 1 where not public.unlink_duplicate(%L)$q$, current_setting('t.sim3')), 1,
+  'unlinking an issue with no link changes nothing');
+
+-- Deleting the main issue clears the links to it.
+select tests.act_as(current_setting('t.a_owner')::uuid);
+select public.delete_issue(current_setting('t.sim1')::uuid);
+select tests.expect_rows(format($q$select 1 from public.issues where id = %L and duplicate_of is null$q$,
+  current_setting('t.sim2')), 1, 'deleting the main issue clears the links to it');
+
+-- Linking is limited like other repeated actions.
+reset role;
+insert into private.rate_limit_events (user_id, action, created_at)
+select current_setting('t.a_member')::uuid, 'duplicate_link', now() - interval '1 minute' from generate_series(1, 200);
+set local role authenticated;
+select tests.act_as(current_setting('t.a_member')::uuid);
+select tests.expect_error(format($q$select public.link_duplicate(%L, %L)$q$, current_setting('t.sim3'), current_setting('t.sim2')),
+  'linking is limited to 200 changes an hour');
+select tests.expect_rows(format($q$select 1 from public.issues where id = %L and duplicate_of is null$q$,
+  current_setting('t.sim3')), 1, 'a refused link changes nothing');
+
 reset role;
 select current_setting('tests.passed') || ' security checks passed' as result;
 
