@@ -91,3 +91,18 @@ describe("reportFileName", () => {
     expect(reportFileName("acme", "2025-01-01", "2025-01-31")).toBe("buddy-report-acme-2025-01-01-to-2025-01-31.csv");
   });
 });
+
+describe("reportToCsv: repeated problems", () => {
+  it("lists repeated problems, with subjects made safe", () => {
+    const csv = reportToCsv(
+      { ...report, repeated: [{ id: "x", reference: "ISS-1", subject: "=Payment, failed", status: "new", in_period: 3, total: 4 }] },
+      { companyName: "Acme", generatedAt: "now" },
+    ).split("\r\n");
+    expect(csv).toContain("Repeated problems,Issue,Subject,Reports in this period,Reports in total");
+    expect(csv).toContain(`Repeated problems,ISS-1,"'=Payment, failed",3,4`);
+  });
+
+  it("leaves the section out when the database doesn't send it yet", () => {
+    expect(lines().some((line) => line.startsWith("Repeated problems"))).toBe(false);
+  });
+});

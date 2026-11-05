@@ -7,6 +7,7 @@ import type { EscalationCondition } from "@/lib/escalations";
 import type { DashboardIssue } from "@/lib/dashboard";
 import { isNotificationKind, NOTIFICATION_LIST_LIMIT, type NotificationKind } from "@/lib/notifications";
 import { friendlyError } from "@/lib/errors";
+import { mostReported } from "@/lib/similar";
 import { issueReportSchema, type IssueReport } from "@/lib/reports";
 import type { DeletionKind, DeletionLogEntry } from "@/lib/data-retention";
 import type { ScheduledJob } from "@/lib/scheduled-jobs";
@@ -1259,4 +1260,39 @@ export async function countLinkedReports(organizationId: string, issueIds: strin
     for (const row of (data ?? []) as { duplicate_of: string }[]) counts.set(row.duplicate_of, (counts.get(row.duplicate_of) ?? 0) + 1);
   }
   return counts;
+}
+
+/**
+ * The open main issues with the most linked reports, for the workspace home.
+ * Throws when the database change for similar issues isn't applied yet; the
+ * page then leaves the card out.
+ */
+export async function listMostReportedOpen(organizationId: string, limit = 5): Promise<(IssueLinkSummary & { reports: number })[]> {
+  const supabase = await createClient();
+  const { data, error } = await supabase
+    .from("issues")
+    .select("duplicate_of")
+    .eq("organization_id", organizationId)
+    .not("duplicate_of", "is", null)
+    .limit(5000);
+  if (error) {
+    console.error("[listMostReportedOpen]", error.code, error.message);
+    throw new Error("Could not load repeated problems.");
+  }
+  const counts = new Map<string, number>();
+  for (const row of (data ?? []) as { duplicate_of: string }[]) counts.set(row.duplicate_of, (counts.get(row.duplicate_of) ?? 0) + 1);
+  if (counts.size === 0) return [];
+  // The 100 most reported are enough to find 5 that are still open.
+  const candidates = [...counts.entries()].sort((a, b) => b[1] - a[1]).slice(0, 100).map(([id]) => id);
+  const mains = await supabase
+    .from("issues")
+    .select(LINK_COLUMNS)
+    .eq("organization_id", organizationId)
+    .neq("status", "resolved")
+    .in("id", candidates);
+  if (mains.error) {
+    console.error("[listMostReportedOpen]", mains.error.code, mains.error.message);
+    throw new Error("Could not load repeated problems.");
+  }
+  return mostReported(counts, (mains.data ?? []).map(toLinkSummary), limit);
 }

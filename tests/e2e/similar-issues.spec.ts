@@ -113,6 +113,10 @@ test("Issue pages still load without the similar-issues database change", async 
     await p.goto(`/w/${slug}/issues?status=all`);
     await expect(p.getByTestId("issue-row")).toHaveCount(1);
     await expect(p.getByTestId("reports-badge")).toHaveCount(0);
+    // The Overview's "Most reported open problems" card is simply left out.
+    await p.goto(`/w/${slug}`);
+    await expect(p.getByRole("heading", { name: "Missing Co" })).toBeVisible();
+    await expect(p.getByTestId("most-reported")).toHaveCount(0);
   } finally {
     await client.query("alter table public.issues rename column duplicate_of_hidden to duplicate_of").catch(() => {});
     await client.query("alter function public.similar_issues_hidden(uuid) rename to similar_issues").catch(() => {});

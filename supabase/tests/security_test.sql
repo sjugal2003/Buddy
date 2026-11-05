@@ -2369,6 +2369,78 @@ select tests.expect_error(format($q$select public.link_duplicate(%L, %L)$q$, cur
 select tests.expect_rows(format($q$select 1 from public.issues where id = %L and duplicate_of is null$q$,
   current_setting('t.sim3')), 1, 'a refused link changes nothing');
 
+-- ---------------------------------------------------------------------------
+-- Repeated problems (improvement D, step 2)
+-- ---------------------------------------------------------------------------
+
+reset role;
+insert into public.teams (organization_id, name) values (current_setting('t.org_a')::uuid, 'A Team R');
+select set_config('t.team_r', (select id::text from public.teams where name = 'A Team R'), true);
+insert into public.team_members (organization_id, team_id, user_id)
+values (current_setting('t.org_a')::uuid, current_setting('t.team_r')::uuid, current_setting('t.a_member')::uuid);
+with x as (insert into public.issues (organization_id, reference, customer_name, channel, subject, message, team_id)
+  values (current_setting('t.org_a')::uuid, 'REP-MAIN', 'Made-up Main', 'email', 'App crashes on checkout',
+          'Made-up test issue.', current_setting('t.team_r')::uuid) returning id)
+select set_config('t.rep_main', id::text, true) from x;
+with x as (insert into public.issues (organization_id, reference, customer_name, channel, subject, message)
+  select current_setting('t.org_a')::uuid, 'REP-' || n, 'Made-up Report', 'email', 'App crashes on checkout', 'Made-up test issue.'
+  from generate_series(1, 4) n returning id, reference)
+select set_config('t.' || lower(replace(reference, '-', '_')), id::text, true) from x;
+-- Whoever ends up an owner or admin of A, plus Team R's member.
+select set_config('t.rep_people', (select count(distinct u)::text from (
+  select m.user_id as u from public.organization_members m
+  where m.organization_id = current_setting('t.org_a')::uuid and m.role in ('owner', 'admin')
+  union select current_setting('t.a_member')::uuid) p), true);
+set local role authenticated;
+
+select tests.act_as(current_setting('t.a_owner')::uuid);
+select tests.expect_error(format($q$select private.issue_report_base(%L, current_date - 2, current_date + 2)$q$,
+  current_setting('t.org_a')), 'the inner report function cannot be called directly');
+select public.link_duplicate(current_setting('t.rep_1')::uuid, current_setting('t.rep_main')::uuid);
+reset role;
+select tests.expect_rows($q$select 1 from public.notifications where kind = 'repeated_problem'$q$, 0,
+  'no notification at 2 reports');
+set local role authenticated;
+select public.link_duplicate(current_setting('t.rep_2')::uuid, current_setting('t.rep_main')::uuid);
+reset role;
+select tests.expect_rows(format($q$select 1 from (select count(*) n from public.notifications
+  where kind = 'repeated_problem' and issue_id = %L and title = 'REP-MAIN has been reported 3 times.') c where c.n = %s$q$,
+  current_setting('t.rep_main'), current_setting('t.rep_people')), 1,
+  'at 3 reports, owners, admins and the team''s members are notified once each');
+select tests.expect_rows(format($q$select 1 from public.notifications where kind = 'repeated_problem'
+  and organization_id <> %L$q$, current_setting('t.org_a')), 0, 'nobody outside the company is notified');
+set local role authenticated;
+-- Unlinking and linking again does not repeat it; a 4th report sends nothing new.
+select public.unlink_duplicate(current_setting('t.rep_2')::uuid);
+select public.link_duplicate(current_setting('t.rep_2')::uuid, current_setting('t.rep_main')::uuid);
+select public.link_duplicate(current_setting('t.rep_3')::uuid, current_setting('t.rep_main')::uuid);
+reset role;
+select tests.expect_rows(format($q$select 1 from (select count(*) n from public.notifications
+  where kind = 'repeated_problem' and issue_id = %L) c where c.n = %s$q$,
+  current_setting('t.rep_main'), current_setting('t.rep_people')), 1, 'relinking or a 4th report does not notify again');
+set local role authenticated;
+select public.link_duplicate(current_setting('t.rep_4')::uuid, current_setting('t.rep_main')::uuid);
+reset role;
+select tests.expect_rows(format($q$select 1 from public.notifications where kind = 'repeated_problem' and issue_id = %L
+  and title = 'REP-MAIN has been reported 5 times.'$q$, current_setting('t.rep_main')), current_setting('t.rep_people')::int,
+  'at 5 reports they are notified again');
+set local role authenticated;
+
+-- The report lists it, for its company only.
+select tests.expect_rows(format($q$select 1 from jsonb_array_elements(public.issue_report(%L, current_date - 2, current_date + 2) -> 'repeated') r
+  where r ->> 'reference' = 'REP-MAIN' and (r ->> 'in_period')::int = 5 and (r ->> 'total')::int = 5
+  and r ->> 'subject' = 'App crashes on checkout'$q$, current_setting('t.org_a')), 1,
+  'the report lists the repeated problem with its counts');
+select tests.expect_rows(format($q$select 1 from jsonb_array_elements(public.issue_report(%L, '2025-01-01', '2025-01-31') -> 'repeated')$q$,
+  current_setting('t.org_a')), 0, 'a period with no reports lists none');
+select tests.expect_rows(format($q$select 1 where public.issue_report(%L, current_date - 2, current_date + 2) ? 'totals'$q$,
+  current_setting('t.org_a')), 1, 'the rest of the report is still there');
+select tests.act_as(current_setting('t.b_owner')::uuid);
+select tests.expect_rows(format($q$select 1 from jsonb_array_elements(public.issue_report(%L, current_date - 2, current_date + 2) -> 'repeated')
+  r where r ->> 'reference' like 'REP-%%'$q$, current_setting('t.org_b')), 0, 'another company''s report never lists them');
+select tests.expect_error(format($q$select public.issue_report(%L, current_date - 2, current_date + 2)$q$, current_setting('t.org_a')),
+  'owner B cannot read company A''s report');
+
 reset role;
 select current_setting('tests.passed') || ' security checks passed' as result;
 
