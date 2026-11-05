@@ -153,7 +153,7 @@ export default async function LiveWorkspaceHome({ params }: { params: Promise<{ 
             hint="Resolution timer paused"
           />
           <Link
-            href={`${issuesHref}?status=all`}
+            href={`${issuesHref}?status=all&week=1`}
             data-testid="card-week"
             className="block rounded-xl border border-slate-200 bg-white p-4 shadow-sm hover:border-brand-300 hover:bg-brand-50/40 sm:col-span-2"
           >

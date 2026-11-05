@@ -154,6 +154,11 @@ export const issueFiltersSchema = z.object({
   // "open": has an escalation nobody has acknowledged.
   escalated: z.enum(["", "open"]).catch(""),
   sort: z.enum(["", "attention"]).catch(""),
+  // "1": opened or resolved since Monday 00:00 in the company's time zone,
+  // the same rule as the workspace home's "This week" card.
+  week: z.enum(["", "1"]).catch(""),
+  // Which page of the list (see ISSUE_PAGE_SIZE). Anything odd is page 1.
+  page: z.coerce.number().int().min(1).max(1000).catch(1),
   // Only plain characters, so the search can't change the database query.
   q: z
     .string()

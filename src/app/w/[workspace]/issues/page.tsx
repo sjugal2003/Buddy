@@ -6,17 +6,19 @@ import { AiBadge, StatusBadge, UrgencyBadge, SentimentBadge } from "@/components
 import { DeadlineBadge } from "@/components/issues/deadline-badge";
 import { EscalationBadge } from "@/components/escalations/escalation-badge";
 import { compareAttention, deadlines, isOverdue, nextDeadline } from "@/lib/targets";
-import { DUE_WITHIN_MS, isDueWithin } from "@/lib/dashboard";
+import { DUE_WITHIN_MS, isDueWithin, startOfWeek } from "@/lib/dashboard";
+import { issueListHref, pageRange } from "@/lib/paging";
 import { inputClass, primaryButton, secondaryButton } from "@/components/ui/form";
 import { requireUser } from "@/lib/auth";
 import {
   DEADLINE_SCAN_LIMIT,
   getMembershipBySlug,
   getOrganizationSettings,
-  ISSUE_LIST_LIMIT,
+  ISSUE_PAGE_SIZE,
   listIssues,
   listTeams,
   listUnacknowledgedEscalationIssueIds,
+  needsDeadlineScan,
   openEscalationLevels,
   type LiveTeam,
 } from "@/lib/data/live";
@@ -64,12 +66,19 @@ export default async function IssuesPage({
     due: raw.due,
     escalated: raw.escalated,
     sort: raw.sort,
+    week: raw.week,
+    page: raw.page,
     q: raw.q,
   });
+  // Deadlines and "This week" use the server's clock and the company's settings.
+  const now = new Date();
+  const settingsLoad = getOrganizationSettings(membership.organization.id);
+  // Monday 00:00 in the company's time zone, as on the workspace home's "This week" card.
+  const since = filters.week ? startOfWeek(now, (await settingsLoad).timezone) : null;
   const [rows, teams, settings, escalatedIds] = await Promise.all([
-    listIssues(membership.organization.id, filters),
+    listIssues(membership.organization.id, filters, since),
     listTeams(membership.organization.id),
-    getOrganizationSettings(membership.organization.id),
+    settingsLoad,
     filters.escalated ? listUnacknowledgedEscalationIssueIds(membership.organization.id) : Promise.resolve(new Set<string>()),
   ]);
   const teamById = new Map(teams.map((t) => [t.id, t]));
@@ -79,10 +88,10 @@ export default async function IssuesPage({
     filters.team !== "" ||
     filters.due !== "" ||
     filters.escalated !== "" ||
+    filters.week !== "" ||
     filters.q !== "";
 
-  // Deadlines use the server's clock and the company's targets (src/lib/targets.ts).
-  const now = new Date();
+  // Deadlines use the company's targets (src/lib/targets.ts).
   const targets = { firstResponse: settings.targetHours, resolution: settings.resolutionHours };
   let withDeadlines = rows.map((issue) => ({ issue, urgency: issue.urgency, d: deadlines(issue, targets, now) }));
   if (filters.due === "overdue") withDeadlines = withDeadlines.filter((x) => x.issue.status !== "resolved" && isOverdue(x.d));
@@ -95,8 +104,16 @@ export default async function IssuesPage({
     withDeadlines = withDeadlines.filter((x) => x.issue.status !== "resolved" && isDueWithin(x.d, DUE_WITHIN_MS));
   if (filters.escalated === "open") withDeadlines = withDeadlines.filter((x) => escalatedIds.has(x.issue.id));
   if (filters.sort === "attention") withDeadlines = [...withDeadlines].sort(compareAttention);
-  const scanFull = (filters.due || filters.sort || filters.escalated) && rows.length === DEADLINE_SCAN_LIMIT;
-  const issues = withDeadlines.slice(0, ISSUE_LIST_LIMIT);
+  const scanned = needsDeadlineScan(filters);
+  const scanFull = scanned && rows.length === DEADLINE_SCAN_LIMIT;
+  // The database sent one page plus one issue, or (for deadline filters and
+  // sorting) every issue it checked, which is split into pages here.
+  const pageStart = scanned ? (filters.page - 1) * ISSUE_PAGE_SIZE : 0;
+  const issues = withDeadlines.slice(pageStart, pageStart + ISSUE_PAGE_SIZE);
+  const hasNext = withDeadlines.length > pageStart + ISSUE_PAGE_SIZE;
+  const hasPrevious = filters.page > 1;
+  const base = `/w/${slug}/issues`;
+  const range = pageRange(filters.page, ISSUE_PAGE_SIZE, issues.length);
   const escalationLevels = await openEscalationLevels(
     membership.organization.id,
     issues.map((x) => x.issue.id),
@@ -122,7 +139,7 @@ export default async function IssuesPage({
 
       <div className="rounded-xl border border-slate-200 bg-white shadow-sm">
         {/* A plain form: filters go in the address bar, so a filtered list can be bookmarked. */}
-        <form method="get" className="grid gap-2 border-b border-slate-200 p-4 sm:grid-cols-2 lg:grid-cols-[1fr_auto_auto_auto_auto_auto_auto_auto]">
+        <form method="get" className="grid gap-2 border-b border-slate-200 p-4 sm:grid-cols-2 lg:grid-cols-[1fr_auto_auto_auto_auto_auto_auto_auto_auto]">
           <div className="relative">
             <Search className="pointer-events-none absolute left-3 top-1/2 h-4 w-4 -translate-y-1/2 text-slate-400" aria-hidden />
             <input
@@ -162,6 +179,10 @@ export default async function IssuesPage({
             <option value="">Any escalation</option>
             <option value="open">Not acknowledged</option>
           </select>
+          <select name="week" defaultValue={filters.week} aria-label="When" className={inputClass}>
+            <option value="">Any time</option>
+            <option value="1">This week</option>
+          </select>
           <select name="sort" defaultValue={filters.sort} aria-label="Sort" className={inputClass}>
             <option value="">Newest first</option>
             <option value="attention">Needs attention first</option>
@@ -188,7 +209,14 @@ export default async function IssuesPage({
         </form>
 
         {issues.length === 0 ? (
-          filtered ? (
+          hasPrevious ? (
+            <p className="p-8 text-center text-sm text-slate-500" data-testid="issues-page-empty">
+              No issues on this page.{" "}
+              <Link href={issueListHref(base, filters, 1)} className="font-medium text-brand-700 hover:underline">
+                Go to the first page
+              </Link>
+            </p>
+          ) : filtered ? (
             <p className="p-8 text-center text-sm text-slate-500">No issues match these filters.</p>
           ) : (
             <div className="p-8 text-center">
@@ -243,10 +271,29 @@ export default async function IssuesPage({
             Deadlines were checked for the newest {DEADLINE_SCAN_LIMIT} matching issues. Narrow the filters to see older ones.
           </p>
         )}
-        {issues.length === ISSUE_LIST_LIMIT && (
-          <p className="border-t border-slate-100 px-4 py-3 text-xs text-slate-500">
-            Showing the newest {ISSUE_LIST_LIMIT}. Use search or filters to find older issues.
-          </p>
+        {issues.length > 0 && (hasPrevious || hasNext) && (
+          <nav
+            aria-label="Pages"
+            className="flex items-center justify-between gap-2 border-t border-slate-100 px-4 py-3 text-xs text-slate-500"
+          >
+            {hasPrevious ? (
+              <Link href={issueListHref(base, filters, filters.page - 1)} className={secondaryButton} rel="prev">
+                Previous
+              </Link>
+            ) : (
+              <span />
+            )}
+            <span data-testid="issues-page-info">
+              Page {filters.page} · issues {range.first} to {range.last}
+            </span>
+            {hasNext ? (
+              <Link href={issueListHref(base, filters, filters.page + 1)} className={secondaryButton} rel="next">
+                Next
+              </Link>
+            ) : (
+              <span />
+            )}
+          </nav>
         )}
       </div>
     </>

@@ -94,6 +94,8 @@ describe("issues", () => {
       due: "",
       escalated: "",
       sort: "",
+      week: "",
+      page: 1,
     });
     expect(issueFiltersSchema.parse({ due: "bogus", sort: "oldest" })).toMatchObject({ due: "", sort: "" });
     expect(issueFiltersSchema.parse({ due: "overdue", sort: "attention" })).toMatchObject({ due: "overdue", sort: "attention" });
@@ -105,6 +107,15 @@ describe("issues", () => {
     });
     expect(issueFiltersSchema.parse({ escalated: "all" }).escalated).toBe("");
     expect(issueFiltersSchema.parse({ status: "all", q: "  o'neil,(id.eq.1)*  " }).q).toBe("o'neil id.eq.1");
+  });
+
+  it("reads the page number and This week, falling back to page 1 and any time", () => {
+    expect(issueFiltersSchema.parse({ page: "3", week: "1" })).toMatchObject({ page: 3, week: "1" });
+    for (const bad of ["abc", "0", "-2", "2.5", "1001", "1e9", ""]) {
+      expect(issueFiltersSchema.parse({ page: bad }).page).toBe(1);
+    }
+    expect(issueFiltersSchema.parse({ page: "1000" }).page).toBe(1000);
+    expect(issueFiltersSchema.parse({ week: "yes" }).week).toBe("");
   });
 });
 
