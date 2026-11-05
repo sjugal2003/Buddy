@@ -2,7 +2,13 @@
 // Notifications page. Notifications are created only by the database; these
 // decide how one is labelled and where it links to.
 
-export type NotificationKind = "escalation" | "urgent_issue" | "import_problem" | "scheduler_failed" | "team_issue";
+export type NotificationKind =
+  | "escalation"
+  | "urgent_issue"
+  | "import_problem"
+  | "scheduler_failed"
+  | "team_issue"
+  | "repeated_problem";
 
 export const NOTIFICATION_KINDS: readonly NotificationKind[] = [
   "escalation",
@@ -10,6 +16,7 @@ export const NOTIFICATION_KINDS: readonly NotificationKind[] = [
   "import_problem",
   "scheduler_failed",
   "team_issue",
+  "repeated_problem",
 ];
 
 /** How many notifications the Notifications page shows. */
@@ -21,6 +28,7 @@ export const notificationKindLabels: Record<NotificationKind, string> = {
   import_problem: "Import",
   scheduler_failed: "Scheduled check",
   team_issue: "Your team",
+  repeated_problem: "Repeated problem",
 };
 
 export function isNotificationKind(value: string): value is NotificationKind {

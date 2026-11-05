@@ -138,6 +138,13 @@ export const issueReportSchema = z.object({
   imports: z.array(
     z.object({ source: z.string(), runs: count, failed: count, imported: count, skipped_duplicate: count, rejected: count }),
   ),
+  // Improvement D, step 2. Missing while the database change isn't applied
+  // yet; the page then says so instead of failing.
+  repeated: z
+    .array(
+      z.object({ id: z.string(), reference: z.string(), subject: z.string(), status: z.string(), in_period: count, total: count }),
+    )
+    .optional(),
 });
 
 export type IssueReport = z.infer<typeof issueReportSchema>;

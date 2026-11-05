@@ -10,12 +10,14 @@ import {
   getMembershipBySlug,
   getOrganizationSettings,
   listMembers,
+  listMostReportedOpen,
   listOpenInvitations,
   listOpenIssuesForDashboard,
   listRecentActivity,
   listUnacknowledgedEscalationIssueIds,
 } from "@/lib/data/live";
 import { describeActivity } from "@/lib/activity";
+import { reportedTimes } from "@/lib/similar";
 import { startOfWeek, summariseOpenIssues } from "@/lib/dashboard";
 import { formatDate, formatDateTimeIn } from "@/lib/format";
 
@@ -67,13 +69,15 @@ export default async function LiveWorkspaceHome({ params }: { params: Promise<{ 
   const now = new Date();
   const settings = await getOrganizationSettings(orgId);
   const weekStart = startOfWeek(now, settings.timezone);
-  const [members, invitations, openIssues, escalatedIds, week, recent] = await Promise.all([
+  const [members, invitations, openIssues, escalatedIds, week, recent, mostReported] = await Promise.all([
     listMembers(orgId),
     isAdmin ? listOpenInvitations(orgId) : Promise.resolve([]),
     listOpenIssuesForDashboard(orgId),
     listUnacknowledgedEscalationIssueIds(orgId),
     countIssuesSince(orgId, weekStart),
     listRecentActivity(orgId, RECENT_ACTIVITY),
+    // Empty (card hidden) when the database change for similar issues isn't applied yet.
+    listMostReportedOpen(orgId).catch(() => []),
   ]);
   const targets = { firstResponse: settings.targetHours, resolution: settings.resolutionHours };
   const counts = summariseOpenIssues(openIssues, targets, escalatedIds, now);
@@ -171,6 +175,28 @@ export default async function LiveWorkspaceHome({ params }: { params: Promise<{ 
           <p className="mt-2 text-xs text-slate-500">Counted over the newest {DEADLINE_SCAN_LIMIT} open issues.</p>
         )}
       </section>
+
+      {mostReported.length > 0 && (
+        <Card
+          title="Most reported open problems"
+          description="Open issues that other reports were linked to as the same problem."
+          className="mb-6"
+        >
+          <ul className="-my-2 divide-y divide-slate-100" data-testid="most-reported">
+            {mostReported.map((issue) => (
+              <li key={issue.id} className="flex items-center justify-between gap-3 py-2 text-sm">
+                <span className="min-w-0 truncate">
+                  <Link href={`${issuesHref}/${issue.id}`} className="font-medium text-slate-900 hover:underline">
+                    {issue.subject}
+                  </Link>
+                  <span className="text-xs text-slate-500"> · {issue.reference}</span>
+                </span>
+                <span className="shrink-0 font-medium text-amber-800">{reportedTimes(issue.reports)}</span>
+              </li>
+            ))}
+          </ul>
+        </Card>
+      )}
 
       <Card title="Recent activity" description={`The latest ${RECENT_ACTIVITY} changes across this workspace's issues`} className="mb-6">
         {recent.length === 0 ? (

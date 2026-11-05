@@ -62,6 +62,8 @@ Router, React 19, TypeScript strict, Tailwind v4). Full background:
   level deep, same company, writes the history). Linking never changes an
   issue's status, team or deadlines. The issue page and Issues list read links
   and matches separately and must keep loading if the migration is missing.
+  Repeated problems are counted in `issue_report` (`repeated`, optional in
+  the app's schema) and notified at 3, 5 and 10 reports by a trigger.
 - Notifications: created only in the database (`private.notify_staff`,
   `private.notify_team` / `private.create_notification`, from triggers), in
   Buddy only, for owners and admins, plus a team's members (`team_members`)

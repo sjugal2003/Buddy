@@ -9,7 +9,7 @@ import { requireUser } from "@/lib/auth";
 import { getIssueReport, getMembershipBySlug } from "@/lib/data/live";
 import { escalationConditionLabels, isEscalationCondition } from "@/lib/escalations";
 import { percent } from "@/lib/format";
-import { channelLabels, sentimentLabels, urgencyLabels, urgencyOrder } from "@/lib/labels";
+import { channelLabels, sentimentLabels, statusLabels, urgencyLabels, urgencyOrder } from "@/lib/labels";
 import {
   describeRange,
   formatSeconds,
@@ -141,13 +141,13 @@ export default async function ReportsPage({
           </p>
         </Card>
       ) : (
-        <ReportBody report={result.report} />
+        <ReportBody report={result.report} slug={slug} />
       )}
     </>
   );
 }
 
-function ReportBody({ report }: { report: IssueReport }) {
+function ReportBody({ report, slug }: { report: IssueReport; slug: string }) {
   const { totals, response_target: target } = report;
   const share = responseTargetShare(target);
   const nothing = totals.received === 0 && report.resolved === 0 && report.escalations.length === 0 && report.imports.length === 0;
@@ -337,6 +337,51 @@ function ReportBody({ report }: { report: IssueReport }) {
           )}
         </Card>
       </div>
+
+      <Card
+        title="Repeated problems"
+        description="Issues marked as the same problem on the issue page, with the most reports in this period. A report counts when it arrived."
+      >
+        {!report.repeated ? (
+          <p className="text-sm text-slate-500" data-testid="report-repeated-unavailable">
+            Repeated problems will appear after the database update.
+          </p>
+        ) : report.repeated.length === 0 ? (
+          <p className="text-sm text-slate-500" data-testid="report-repeated-empty">
+            No problems were reported more than once in this period.
+          </p>
+        ) : (
+          <table className="w-full text-left text-sm" data-testid="report-repeated">
+            <thead className="text-xs text-slate-500">
+              <tr>
+                <th className="py-2 pr-3 font-medium">Issue</th>
+                <th className="py-2 pr-3 font-medium">Status</th>
+                <th className="py-2 pr-3 font-medium">In this period</th>
+                <th className="py-2 font-medium">In total</th>
+              </tr>
+            </thead>
+            <tbody className="divide-y divide-slate-100">
+              {report.repeated.map((r) => (
+                <tr key={r.id}>
+                  <td className="py-2 pr-3 text-slate-900">
+                    <Link href={`/w/${slug}/issues/${r.id}`} className="font-medium text-brand-700 hover:underline">
+                      {r.reference}
+                    </Link>{" "}
+                    · {r.subject}
+                  </td>
+                  <td className="py-2 pr-3">{statusLabelOf(r.status)}</td>
+                  <td className="py-2 pr-3 tabular-nums">{r.in_period}</td>
+                  <td className="py-2 tabular-nums">{r.total}</td>
+                </tr>
+              ))}
+            </tbody>
+          </table>
+        )}
+      </Card>
     </div>
   );
+}
+
+function statusLabelOf(status: string) {
+  return (statusLabels as Record<string, string>)[status] ?? status;
 }

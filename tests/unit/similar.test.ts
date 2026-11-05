@@ -1,5 +1,5 @@
 import { describe, expect, it } from "vitest";
-import { reportedTimes, reportsBadge, similarityLabel, VERY_SIMILAR } from "@/lib/similar";
+import { mostReported, reportedTimes, reportsBadge, similarityLabel, VERY_SIMILAR } from "@/lib/similar";
 
 describe("similarityLabel", () => {
   it("calls high scores very similar", () => {
@@ -33,5 +33,29 @@ describe("reportsBadge", () => {
   });
   it("shows nothing without linked reports", () => {
     expect(reportsBadge(0)).toBeNull();
+  });
+});
+
+describe("mostReported", () => {
+  const issue = (id: string, receivedAt: string) => ({ id, receivedAt });
+  it("orders by reports, then newest, and keeps only issues with reports", () => {
+    const counts = new Map([
+      ["a", 1],
+      ["b", 3],
+      ["c", 3],
+    ]);
+    const open = [issue("a", "2026-11-01"), issue("b", "2026-11-02"), issue("c", "2026-11-03"), issue("d", "2026-11-04")];
+    expect(mostReported(counts, open, 5).map((x) => [x.id, x.reports])).toEqual([
+      ["c", 3],
+      ["b", 3],
+      ["a", 1],
+    ]);
+  });
+  it("stops at the limit", () => {
+    const counts = new Map([
+      ["a", 2],
+      ["b", 1],
+    ]);
+    expect(mostReported(counts, [issue("a", "x"), issue("b", "y")], 1).map((x) => x.id)).toEqual(["a"]);
   });
 });

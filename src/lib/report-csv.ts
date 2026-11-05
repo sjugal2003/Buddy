@@ -97,6 +97,11 @@ export function reportToCsv(report: IssueReport, context: ReportCsvContext) {
     add("Imports", importSourceLabels[r.source] ?? r.source, r.runs, r.failed, r.imported, r.skipped_duplicate, r.rejected);
   }
 
+  if (report.repeated) {
+    add("Repeated problems", "Issue", "Subject", "Reports in this period", "Reports in total");
+    for (const r of report.repeated) add("Repeated problems", r.reference, r.subject, r.in_period, r.total);
+  }
+
   // A byte-order mark so Excel reads names with accents correctly; Windows line ends.
   return `﻿${rows.map((row) => row.map(csvCell).join(",")).join("\r\n")}\r\n`;
 }
