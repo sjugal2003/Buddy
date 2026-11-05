@@ -150,3 +150,30 @@ test("Google Play: owner connects, reviews become issues once, others can't", as
     await expect(p.getByTestId("issue-row")).toHaveCount(3);
   });
 });
+
+// Merging before the database change is applied must not break the page: the
+// Google Play card says it isn't available and everything else still works.
+test("Data sources still loads when the Google Play tables are missing", async ({ browser, baseURL }) => {
+  const id = stamp();
+  const slug = `play-missing-${id}`;
+  const p = await signUpAndConfirm(browser, baseURL!, "Alice Owner", `playmissing${id}@example.com`);
+  await createOrg(p, "Missing Co", slug);
+  const client = new pg.Client({ connectionString: TEST_DB });
+  await client.connect();
+  try {
+    await client.query("alter table public.source_connections rename to source_connections_hidden");
+    await client.query("notify pgrst, 'reload schema'");
+    await expect(async () => {
+      await p.goto(`/w/${slug}/data-sources`);
+      await expect(p.getByTestId("play-unavailable")).toBeVisible({ timeout: 2000 });
+    }).toPass({ timeout: 20_000 });
+    await expect(p.getByTestId("play-source-status")).toHaveText("Not available yet.");
+    await expect(p.getByTestId("play-connect-form")).toHaveCount(0);
+    await expect(p.getByTestId("gmail-card")).toBeVisible();
+    await expect(p.getByTestId("imports-empty")).toBeVisible();
+  } finally {
+    await client.query("alter table if exists public.source_connections_hidden rename to source_connections");
+    await client.query("notify pgrst, 'reload schema'");
+    await client.end();
+  }
+});
