@@ -174,11 +174,14 @@ export interface IssueFilters {
   due: "" | "overdue" | "soon" | "2h";
   escalated: "" | "open";
   sort: "" | "attention";
+  week: "" | "1";
+  /** 1 or more. */
+  page: number;
   q: string;
 }
 
-/** How many issues the inbox shows at once. Paging comes with bigger data sets. */
-export const ISSUE_LIST_LIMIT = 200;
+/** How many issues the Issues list shows on one page. */
+export const ISSUE_PAGE_SIZE = 50;
 
 const ISSUE_COLUMNS =
   "id, reference, customer_name, customer_email, source, source_record_id, channel, subject, message, received_at, sentiment, intent, urgency, status, assignee_name, team_id, category_id, analysis_source, summary, first_response_at, resolved_at, waiting_seconds, waiting_since, reopened_count, routing_dismissed_at, updated_at";
@@ -246,19 +249,38 @@ function toIssue(row: IssueRow): LiveIssue {
 /** How many open issues are read when the list is filtered or sorted by deadline. */
 export const DEADLINE_SCAN_LIMIT = 1000;
 
+/** Deadline filters and sorting are worked out by the page, so it reads up to DEADLINE_SCAN_LIMIT issues. */
+export function needsDeadlineScan(filters: IssueFilters) {
+  return Boolean(filters.due || filters.sort || filters.escalated);
+}
+
 /**
  * Issues in one organisation, newest first. `q` must already be cleaned (see
- * issueFiltersSchema). Deadline filters and sorting are applied by the page
- * (src/lib/targets.ts); for those it reads up to DEADLINE_SCAN_LIMIT issues.
+ * issueFiltersSchema). Normally returns one page (filters.page) plus one more
+ * issue, so the page knows whether there is a next one. With deadline filters
+ * or sorting (src/lib/targets.ts) it returns up to DEADLINE_SCAN_LIMIT issues
+ * and the page splits them into pages. `since` (for "This week") keeps issues
+ * opened or resolved at or after that moment.
  */
-export async function listIssues(organizationId: string, filters: IssueFilters): Promise<LiveIssue[]> {
+export async function listIssues(organizationId: string, filters: IssueFilters, since: Date | null = null): Promise<LiveIssue[]> {
   const supabase = await createClient();
   let query = supabase
     .from("issues")
     .select(ISSUE_COLUMNS)
     .eq("organization_id", organizationId)
     .order("received_at", { ascending: false })
-    .limit(filters.due || filters.sort || filters.escalated ? DEADLINE_SCAN_LIMIT : ISSUE_LIST_LIMIT);
+    // Same order every time, so pages don't overlap when two issues share a time.
+    .order("id", { ascending: false });
+  if (needsDeadlineScan(filters)) {
+    query = query.limit(DEADLINE_SCAN_LIMIT);
+  } else {
+    const from = (filters.page - 1) * ISSUE_PAGE_SIZE;
+    query = query.range(from, from + ISSUE_PAGE_SIZE);
+  }
+  if (since) {
+    const at = since.toISOString();
+    query = query.or(`received_at.gte."${at}",resolved_at.gte."${at}"`);
+  }
   if (filters.status === "active") query = query.neq("status", "resolved");
   else if (filters.status !== "all") query = query.eq("status", filters.status);
   if (filters.urgency === "urgent") query = query.in("urgency", ["critical", "high"]);

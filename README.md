@@ -585,7 +585,7 @@ which step failed, with a screenshot.
 | `/onboarding` | Create a company workspace (you become its owner) |
 | `/invite?token=...` | Accept an invitation |
 | `/w/<company>` | Your real workspace: dashboard cards (urgent, due within 2 hours, targets missed, escalations, no team, waiting, this week), recent activity, members, roles, invitations |
-| `/w/<company>/issues` | Customer issues: search, filters (including deadlines and escalations), add, status, assignee, team, category, history, deadlines, "Record first response", escalations with Acknowledge; AI analysis panel and "AI suggested" marks when AI is on |
+| `/w/<company>/issues` | Customer issues, 50 per page: search, filters (including deadlines, escalations and This week), add, status, assignee, team, category, history, deadlines, "Record first response", escalations with Acknowledge; AI analysis panel and "AI suggested" marks when AI is on |
 | `/w/<company>/routing` | Routing rules: add, edit, reorder, switch off, delete (owners and admins); route open issues that have no team |
 | `/w/<company>/data-sources` | Import a CSV file (owners and admins: match columns, preview, open or past conversations), "Analyse with AI" for an import's issues (asks first, shows the month's remaining analyses), connect or disconnect one Gmail inbox read-only (owners), "Fetch new email" (owners and admins), and every import with its counts and rejected-row reasons |
 | `/w/<company>/notifications` | Your own in-app notifications for this company (owners and admins receive them, and team members for their team's issues): newest first, open the linked page, mark one or all as read. The bell in the header shows how many are unread |
