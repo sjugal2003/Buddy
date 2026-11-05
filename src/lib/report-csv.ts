@@ -30,7 +30,7 @@ function label(labels: Record<string, string>, key: string) {
 }
 
 const sentimentOrder = ["very_negative", "negative", "neutral", "positive"];
-const importSourceLabels: Record<string, string> = { csv: "CSV import", gmail: "Gmail fetch" };
+const importSourceLabels: Record<string, string> = { csv: "CSV import", gmail: "Gmail fetch", google_play: "Google Play fetch" };
 
 export interface ReportCsvContext {
   companyName: string;

@@ -23,7 +23,7 @@ export type Intent =
 export type Urgency = "low" | "medium" | "high" | "critical";
 
 /** Where an issue came from: typed in, a CSV import, or a Gmail fetch. */
-export type IssueSource = "manual" | "csv" | "gmail";
+export type IssueSource = "manual" | "csv" | "gmail" | "google_play";
 
 export type IssueStatus =
   | "new"

@@ -446,6 +446,42 @@ import history, and "Analyse with AI" asks first, as for CSV imports.
 In Testing mode Google ends the sign-in after **7 days**; then connect again.
 You can also remove Buddy any time at https://myaccount.google.com/permissions.
 
+## Google Play reviews (optional, switched off)
+
+An owner can connect the company's own Google Play app, **read-only**: Buddy
+lists the app's reviews but can never reply to or change them. Owners and
+admins press **Fetch new reviews** on Data sources to add each review with
+text as an open issue (channel **App review**, the reviewer's Play name,
+the stars and text). The same review is never added twice. Google only shares
+reviews written or changed in about the **last 7 days**, so fetch at least
+once a week. Each fetch shows in the import history.
+
+**It is switched off.** A real app brings in real customer reviews, and real
+data isn't approved yet. Until it is, the card only works in the automated
+tests (a pretend Google Play with made-up reviews, `BUDDY_PLAY_MODE=fake`),
+and the live site says "switched off". When real data is approved, the
+setting `BUDDY_PLAY_REAL=on` switches it on (it also needs `GMAIL_TOKEN_KEY`,
+which encrypts the saved key). Don't set it before then.
+
+What a company needs once it is on (free on Google's side):
+
+1. Its own **Google Play Console** with the app published.
+2. A **Google Cloud project** with the **Google Play Android Developer API**
+   enabled (APIs & Services > Library).
+3. A **service account** in that project (IAM & Admin > Service accounts >
+   Create), with **no** project roles, and a **JSON key** for it (Keys > Add
+   key > JSON). The file downloads once; keep it safe.
+4. In Play Console: **Users and permissions** > **Invite new users**, the
+   service account's address (ends in `.iam.gserviceaccount.com`), with access
+   to the app and only **View app information**.
+5. In Buddy, the owner pastes the app's package name and the whole JSON file
+   on **Data sources** > **Google Play reviews** > **Connect Google Play**.
+   Buddy checks it with Google, then keeps only the account address and
+   private key, encrypted. It never shows the key again.
+
+**Disconnect Google Play** deletes the saved key; issues already in Buddy stay.
+To be sure, also delete the key in Google Cloud (the service account > Keys).
+
 ## Backups and when something goes wrong
 
 [docs/RUNBOOK.md](docs/RUNBOOK.md) has numbered steps for a paused Supabase

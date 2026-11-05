@@ -16,8 +16,10 @@ export const SETTINGS = [
   { name: "GOOGLE_CLIENT_ID", group: "Gmail", secret: true, required: false },
   { name: "GOOGLE_CLIENT_SECRET", group: "Gmail", secret: true, required: false },
   { name: "GMAIL_TOKEN_KEY", group: "Gmail", secret: true, required: false },
+  { name: "BUDDY_PLAY_REAL", group: "Google Play", secret: false, required: false },
   { name: "BUDDY_AI_MODE", group: "Tests only", secret: false, required: false },
   { name: "BUDDY_GMAIL_MODE", group: "Tests only", secret: false, required: false },
+  { name: "BUDDY_PLAY_MODE", group: "Tests only", secret: false, required: false },
 ];
 
 const has = (vars, name) => Boolean(vars[name]?.trim());
@@ -79,11 +81,11 @@ export function checkEnv(vars, { live = false } = {}) {
     if (!site) errors.push("BUDDY_SITE_URL is missing. A live server needs it for sign-up emails, invitations and Gmail.");
     else if (siteUrl && siteUrl.protocol !== "https:") errors.push("BUDDY_SITE_URL must start with https:// on a live server.");
     else if (siteUrl && isLocalhost(siteUrl.hostname)) errors.push("BUDDY_SITE_URL points at this computer (localhost). Use the live address.");
-    for (const name of ["BUDDY_AI_MODE", "BUDDY_GMAIL_MODE"]) {
+    for (const name of ["BUDDY_AI_MODE", "BUDDY_GMAIL_MODE", "BUDDY_PLAY_MODE"]) {
       if (has(vars, name)) errors.push(`${name} is for automated tests only. Remove it from the live server.`);
     }
   } else {
-    for (const name of ["BUDDY_AI_MODE", "BUDDY_GMAIL_MODE"]) {
+    for (const name of ["BUDDY_AI_MODE", "BUDDY_GMAIL_MODE", "BUDDY_PLAY_MODE"]) {
       if (has(vars, name)) warnings.push(`${name} is set, so Buddy uses a pretend service on this computer. Remove it unless you are running tests.`);
     }
   }
@@ -103,6 +105,15 @@ export function checkEnv(vars, { live = false } = {}) {
   const tokenKey = vars.GMAIL_TOKEN_KEY?.trim();
   if (tokenKey && Buffer.from(tokenKey, "base64").length !== 32) {
     warnings.push("GMAIL_TOKEN_KEY is not 32 random bytes in base64, so Gmail shows as not set up (see the README for the command that makes one).");
+  }
+
+  const playReal = vars.BUDDY_PLAY_REAL?.trim();
+  if (playReal && playReal !== "on") warnings.push('BUDDY_PLAY_REAL only does something when it is exactly "on". Remove it otherwise.');
+  if (playReal === "on") {
+    warnings.push("BUDDY_PLAY_REAL is on, so owners can connect a real Google Play app and bring in real customer reviews. Only keep it once real data is approved.");
+    if (!tokenKey || Buffer.from(tokenKey, "base64").length !== 32) {
+      warnings.push("BUDDY_PLAY_REAL is on but GMAIL_TOKEN_KEY is missing or wrong, so Google Play stays off (it uses the same key).");
+    }
   }
 
   return { rows, errors, warnings };

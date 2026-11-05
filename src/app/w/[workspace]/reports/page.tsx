@@ -25,7 +25,7 @@ import {
 export const dynamic = "force-dynamic";
 
 const sentimentOrder = ["very_negative", "negative", "neutral", "positive"] as const;
-const importSourceLabels: Record<string, string> = { csv: "CSV import", gmail: "Gmail fetch" };
+const importSourceLabels: Record<string, string> = { csv: "CSV import", gmail: "Gmail fetch", google_play: "Google Play fetch" };
 
 function label<T extends string>(labels: Record<T, string>, key: string) {
   return (labels as Record<string, string>)[key] ?? key;

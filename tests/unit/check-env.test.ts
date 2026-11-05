@@ -51,6 +51,18 @@ describe("checkEnv", () => {
     expect(result.warnings.join()).toContain("BUDDY_GMAIL_MODE");
   });
 
+  it("treats the pretend Google Play like the other test modes, and warns when real Google Play is on", () => {
+    expect(checkEnv({ ...base, BUDDY_SITE_URL: "https://buddy.example.com", BUDDY_PLAY_MODE: "fake" }, { live: true }).errors.join()).toContain(
+      "BUDDY_PLAY_MODE",
+    );
+    expect(checkEnv({ ...base, BUDDY_PLAY_MODE: "fake" }).warnings.join()).toContain("BUDDY_PLAY_MODE");
+    const on = checkEnv({ ...base, BUDDY_PLAY_REAL: "on" }).warnings.join();
+    expect(on).toContain("real customer reviews");
+    expect(on).toContain("GMAIL_TOKEN_KEY");
+    expect(checkEnv({ ...base, BUDDY_PLAY_REAL: "on", GMAIL_TOKEN_KEY: tokenKey }).warnings.join()).not.toContain("stays off");
+    expect(checkEnv({ ...base, BUDDY_PLAY_REAL: "yes" }).warnings.join()).toContain('exactly "on"');
+  });
+
   it("refuses an address that isn't a plain web address", () => {
     expect(checkEnv({ ...base, BUDDY_SITE_URL: "buddy.example.com" }).errors.join()).toContain("plain web address");
   });
