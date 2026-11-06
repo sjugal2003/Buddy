@@ -67,9 +67,11 @@ Router, React 19, TypeScript strict, Tailwind v4). Full background:
 - Notifications: created only in the database (`private.notify_staff`,
   `private.notify_team` / `private.create_notification`, from triggers), in
   Buddy only, for owners and admins, plus a team's members (`team_members`)
-  for issues given to that team and its escalations. Titles never contain the customer's message, name or email.
+  for issues given to that team and its escalations, plus the member an issue
+  is assigned to (`issues.assignee_id`, kind `assigned`, never for assigning
+  yourself). Titles never contain the customer's message, name or email.
 - Limits on repeated actions (invitations, imports and fetches, issues added
-  by hand, "Check now") are triggers using `private.enforce_rate_limit`. Add
+  by hand, "Check now", assigning issues) are triggers using `private.enforce_rate_limit`. Add
   a trigger there for any new action a person can repeat many times.
 - Deleting issues: owners only, through `delete_issue` / `delete_customer_data`
   (or the retention clean-up), which write `deletion_log`. Never add a direct

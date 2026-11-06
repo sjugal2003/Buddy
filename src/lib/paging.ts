@@ -10,6 +10,7 @@ export type IssueListQuery = {
   escalated: string;
   sort: string;
   week: string;
+  mine: string;
   q: string;
 };
 
@@ -21,6 +22,7 @@ const DEFAULTS: IssueListQuery = {
   escalated: "",
   sort: "",
   week: "",
+  mine: "",
   q: "",
 };
 

@@ -18,6 +18,7 @@ import {
   listIssues,
   listTeams,
   countLinkedReports,
+  countAssignedOpen,
   listUnacknowledgedEscalationIssueIds,
   needsDeadlineScan,
   openEscalationLevels,
@@ -69,6 +70,7 @@ export default async function IssuesPage({
     escalated: raw.escalated,
     sort: raw.sort,
     week: raw.week,
+    mine: raw.mine,
     page: raw.page,
     q: raw.q,
   });
@@ -77,8 +79,15 @@ export default async function IssuesPage({
   const settingsLoad = getOrganizationSettings(membership.organization.id);
   // Monday 00:00 in the company's time zone, as on the workspace home's "This week" card.
   const since = filters.week ? startOfWeek(now, (await settingsLoad).timezone) : null;
+  // "Assigned to me" is offered only once the database change for assigning
+  // people is applied; before that the filter is ignored.
+  const canFilterMine = await countAssignedOpen(membership.organization.id, user.id).then(
+    () => true,
+    () => false,
+  );
+  if (!canFilterMine) filters.mine = "";
   const [rows, teams, settings, escalatedIds] = await Promise.all([
-    listIssues(membership.organization.id, filters, since),
+    listIssues(membership.organization.id, filters, since, filters.mine ? user.id : null),
     listTeams(membership.organization.id),
     settingsLoad,
     filters.escalated ? listUnacknowledgedEscalationIssueIds(membership.organization.id) : Promise.resolve(new Set<string>()),
@@ -91,6 +100,7 @@ export default async function IssuesPage({
     filters.due !== "" ||
     filters.escalated !== "" ||
     filters.week !== "" ||
+    filters.mine !== "" ||
     filters.q !== "";
 
   // Deadlines use the company's targets (src/lib/targets.ts).
@@ -143,7 +153,7 @@ export default async function IssuesPage({
 
       <div className="rounded-xl border border-slate-200 bg-white shadow-sm">
         {/* A plain form: filters go in the address bar, so a filtered list can be bookmarked. */}
-        <form method="get" className="grid gap-2 border-b border-slate-200 p-4 sm:grid-cols-2 lg:grid-cols-[1fr_auto_auto_auto_auto_auto_auto_auto_auto]">
+        <form method="get" className="grid gap-2 border-b border-slate-200 p-4 sm:grid-cols-2 lg:grid-cols-[1fr_auto_auto_auto_auto_auto_auto_auto_auto_auto]">
           <div className="relative">
             <Search className="pointer-events-none absolute left-3 top-1/2 h-4 w-4 -translate-y-1/2 text-slate-400" aria-hidden />
             <input
@@ -187,6 +197,12 @@ export default async function IssuesPage({
             <option value="">Any time</option>
             <option value="1">This week</option>
           </select>
+          {canFilterMine && (
+            <select name="mine" defaultValue={filters.mine} aria-label="Assigned" className={inputClass}>
+              <option value="">Anyone</option>
+              <option value="1">Assigned to me</option>
+            </select>
+          )}
           <select name="sort" defaultValue={filters.sort} aria-label="Sort" className={inputClass}>
             <option value="">Newest first</option>
             <option value="attention">Needs attention first</option>

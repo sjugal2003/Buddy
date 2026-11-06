@@ -57,4 +57,9 @@ describe("notificationKindLabels", () => {
   it("names team notifications for the person reading them", () => {
     expect(notificationKindLabels.team_issue).toBe("Your team");
   });
+
+  it("names assignments for the person they were given to", () => {
+    expect(notificationKindLabels.assigned).toBe("Assigned to you");
+    expect(isNotificationKind("assigned")).toBe(true);
+  });
 });

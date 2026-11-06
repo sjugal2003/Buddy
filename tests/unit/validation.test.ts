@@ -13,6 +13,7 @@ import {
   timezoneSchema,
   updateAiSettingsSchema,
   updateEscalationSettingsSchema,
+  updateIssueSchema,
   updateOrganizationSchema,
 } from "@/lib/validation";
 
@@ -95,6 +96,7 @@ describe("issues", () => {
       escalated: "",
       sort: "",
       week: "",
+      mine: "",
       page: 1,
     });
     expect(issueFiltersSchema.parse({ due: "bogus", sort: "oldest" })).toMatchObject({ due: "", sort: "" });
@@ -116,6 +118,18 @@ describe("issues", () => {
     }
     expect(issueFiltersSchema.parse({ page: "1000" }).page).toBe(1000);
     expect(issueFiltersSchema.parse({ week: "yes" }).week).toBe("");
+  });
+
+  it("reads Assigned to me, ignoring anything else", () => {
+    expect(issueFiltersSchema.parse({ mine: "1" }).mine).toBe("1");
+    expect(issueFiltersSchema.parse({ mine: "someone-else" }).mine).toBe("");
+  });
+
+  it("accepts a member, nobody, or keeping a typed name as the assignee", () => {
+    const update = { issueId: uuid, status: "new", teamId: "", categoryId: "", assigneeName: "" };
+    expect(updateIssueSchema.parse(update).assigneeId).toBeUndefined();
+    for (const ok of [uuid, "", "keep"]) expect(updateIssueSchema.parse({ ...update, assigneeId: ok }).assigneeId).toBe(ok);
+    for (const bad of ["Ana", "not-an-id", "KEEP"]) expect(updateIssueSchema.safeParse({ ...update, assigneeId: bad }).success).toBe(false);
   });
 });
 

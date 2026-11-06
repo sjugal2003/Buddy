@@ -11,6 +11,7 @@ import {
   getOrganizationSettings,
   listMembers,
   listMostReportedOpen,
+  countAssignedOpen,
   listOpenInvitations,
   listOpenIssuesForDashboard,
   listRecentActivity,
@@ -69,7 +70,7 @@ export default async function LiveWorkspaceHome({ params }: { params: Promise<{ 
   const now = new Date();
   const settings = await getOrganizationSettings(orgId);
   const weekStart = startOfWeek(now, settings.timezone);
-  const [members, invitations, openIssues, escalatedIds, week, recent, mostReported] = await Promise.all([
+  const [members, invitations, openIssues, escalatedIds, week, recent, mostReported, assignedToMe] = await Promise.all([
     listMembers(orgId),
     isAdmin ? listOpenInvitations(orgId) : Promise.resolve([]),
     listOpenIssuesForDashboard(orgId),
@@ -78,6 +79,8 @@ export default async function LiveWorkspaceHome({ params }: { params: Promise<{ 
     listRecentActivity(orgId, RECENT_ACTIVITY),
     // Empty (card hidden) when the database change for similar issues isn't applied yet.
     listMostReportedOpen(orgId).catch(() => []),
+    // Null (card hidden) when the database change for assigning people isn't applied yet.
+    countAssignedOpen(orgId, user.id).catch(() => null),
   ]);
   const targets = { firstResponse: settings.targetHours, resolution: settings.resolutionHours };
   const counts = summariseOpenIssues(openIssues, targets, escalatedIds, now);
@@ -112,6 +115,15 @@ export default async function LiveWorkspaceHome({ params }: { params: Promise<{ 
           </p>
         )}
         <div className="grid gap-3 sm:grid-cols-2 lg:grid-cols-4">
+          {assignedToMe !== null && (
+            <CountCard
+              testId="card-assigned"
+              label="Assigned to me"
+              value={assignedToMe}
+              href={`${issuesHref}?mine=1`}
+              hint="Open issues given to you"
+            />
+          )}
           <CountCard
             testId="card-urgent"
             label="Urgent open issues"

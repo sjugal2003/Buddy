@@ -8,7 +8,8 @@ export type NotificationKind =
   | "import_problem"
   | "scheduler_failed"
   | "team_issue"
-  | "repeated_problem";
+  | "repeated_problem"
+  | "assigned";
 
 export const NOTIFICATION_KINDS: readonly NotificationKind[] = [
   "escalation",
@@ -17,6 +18,7 @@ export const NOTIFICATION_KINDS: readonly NotificationKind[] = [
   "scheduler_failed",
   "team_issue",
   "repeated_problem",
+  "assigned",
 ];
 
 /** How many notifications the Notifications page shows. */
@@ -29,6 +31,7 @@ export const notificationKindLabels: Record<NotificationKind, string> = {
   scheduler_failed: "Scheduled check",
   team_issue: "Your team",
   repeated_problem: "Repeated problem",
+  assigned: "Assigned to you",
 };
 
 export function isNotificationKind(value: string): value is NotificationKind {

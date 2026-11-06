@@ -140,6 +140,9 @@ export const updateIssueSchema = z.object({
     .trim()
     .max(120, "Use 120 characters or fewer.")
     .transform((v) => v || null),
+  // Sent instead of assigneeName once members can be picked: a member's user
+  // ID, "" for nobody, or "keep" to leave an older typed name as it is.
+  assigneeId: z.union([z.string().uuid(), z.enum(["", "keep"])], { message: "Pick someone from the list." }).optional(),
 });
 
 /** Inbox filters from the address bar. Anything unexpected is ignored. */
@@ -157,6 +160,8 @@ export const issueFiltersSchema = z.object({
   // "1": opened or resolved since Monday 00:00 in the company's time zone,
   // the same rule as the workspace home's "This week" card.
   week: z.enum(["", "1"]).catch(""),
+  // "1": only issues given to the signed-in member.
+  mine: z.enum(["", "1"]).catch(""),
   // Which page of the list (see ISSUE_PAGE_SIZE). Anything odd is page 1.
   page: z.coerce.number().int().min(1).max(1000).catch(1),
   // Only plain characters, so the search can't change the database query.
