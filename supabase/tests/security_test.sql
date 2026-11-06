@@ -2441,6 +2441,79 @@ select tests.expect_rows(format($q$select 1 from jsonb_array_elements(public.iss
 select tests.expect_error(format($q$select public.issue_report(%L, current_date - 2, current_date + 2)$q$, current_setting('t.org_a')),
   'owner B cannot read company A''s report');
 
+-- ---------------------------------------------------------------------------
+-- Assigning issues to a person
+-- ---------------------------------------------------------------------------
+
+reset role;
+with x as (insert into public.issues (organization_id, reference, customer_name, channel, subject, message, assignee_name)
+  values (current_setting('t.org_a')::uuid, 'ASG-1', 'Made-up Customer', 'email', 'Assign me', 'Made-up test issue.', 'Typed Name')
+  returning id)
+select set_config('t.asg1', id::text, true) from x;
+update public.profiles set full_name = 'Member A' where id = current_setting('t.a_member')::uuid;
+set local role authenticated;
+
+select tests.act_as(current_setting('t.a_owner')::uuid);
+select tests.expect_error(format($q$update public.issues set assignee_id = %L where id = %L$q$,
+  current_setting('t.b_owner'), current_setting('t.asg1')), 'an issue cannot be given to someone outside the company');
+select tests.expect_affected(format($q$update public.issues set assignee_id = %L where id = %L$q$,
+  current_setting('t.a_member'), current_setting('t.asg1')), 1, 'owner A gives the issue to member A');
+select tests.expect_rows(format($q$select 1 from public.issues where id = %L and assignee_name = 'Member A'$q$,
+  current_setting('t.asg1')), 1, 'the assignee''s name is filled in from their profile');
+select tests.expect_rows(format($q$select 1 from public.issue_activity where issue_id = %L and kind = 'assignee_changed'
+  and from_value = 'Typed Name' and to_value = 'Member A'$q$, current_setting('t.asg1')), 1, 'the change is in the history');
+reset role;
+select tests.expect_rows(format($q$select 1 from public.notifications where kind = 'assigned' and issue_id = %L
+  and recipient_id = %L and title = 'ASG-1 was assigned to you.'$q$, current_setting('t.asg1'), current_setting('t.a_member')), 1,
+  'member A is told the issue was assigned to them');
+select tests.expect_rows(format($q$select 1 from public.notifications where kind = 'assigned' and issue_id = %L
+  and recipient_id <> %L$q$, current_setting('t.asg1'), current_setting('t.a_member')), 0, 'nobody else is told');
+set local role authenticated;
+
+-- A typed name can't hide the member, and assigning yourself sends nothing.
+select tests.act_as(current_setting('t.a_owner')::uuid);
+update public.issues set assignee_name = 'Someone Else' where id = current_setting('t.asg1')::uuid;
+select tests.expect_rows(format($q$select 1 from public.issues where id = %L and assignee_name = 'Member A'$q$,
+  current_setting('t.asg1')), 1, 'a typed name does not replace an assigned member');
+select tests.expect_affected(format($q$update public.issues set assignee_id = %L where id = %L$q$,
+  current_setting('t.a_owner'), current_setting('t.asg1')), 1, 'owner A takes the issue');
+reset role;
+select tests.expect_rows(format($q$select 1 from public.notifications where kind = 'assigned' and recipient_id = %L$q$,
+  current_setting('t.a_owner')), 0, 'assigning yourself sends no notification');
+set local role authenticated;
+
+select tests.act_as(current_setting('t.b_owner')::uuid);
+select tests.expect_affected(format($q$update public.issues set assignee_id = %L where id = %L$q$,
+  current_setting('t.b_owner'), current_setting('t.asg1')), 0, 'owner B cannot change company A''s assignee');
+select tests.expect_rows(format($q$select 1 from public.issues where id = %L$q$, current_setting('t.asg1')), 0,
+  'owner B cannot see company A''s assignments');
+
+-- Unassigning clears the name; leaving the company clears the assignment.
+select tests.act_as(current_setting('t.a_owner')::uuid);
+select tests.expect_affected(format($q$update public.issues set assignee_id = null where id = %L$q$,
+  current_setting('t.asg1')), 1, 'owner A unassigns the issue');
+select tests.expect_rows(format($q$select 1 from public.issues where id = %L and assignee_id is null and assignee_name is null$q$,
+  current_setting('t.asg1')), 1, 'unassigning clears the name too');
+update public.issues set assignee_id = current_setting('t.a_member')::uuid where id = current_setting('t.asg1')::uuid;
+reset role;
+delete from public.organization_members where organization_id = current_setting('t.org_a')::uuid
+  and user_id = current_setting('t.a_member')::uuid;
+select tests.expect_rows(format($q$select 1 from public.issues where id = %L and assignee_id is null and assignee_name is null$q$,
+  current_setting('t.asg1')), 1, 'leaving the company clears their assignments');
+select tests.expect_rows(format($q$select 1 from public.issue_activity where issue_id = %L and kind = 'assignee_changed'
+  and to_value is null$q$, current_setting('t.asg1')), 2,
+  'the history notes each unassignment');
+set local role authenticated;
+
+-- Limited like other repeated actions.
+reset role;
+insert into private.rate_limit_events (user_id, action, created_at)
+select current_setting('t.a_owner')::uuid, 'assign', now() - interval '1 minute' from generate_series(1, 300);
+set local role authenticated;
+select tests.act_as(current_setting('t.a_owner')::uuid);
+select tests.expect_error(format($q$update public.issues set assignee_id = %L where id = %L$q$,
+  current_setting('t.a_owner'), current_setting('t.asg1')), 'assigning is limited to 300 an hour');
+
 reset role;
 select current_setting('tests.passed') || ' security checks passed' as result;
 

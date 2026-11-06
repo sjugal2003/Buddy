@@ -15,6 +15,7 @@ import {
   urgencyOrder,
 } from "@/lib/labels";
 import type { LiveCategory, LiveTeam } from "@/lib/data/live";
+import type { AssigneeOption } from "@/lib/assign";
 import type { Channel, Intent, IssueStatus, Sentiment } from "@/lib/types";
 
 function options<T extends string>(labels: Record<T, string>, order?: T[]) {
@@ -163,6 +164,7 @@ export function UpdateIssueForm({
   teamId,
   categoryId,
   memberNames,
+  assignees,
   teams,
   categories,
 }: {
@@ -172,6 +174,8 @@ export function UpdateIssueForm({
   teamId: string | null;
   categoryId: string | null;
   memberNames: string[];
+  /** Members to pick from. Null when the database change for assigning people isn't applied yet. */
+  assignees: { options: AssigneeOption[]; selected: string } | null;
   teams: LiveTeam[];
   categories: LiveCategory[];
 }) {
@@ -182,7 +186,11 @@ export function UpdateIssueForm({
   // redraws it with them; the message sits outside the form so it stays.
   return (
     <div className="space-y-4">
-      <form key={[status, assigneeName, teamId, categoryId].join("|")} action={action} className="space-y-4">
+      <form
+        key={[status, assigneeName, assignees?.selected, teamId, categoryId].join("|")}
+        action={action}
+        className="space-y-4"
+      >
         <input type="hidden" name="issueId" value={issueId} />
         <div className="grid gap-4 sm:grid-cols-2">
           <Field label="Status">
@@ -192,15 +200,25 @@ export function UpdateIssueForm({
             <FieldError message={state.fieldErrors?.status} />
           </Field>
           <Field label="Assigned to">
-            <select name="assigneeName" defaultValue={assigneeName ?? ""} className={inputClass}>
-              <option value="">Nobody</option>
-              {names.map((name) => (
-                <option key={name} value={name}>
-                  {name}
-                </option>
-              ))}
-            </select>
-            <FieldError message={state.fieldErrors?.assigneeName} />
+            {assignees ? (
+              <select name="assigneeId" defaultValue={assignees.selected} className={inputClass} data-testid="assignee-select">
+                {assignees.options.map((o) => (
+                  <option key={o.value} value={o.value}>
+                    {o.label}
+                  </option>
+                ))}
+              </select>
+            ) : (
+              <select name="assigneeName" defaultValue={assigneeName ?? ""} className={inputClass}>
+                <option value="">Nobody</option>
+                {names.map((name) => (
+                  <option key={name} value={name}>
+                    {name}
+                  </option>
+                ))}
+              </select>
+            )}
+            <FieldError message={state.fieldErrors?.assigneeId ?? state.fieldErrors?.assigneeName} />
           </Field>
         </div>
         <TeamAndCategory

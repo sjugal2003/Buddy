@@ -178,6 +178,8 @@ export interface IssueFilters {
   escalated: "" | "open";
   sort: "" | "attention";
   week: "" | "1";
+  /** "1": only issues given to the signed-in member. */
+  mine: "" | "1";
   /** 1 or more. */
   page: number;
   q: string;
@@ -265,7 +267,12 @@ export function needsDeadlineScan(filters: IssueFilters) {
  * and the page splits them into pages. `since` (for "This week") keeps issues
  * opened or resolved at or after that moment.
  */
-export async function listIssues(organizationId: string, filters: IssueFilters, since: Date | null = null): Promise<LiveIssue[]> {
+export async function listIssues(
+  organizationId: string,
+  filters: IssueFilters,
+  since: Date | null = null,
+  assignedTo: string | null = null,
+): Promise<LiveIssue[]> {
   const supabase = await createClient();
   let query = supabase
     .from("issues")
@@ -288,6 +295,8 @@ export async function listIssues(organizationId: string, filters: IssueFilters, 
   else if (filters.status !== "all") query = query.eq("status", filters.status);
   if (filters.urgency === "urgent") query = query.in("urgency", ["critical", "high"]);
   else if (filters.urgency) query = query.eq("urgency", filters.urgency);
+  // Only used once the database change for assigning people is applied.
+  if (assignedTo) query = query.eq("assignee_id", assignedTo);
   if (filters.team === "unassigned") query = query.is("team_id", null);
   else if (filters.team) query = query.eq("team_id", filters.team);
   if (filters.q) {
@@ -1295,4 +1304,44 @@ export async function listMostReportedOpen(organizationId: string, limit = 5): P
     throw new Error("Could not load repeated problems.");
   }
   return mostReported(counts, (mains.data ?? []).map(toLinkSummary), limit);
+}
+
+/**
+ * The member an issue is given to (their user ID), or null for nobody or a
+ * typed name. Throws when the database change for assigning people isn't
+ * applied yet; the issue page then keeps the older name list.
+ */
+export async function getIssueAssigneeId(organizationId: string, issueId: string): Promise<string | null> {
+  const supabase = await createClient();
+  const { data, error } = await supabase
+    .from("issues")
+    .select("assignee_id")
+    .eq("organization_id", organizationId)
+    .eq("id", issueId)
+    .maybeSingle();
+  if (error) {
+    console.error("[getIssueAssigneeId]", error.code, error.message);
+    throw new Error("Could not load who the issue is assigned to.");
+  }
+  return (data as { assignee_id: string | null } | null)?.assignee_id ?? null;
+}
+
+/**
+ * How many open issues are given to this member. Throws when the database
+ * change for assigning people isn't applied yet; pages then hide the card
+ * and the "Assigned to me" filter.
+ */
+export async function countAssignedOpen(organizationId: string, userId: string): Promise<number> {
+  const supabase = await createClient();
+  const { count, error } = await supabase
+    .from("issues")
+    .select("id", { count: "exact", head: true })
+    .eq("organization_id", organizationId)
+    .eq("assignee_id", userId)
+    .neq("status", "resolved");
+  if (error) {
+    console.error("[countAssignedOpen]", error.code, error.message);
+    throw new Error("Could not count your assigned issues.");
+  }
+  return count ?? 0;
 }

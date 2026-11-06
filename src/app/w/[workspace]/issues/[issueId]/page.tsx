@@ -13,6 +13,7 @@ import { DeleteIssueForm } from "@/components/data/data-forms";
 import { EscalationBadge } from "@/components/escalations/escalation-badge";
 import { SameProblemButton, UnlinkButton } from "@/components/issues/similar-issues";
 import { reportedTimes, similarityLabel } from "@/lib/similar";
+import { assigneeOptions } from "@/lib/assign";
 import { deadlines } from "@/lib/targets";
 import { escalationConditionLabels, openEscalationLevel } from "@/lib/escalations";
 import { aiServiceStatus } from "@/lib/ai";
@@ -20,6 +21,7 @@ import { requireUser } from "@/lib/auth";
 import {
   getAiEnabled,
   getIssue,
+  getIssueAssigneeId,
   getIssueLinks,
   getLatestAnalysis,
   getMembershipBySlug,
@@ -58,7 +60,7 @@ export default async function IssuePage({
   const orgId = membership.organization.id;
   const issue = await getIssue(orgId, issueId);
   if (!issue) notFound();
-  const [activity, members, teams, categories, analysis, aiEnabled, settings, escalations, links, similar] = await Promise.all([
+  const [activity, members, teams, categories, analysis, aiEnabled, settings, escalations, links, similar, assigneeId] = await Promise.all([
     listIssueActivity(orgId, issueId),
     listMembers(orgId),
     listTeams(orgId),
@@ -71,6 +73,9 @@ export default async function IssuePage({
     // rest of the page still loads.
     getIssueLinks(orgId, issueId).catch(() => null),
     listSimilarIssues(issueId).catch(() => null),
+    // Undefined when the database change for assigning people isn't applied
+    // yet: the form then keeps the older list of names.
+    getIssueAssigneeId(orgId, issueId).catch(() => undefined),
   ]);
   const escalationLevel = openEscalationLevel(escalations);
   // Worked out on the server with the server's clock, never the browser's.
@@ -159,6 +164,9 @@ export default async function IssuePage({
               teamId={issue.teamId}
               categoryId={issue.categoryId}
               memberNames={members.map((m) => m.fullName)}
+              assignees={
+                assigneeId === undefined ? null : assigneeOptions(members, { assigneeId, assigneeName: issue.assigneeName })
+              }
               teams={teams}
               categories={categories}
             />

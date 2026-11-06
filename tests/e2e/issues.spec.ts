@@ -39,11 +39,12 @@ test("issues: add, update, filter, and keep other companies out", async ({ brows
 
   await test.step("status and assignment are saved, kept in the form and shown in history", async () => {
     await p.selectOption("select[name=status]", "in_progress");
-    await p.selectOption("select[name=assigneeName]", "Alice Owner");
+    // Members are picked from a list (assign-to-person.spec.ts covers more).
+    await p.selectOption("select[name=assigneeId]", { label: "Alice Owner" });
     await p.click('button:has-text("Save changes")');
     await shows(p, "text=Changes saved.");
     await expect(p.locator("select[name=status]")).toHaveValue("in_progress");
-    await expect(p.locator("select[name=assigneeName]")).toHaveValue("Alice Owner");
+    await expect(p.locator("select[name=assigneeId] option:checked")).toHaveText("Alice Owner");
     await shows(p, "text=Status changed from New to In progress");
     await shows(p, "text=Assigned to Alice Owner");
     await p.reload();

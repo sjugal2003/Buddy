@@ -18,6 +18,7 @@ const SIGNED_OUT: FormState = { error: "Your session has ended. Please sign in a
 // A team or category from another company (or one just deleted) breaks the
 // database's link check.
 const STALE_LINK = "That team or category no longer exists. Reload the page and try again.";
+const STALE_MEMBER = "That person is no longer a member of this company. Reload the page and pick someone else.";
 
 export async function createIssue(_prev: FormState, formData: FormData): Promise<FormState> {
   const user = await getCurrentUser();
@@ -85,8 +86,20 @@ export async function updateIssue(_prev: FormState, formData: FormData): Promise
     teamId: formData.get("teamId") ?? "",
     categoryId: formData.get("categoryId") ?? "",
     assigneeName: formData.get("assigneeName") ?? "",
+    assigneeId: formData.get("assigneeId") ?? undefined,
   });
   if (!parsed.success) return { fieldErrors: fieldErrors(parsed.error) };
+  const { assigneeId } = parsed.data;
+  // With members to pick from, the database fills in the name itself. Without
+  // (the database change isn't applied yet), the name is saved as before.
+  const assignee =
+    assigneeId === undefined
+      ? { assignee_name: parsed.data.assigneeName }
+      : assigneeId === "keep"
+        ? {}
+        : assigneeId === ""
+          ? { assignee_id: null, assignee_name: null }
+          : { assignee_id: assigneeId };
 
   const supabase = await createClient();
   // The row comes back only if the update really happened: an issue the user
@@ -97,11 +110,13 @@ export async function updateIssue(_prev: FormState, formData: FormData): Promise
       status: parsed.data.status,
       team_id: parsed.data.teamId,
       category_id: parsed.data.categoryId,
-      assignee_name: parsed.data.assigneeName,
+      ...assignee,
     })
     .eq("id", parsed.data.issueId)
     .select("id, organization:organizations (slug)");
-  if (error?.code === "23503") return { error: STALE_LINK };
+  if (error?.code === "23503") {
+    return { error: error.message?.includes("issues_assignee_member_fkey") ? STALE_MEMBER : STALE_LINK };
+  }
   if (error) return { error: friendlyError(error, "We couldn't save your changes. Please try again.", "updateIssue") };
   if (!data || data.length === 0) {
     return { error: "This issue no longer exists, or you no longer have access to it." };
